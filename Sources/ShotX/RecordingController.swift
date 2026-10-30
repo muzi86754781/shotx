@@ -5,7 +5,7 @@ import SwiftUI
 final class RecordingController {
     static let shared = RecordingController()
 
-    private var overlayController: OverlayController?
+    private var selectionController: RecordingSelectionController?
     private var optionsPanel: NSPanel?
     private var optionsOutsideMonitor: Any?
 
@@ -30,12 +30,12 @@ final class RecordingController {
     // MARK: - Flow
 
     func startRecordingFlow() {
-        guard !isRecording, overlayController == nil, optionsPanel == nil else { return }
+        guard !isRecording, selectionController == nil, optionsPanel == nil else { return }
 
-        let overlay = OverlayController()
-        overlayController = overlay
-        overlay.begin { [weak self] _, rect, screen in
-            self?.overlayController = nil
+        let controller = RecordingSelectionController()
+        selectionController = controller
+        controller.begin { [weak self] rect, screen in
+            self?.selectionController = nil
             guard let rect = rect, let screen = screen else { return }
             self?.currentRect = rect
             self?.frameOverlay.show(rect: rect, recording: false)

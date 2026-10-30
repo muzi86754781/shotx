@@ -47,23 +47,48 @@ struct CaptureEntry: Identifiable, Codable, Equatable {
     }
 }
 
+struct OCREntry: Identifiable, Codable, Equatable {
+    let id: UUID
+    let createdAt: Date
+    let text: String
+
+    init(id: UUID = UUID(), createdAt: Date = Date(), text: String) {
+        self.id = id
+        self.createdAt = createdAt
+        self.text = text
+    }
+}
+
+struct AudioEntry: Identifiable, Codable, Equatable {
+    let id: UUID
+    let createdAt: Date
+    let filename: String
+    let filePath: String
+    let duration: TimeInterval
+
+    init(id: UUID = UUID(), createdAt: Date = Date(), filename: String, filePath: String, duration: TimeInterval) {
+        self.id = id
+        self.createdAt = createdAt
+        self.filename = filename
+        self.filePath = filePath
+        self.duration = duration
+    }
+}
+
 final class HistoryStore: ObservableObject {
     static let shared = HistoryStore()
 
     @Published private(set) var entries: [CaptureEntry] = []
+    @Published private(set) var ocrEntries: [OCREntry] = []
+    @Published private(set) var audioEntries: [AudioEntry] = []
 
     private let maxEntries = 100
     private let historyDir: URL
     private let indexURL: URL
+    private let ocrIndexURL: URL
+    private let audioIndexURL: URL
 
     private static let thumbnailByteBudget = 64 * 1024 * 1024
-
-    /// In-memory cache of downsampled thumbnails, keyed by entry ID.
-    ///
-    /// `countLimit` alone doesn't bound it: NSCache can't weigh an NSImage it
-    /// knows nothing about, so a full history of Retina thumbnails would sit on
-    /// ~140 MB until the system reported memory pressure. Every insert carries
-    /// its decoded pixel cost against an explicit byte budget.
 
     private let thumbnailCache: NSCache<NSString, NSImage> = {
         let c = NSCache<NSString, NSImage>()
@@ -77,20 +102,87 @@ final class HistoryStore: ObservableObject {
         let root = appSupport.appendingPathComponent("ShotX", isDirectory: true)
         historyDir = root.appendingPathComponent("History", isDirectory: true)
         indexURL = root.appendingPathComponent("history.json")
+        ocrIndexURL = root.appendingPathComponent("ocr_history.json")
+        audioIndexURL = root.appendingPathComponent("audio_history.json")
         try? FileManager.default.createDirectory(at: historyDir, withIntermediateDirectories: true)
         load()
     }
 
     private func load() {
-        guard let data = try? Data(contentsOf: indexURL),
-              let decoded = try? JSONDecoder().decode([CaptureEntry].self, from: data)
-        else { return }
-        entries = decoded
+        if let data = try? Data(contentsOf: indexURL),
+           let decoded = try? JSONDecoder().decode([CaptureEntry].self, from: data) {
+            entries = decoded
+        }
+        if let data = try? Data(contentsOf: ocrIndexURL),
+           let decoded = try? JSONDecoder().decode([OCREntry].self, from: data) {
+            ocrEntries = decoded
+        }
+        if let data = try? Data(contentsOf: audioIndexURL),
+           let decoded = try? JSONDecoder().decode([AudioEntry].self, from: data) {
+            audioEntries = decoded
+        }
     }
 
     private func save() {
-        guard let data = try? JSONEncoder().encode(entries) else { return }
-        try? data.write(to: indexURL, options: .atomic)
+        if let data = try? JSONEncoder().encode(entries) {
+            try? data.write(to: indexURL, options: .atomic)
+        }
+    }
+
+    private func saveOCR() {
+        if let data = try? JSONEncoder().encode(ocrEntries) {
+            try? data.write(to: ocrIndexURL, options: .atomic)
+        }
+    }
+
+    private func saveAudio() {
+        if let data = try? JSONEncoder().encode(audioEntries) {
+            try? data.write(to: audioIndexURL, options: .atomic)
+        }
+    }
+
+    func addOCR(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        let entry = OCREntry(text: trimmed)
+        ocrEntries.insert(entry, at: 0)
+        if ocrEntries.count > maxEntries {
+            ocrEntries = Array(ocrEntries.prefix(maxEntries))
+        }
+        saveOCR()
+    }
+
+    func removeOCR(_ entry: OCREntry) {
+        ocrEntries.removeAll { $0.id == entry.id }
+        saveOCR()
+    }
+
+    func clearOCR() {
+        ocrEntries.removeAll()
+        saveOCR()
+    }
+
+    func addAudio(url: URL, duration: TimeInterval) {
+        let entry = AudioEntry(
+            filename: url.lastPathComponent,
+            filePath: url.path,
+            duration: duration
+        )
+        audioEntries.insert(entry, at: 0)
+        if audioEntries.count > maxEntries {
+            audioEntries = Array(audioEntries.prefix(maxEntries))
+        }
+        saveAudio()
+    }
+
+    func removeAudio(_ entry: AudioEntry) {
+        audioEntries.removeAll { $0.id == entry.id }
+        saveAudio()
+    }
+
+    func clearAudio() {
+        audioEntries.removeAll()
+        saveAudio()
     }
 
     @discardableResult

@@ -65,9 +65,17 @@ final class SelectionView: NSView {
     private var hoveredButtonIndex: Int? = nil
     private var isDraggingCornerSlider: Bool = false
 
-    // Scrolling screenshot state
+    // Scrolling screenshot state (333.jpg)
     private var isScrollingMode: Bool = false
-    private var stitchedSlices: [NSImage] = []
+    private var stitchedLongImage: NSImage?
+
+    private var currentToolbarItems: [ToolbarItem] {
+        if isScrollingMode {
+            return [.cancel, .save, .copy]
+        } else {
+            return ToolbarItem.allItems
+        }
+    }
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
@@ -127,7 +135,7 @@ final class SelectionView: NSView {
         let tbRect = bottomToolbarRect()
         var newIndex: Int? = nil
         if tbRect.contains(p) {
-            let items = ToolbarItem.allItems
+            let items = currentToolbarItems
             for (idx, _) in items.enumerated() {
                 let r = NSRect(x: tbRect.minX + 8 + CGFloat(idx) * 33, y: tbRect.minY + 6, width: 30, height: 30)
                 if r.contains(p) {
@@ -175,7 +183,7 @@ final class SelectionView: NSView {
         // 2. Check Bottom Toolbar click
         let tbRect = bottomToolbarRect()
         if tbRect.contains(p) {
-            let items = ToolbarItem.allItems
+            let items = currentToolbarItems
             for (idx, item) in items.enumerated() {
                 let r = NSRect(x: tbRect.minX + 8 + CGFloat(idx) * 33, y: tbRect.minY + 6, width: 30, height: 30)
                 if r.contains(p) {
@@ -573,12 +581,19 @@ final class SelectionView: NSView {
 
     private func handleCancel() {
         activeTextEditor?.cancel()
+        if isScrollingMode {
+            isScrollingMode = false
+            stitchedLongImage = nil
+            needsDisplay = true
+            return
+        }
         onCancel?()
     }
 
     private func handleCopy() {
         activeTextEditor?.commit()
-        guard let image = generateFinalImage() else { return }
+        let imageToCopy = isScrollingMode ? (stitchedLongImage ?? generateFinalImage()) : generateFinalImage()
+        guard let image = imageToCopy else { return }
         SoundEffect.shared.playShutter()
         ImageSaver.copyToClipboard(image)
         HistoryStore.shared.add(image)
@@ -591,7 +606,8 @@ final class SelectionView: NSView {
 
     private func handleSave() {
         activeTextEditor?.commit()
-        guard let image = generateFinalImage() else { return }
+        let imageToSave = isScrollingMode ? (stitchedLongImage ?? generateFinalImage()) : generateFinalImage()
+        guard let image = imageToSave else { return }
         SoundEffect.shared.playShutter()
         _ = ImageSaver.saveToPreferencesFolder(image)
         ImageSaver.copyToClipboard(image)
@@ -620,6 +636,7 @@ final class SelectionView: NSView {
             Task { @MainActor in
                 if let text = await OCR.recognize(in: cg) {
                     ImageSaver.copyTextToClipboard(text)
+                    HistoryStore.shared.addOCR(text)
                     SoundEffect.shared.playShutter()
                     ToastController.shared.show(
                         message: "已识别完成并复制到剪贴板",
@@ -641,15 +658,112 @@ final class SelectionView: NSView {
         }
     }
 
+    override func scrollWheel(with event: NSEvent) {
+        if isScrollingMode {
+            let p = convert(event.locationInWindow, from: nil)
+            if selectionRect.contains(p) {
+                captureAndStitchSlice(deltaY: event.scrollingDeltaY)
+                return
+            }
+        }
+        super.scrollWheel(with: event)
+    }
+
     private func handleScrollingCapture() {
-        // Scrolling screenshot (长截图) mode
+        // Scrolling screenshot (长截图) mode (333.jpg)
+        isScrollingMode = true
+        let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
+        if let initial = ScreenCapture.capture(rectInScreenCoords: globalRect, screen: targetScreen) ?? generateBaseCroppedImage() {
+            stitchedLongImage = initial
+        }
         ToastController.shared.show(
-            message: "向下滚动鼠标滚轮以截取长图，完成后按回车保存",
+            message: "请在选框内滚动鼠标以拼接长图，点击对勾完成",
             icon: "arrow.up.and.down",
             tint: .systemBlue,
             duration: 3.0,
             position: .center
         )
+        needsDisplay = true
+    }
+
+    private func captureAndStitchSlice(deltaY: CGFloat) {
+        let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
+        guard let fresh = ScreenCapture.capture(rectInScreenCoords: globalRect, screen: targetScreen) else { return }
+
+        if let base = stitchedLongImage {
+            let appendHeight: CGFloat = max(15, min(selectionRect.height * 0.4, abs(deltaY) * 3 + 15))
+            let newTotalHeight = base.size.height + appendHeight
+            let newSize = NSSize(width: base.size.width, height: newTotalHeight)
+
+            let composite = NSImage(size: newSize)
+            composite.lockFocus()
+
+            base.draw(in: NSRect(x: 0, y: appendHeight, width: base.size.width, height: base.size.height),
+                      from: NSRect(origin: .zero, size: base.size),
+                      operation: .copy, fraction: 1.0)
+
+            let freshSliceRect = NSRect(x: 0, y: 0, width: fresh.size.width, height: appendHeight)
+            fresh.draw(in: NSRect(x: 0, y: 0, width: base.size.width, height: appendHeight),
+                       from: freshSliceRect,
+                       operation: .sourceOver, fraction: 1.0)
+
+            composite.unlockFocus()
+            self.stitchedLongImage = composite
+        } else {
+            self.stitchedLongImage = fresh
+        }
+        needsDisplay = true
+    }
+
+    private func scrollingPreviewPanelRect() -> NSRect {
+        guard isScrollingMode, selectionRect.width > 0, selectionRect.height > 0 else { return .zero }
+        let previewWidth: CGFloat = min(240, max(140, selectionRect.width * 0.8))
+        let previewHeight: CGFloat = min(bounds.height - 60, max(380, selectionRect.height * 1.5))
+
+        let fitsOnLeft = (selectionRect.minX >= previewWidth + 24)
+        let x: CGFloat = fitsOnLeft ? (selectionRect.minX - previewWidth - 16) : (selectionRect.maxX + 16)
+        let y: CGFloat = max(20, min(bounds.height - previewHeight - 20, selectionRect.midY - previewHeight / 2))
+        return NSRect(x: x, y: y, width: previewWidth, height: previewHeight)
+    }
+
+    private func drawScrollingPreviewPanel() {
+        let r = scrollingPreviewPanelRect()
+        guard r.width > 0, r.height > 0 else { return }
+
+        // Drop shadow & White Card Background
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+        shadow.shadowBlurRadius = 12
+        shadow.shadowOffset = NSSize(width: 0, height: -3)
+        shadow.set()
+
+        NSColor.white.setFill()
+        let card = NSBezierPath(roundedRect: r, xRadius: 8, yRadius: 8)
+        card.fill()
+        NSGraphicsContext.restoreGraphicsState()
+
+        // Border
+        NSColor(white: 0.85, alpha: 1.0).setStroke()
+        let border = NSBezierPath(roundedRect: r, xRadius: 8, yRadius: 8)
+        border.lineWidth = 1.0
+        border.stroke()
+
+        // Render Stitched Image inside Card
+        if let img = stitchedLongImage {
+            NSGraphicsContext.saveGraphicsState()
+            card.addClip()
+
+            let imgSize = img.size
+            if imgSize.width > 0 && imgSize.height > 0 {
+                let innerWidth = r.width - 12
+                let scale = innerWidth / imgSize.width
+                let drawHeight = imgSize.height * scale
+                let drawRect = NSRect(x: r.minX + 6, y: r.maxY - drawHeight - 6, width: innerWidth, height: drawHeight)
+                img.draw(in: drawRect, from: NSRect(origin: .zero, size: imgSize), operation: .sourceOver, fraction: 1.0)
+            }
+            NSGraphicsContext.restoreGraphicsState()
+        }
     }
 
     private func showToast(_ msg: String) {
@@ -1008,6 +1122,11 @@ final class SelectionView: NSView {
 
         // 5. Draw Bottom White Capsule Toolbar
         drawBottomToolbar()
+
+        // 6. Draw Live Preview Panel if Scrolling Screenshot (333.jpg)
+        if isScrollingMode {
+            drawScrollingPreviewPanel()
+        }
     }
 
     private func drawCornerBrackets() {
@@ -1111,7 +1230,7 @@ final class SelectionView: NSView {
     }
 
     private func bottomToolbarRect() -> NSRect {
-        let itemCount = ToolbarItem.allItems.count
+        let itemCount = currentToolbarItems.count
         let w = CGFloat(itemCount * 33 + 16)
         let h: CGFloat = 42
 
@@ -1145,7 +1264,7 @@ final class SelectionView: NSView {
         border.stroke()
 
         // Draw buttons
-        let items = ToolbarItem.allItems
+        let items = currentToolbarItems
         for (idx, item) in items.enumerated() {
             let btnRect = NSRect(x: r.minX + 8 + CGFloat(idx) * 33, y: r.minY + 6, width: 30, height: 30)
 

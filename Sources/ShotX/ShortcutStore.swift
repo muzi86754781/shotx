@@ -60,6 +60,21 @@ struct Shortcut: Codable, Equatable {
         keyCode: UInt32(kVK_ANSI_S),
         modifiers: UInt32(optionKey)
     )
+
+    static let defaultSelectionTranslation = Shortcut(
+        keyCode: UInt32(kVK_ANSI_T),
+        modifiers: UInt32(optionKey)
+    )
+
+    static let defaultScreenshotTranslation = Shortcut(
+        keyCode: UInt32(kVK_ANSI_T),
+        modifiers: UInt32(optionKey | controlKey)
+    )
+
+    static let defaultClipboardHistory = Shortcut(
+        keyCode: UInt32(kVK_ANSI_V),
+        modifiers: UInt32(optionKey)
+    )
 }
 
 final class ShortcutStore: ObservableObject {
@@ -109,6 +124,18 @@ final class ShortcutStore: ObservableObject {
         didSet { Self.persist(allInOneShortcut, key: allInOneKey) }
     }
 
+    @Published var selectionTranslationShortcut: Shortcut {
+        didSet { Self.persist(selectionTranslationShortcut, key: selectionTranslationKey) }
+    }
+
+    @Published var screenshotTranslationShortcut: Shortcut {
+        didSet { Self.persist(screenshotTranslationShortcut, key: screenshotTranslationKey) }
+    }
+
+    @Published var clipboardHistoryShortcut: Shortcut {
+        didSet { Self.persist(clipboardHistoryShortcut, key: clipboardHistoryKey) }
+    }
+
     private let captureKey = "com.shotx.shortcut"
     private let fullscreenKey = "com.shotx.fullscreenShortcut"
     private let windowCaptureKey = "com.shotx.windowCaptureShortcut"
@@ -120,6 +147,9 @@ final class ShortcutStore: ObservableObject {
     private let colorPickerKey = "com.shotx.colorPickerShortcut"
     private let desktopIconsKey = "com.shotx.desktopIconsShortcut"
     private let allInOneKey = "com.shotx.allInOneShortcut"
+    private let selectionTranslationKey = "com.shotx.selectionTranslationShortcut"
+    private let screenshotTranslationKey = "com.shotx.screenshotTranslationShortcut"
+    private let clipboardHistoryKey = "com.shotx.clipboardHistoryShortcut"
 
     init() {
         shortcut = Self.load(key: captureKey) ?? .default
@@ -133,6 +163,9 @@ final class ShortcutStore: ObservableObject {
         colorPickerShortcut = Self.load(key: colorPickerKey) ?? .defaultColorPicker
         desktopIconsShortcut = Self.load(key: desktopIconsKey) ?? .defaultDesktopIcons
         allInOneShortcut = Self.load(key: allInOneKey) ?? .defaultAllInOne
+        selectionTranslationShortcut = Self.load(key: selectionTranslationKey) ?? .defaultSelectionTranslation
+        screenshotTranslationShortcut = Self.load(key: screenshotTranslationKey) ?? .defaultScreenshotTranslation
+        clipboardHistoryShortcut = Self.load(key: clipboardHistoryKey) ?? .defaultClipboardHistory
     }
 
     private static func load(key: String) -> Shortcut? {

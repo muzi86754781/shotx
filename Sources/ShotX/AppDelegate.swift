@@ -15,6 +15,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var colorPickerHotKeyManager: HotKeyManager!
     private var desktopIconsHotKeyManager: HotKeyManager!
     private var allInOneHotKeyManager: HotKeyManager!
+    private var selectionTranslationHotKeyManager: HotKeyManager!
+    private var screenshotTranslationHotKeyManager: HotKeyManager!
+    private var clipboardHistoryHotKeyManager: HotKeyManager!
 
     private var overlayController: OverlayController?
     private var popupController: PostCapturePopupController?
@@ -279,7 +282,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(.separator())
 
         menu.addItem(menuItem(
-            title: "截图历史…",
+            title: "划词翻译",
+            symbol: "character.book.closed.fill",
+            action: #selector(translateSelection),
+            shortcut: ShortcutStore.shared.selectionTranslationShortcut
+        ))
+
+        menu.addItem(menuItem(
+            title: "截图翻译",
+            symbol: "viewfinder.circle",
+            action: #selector(translateScreenshot),
+            shortcut: ShortcutStore.shared.screenshotTranslationShortcut
+        ))
+
+        menu.addItem(menuItem(
+            title: "翻译窗口…",
+            symbol: "globe",
+            action: #selector(openTranslationWindow)
+        ))
+
+        menu.addItem(menuItem(
+            title: "记录复制 (剪贴板历史)…",
+            symbol: "list.bullet.clipboard.fill",
+            action: #selector(toggleClipboardHistory),
+            shortcut: ShortcutStore.shared.clipboardHistoryShortcut
+        ))
+
+        menu.addItem(.separator())
+
+        menu.addItem(menuItem(
+            title: "历史记录…",
             symbol: "clock.arrow.circlepath",
             action: #selector(showHistory)
         ))
@@ -366,6 +398,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         colorPickerHotKeyManager = HotKeyManager()
         desktopIconsHotKeyManager = HotKeyManager()
         allInOneHotKeyManager = HotKeyManager()
+        selectionTranslationHotKeyManager = HotKeyManager()
+        screenshotTranslationHotKeyManager = HotKeyManager()
+        clipboardHistoryHotKeyManager = HotKeyManager()
 
         applyCaptureShortcut(ShortcutStore.shared.shortcut)
         applyFullscreenShortcut(ShortcutStore.shared.fullscreenShortcut)
@@ -378,6 +413,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applyColorPickerShortcut(ShortcutStore.shared.colorPickerShortcut)
         applyDesktopIconsShortcut(ShortcutStore.shared.desktopIconsShortcut)
         applyAllInOneShortcut(ShortcutStore.shared.allInOneShortcut)
+        applySelectionTranslationShortcut(ShortcutStore.shared.selectionTranslationShortcut)
+        applyScreenshotTranslationShortcut(ShortcutStore.shared.screenshotTranslationShortcut)
+        applyClipboardHistoryShortcut(ShortcutStore.shared.clipboardHistoryShortcut)
 
         ShortcutStore.shared.$shortcut
             .dropFirst()
@@ -432,6 +470,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ShortcutStore.shared.$allInOneShortcut
             .dropFirst()
             .sink { [weak self] new in self?.applyAllInOneShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$selectionTranslationShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applySelectionTranslationShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$screenshotTranslationShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyScreenshotTranslationShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$clipboardHistoryShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyClipboardHistoryShortcut(new) }
             .store(in: &shortcutCancellables)
     }
 
@@ -498,6 +551,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyAllInOneShortcut(_ s: Shortcut) {
         allInOneHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
             self?.showAllInOne()
+        }
+    }
+
+    private func applySelectionTranslationShortcut(_ s: Shortcut) {
+        selectionTranslationHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.translateSelection()
+        }
+    }
+
+    private func applyScreenshotTranslationShortcut(_ s: Shortcut) {
+        screenshotTranslationHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.translateScreenshot()
+        }
+    }
+
+    private func applyClipboardHistoryShortcut(_ s: Shortcut) {
+        clipboardHistoryHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.toggleClipboardHistory()
         }
     }
 
@@ -632,6 +703,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 guard let cgImage = OCR.cgImage(from: image) else { return }
                 if let text = await OCR.recognize(in: cgImage) {
                     ImageSaver.copyTextToClipboard(text)
+                    HistoryStore.shared.addOCR(text)
                     SoundEffect.shared.playShutter()
                     ToastController.shared.show(
                         message: "已识别完成并复制到剪贴板",
@@ -653,6 +725,78 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }, completion: { [weak self] in
             self?.overlayController = nil
         })
+    }
+
+    @objc func translateSelection() {
+        // Accessibility API query for selected text
+        let systemWide = AXUIElementCreateSystemWide()
+        var focusedElement: AnyObject?
+        let axError = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+        if axError == .success, let focused = focusedElement {
+            var selectedText: AnyObject?
+            let textError = AXUIElementCopyAttributeValue(focused as! AXUIElement, kAXSelectedTextAttribute as CFString, &selectedText)
+            if textError == .success, let str = selectedText as? String, !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                TranslationController.shared.show(text: str)
+                return
+            }
+        }
+
+        // Fallback: simulate Cmd+C keystroke, wait briefly, then read clipboard
+        let oldChangeCount = NSPasteboard.general.changeCount
+        let src = CGEventSource(stateID: .hidSystemState)
+        let keyDown = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: true)
+        keyDown?.flags = .maskCommand
+        let keyUp = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: false)
+        keyUp?.flags = .maskCommand
+        keyDown?.post(tap: .cghidEventTap)
+        keyUp?.post(tap: .cghidEventTap)
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
+            if NSPasteboard.general.changeCount != oldChangeCount,
+               let text = NSPasteboard.general.string(forType: .string),
+               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                TranslationController.shared.show(text: text)
+            } else {
+                TranslationController.shared.show()
+            }
+        }
+    }
+
+    @objc func translateScreenshot() {
+        guard overlayController == nil else { return }
+        guard ensurePermissionOrPrompt() else { return }
+        let controller = OverlayController()
+        overlayController = controller
+        controller.begin(isOCR: true, onOCRResult: { [weak self] ocrImage in
+            self?.overlayController = nil
+            guard let image = ocrImage else { return }
+            Task { @MainActor in
+                guard let cgImage = OCR.cgImage(from: image) else { return }
+                if let text = await OCR.recognize(in: cgImage) {
+                    SoundEffect.shared.playShutter()
+                    HistoryStore.shared.addOCR(text)
+                    TranslationController.shared.show(text: text)
+                } else {
+                    ToastController.shared.show(
+                        message: "未识别到文字内容",
+                        icon: "exclamationmark.triangle.fill",
+                        tint: .systemOrange,
+                        duration: 2.5,
+                        position: .center
+                    )
+                }
+            }
+        }, completion: { [weak self] in
+            self?.overlayController = nil
+        })
+    }
+
+    @objc func openTranslationWindow() {
+        TranslationController.shared.show()
+    }
+
+    @objc func toggleClipboardHistory() {
+        ClipboardHistoryController.shared.toggle()
     }
 
     @objc private func pinToScreen() {

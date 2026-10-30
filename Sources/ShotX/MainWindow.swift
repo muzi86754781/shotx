@@ -22,6 +22,8 @@ final class MainWindowController {
             .environmentObject(HistoryStore.shared)
             .environmentObject(ShortcutStore.shared)
             .environmentObject(PreferencesStore.shared)
+            .environmentObject(TranslationStore.shared)
+            .environmentObject(ClipboardStore.shared)
         let hosting = NSHostingController(rootView: root)
 
         let window = NSWindow(contentViewController: hosting)
@@ -69,53 +71,298 @@ struct MainView: View {
     }
 }
 
+enum HistoryCategory: String, CaseIterable, Identifiable {
+    case all = "全部"
+    case screenshot = "截图"
+    case recording = "录屏"
+    case audio = "录音"
+    case ocr = "提取文字"
+    case translation = "翻译"
+    case clipboard = "复制记录"
+
+    var id: String { rawValue }
+
+    var icon: String {
+        switch self {
+        case .all: return "square.grid.2x2"
+        case .screenshot: return "photo"
+        case .recording: return "video"
+        case .audio: return "mic"
+        case .ocr: return "text.viewfinder"
+        case .translation: return "globe"
+        case .clipboard: return "doc.on.clipboard"
+        }
+    }
+}
+
 struct HistoryView: View {
     @EnvironmentObject var history: HistoryStore
+    @EnvironmentObject var translationStore: TranslationStore
+    @EnvironmentObject var clipboardStore: ClipboardStore
     @EnvironmentObject var shortcuts: ShortcutStore
+
+    @State private var selectedCategory: HistoryCategory = .all
+    @State private var searchText: String = ""
+
     private let cols = [GridItem(.adaptive(minimum: 210, maximum: 260), spacing: 16)]
+
+    private var screenshotEntries: [CaptureEntry] {
+        history.entries.filter { $0.kind == .image }
+    }
+
+    private var recordingEntries: [CaptureEntry] {
+        history.entries.filter { $0.kind == .video || $0.kind == .gif }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
-            if !history.entries.isEmpty {
-                header
-                Divider()
+            // Category Segmented Control & Search
+            HStack(spacing: 10) {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 6) {
+                        ForEach(HistoryCategory.allCases) { cat in
+                            Button {
+                                selectedCategory = cat
+                            } label: {
+                                HStack(spacing: 4) {
+                                    Image(systemName: cat.icon)
+                                        .font(.system(size: 11))
+                                    Text(cat.rawValue)
+                                        .font(.system(size: 12, weight: selectedCategory == cat ? .semibold : .regular))
+                                }
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 5)
+                                .background(
+                                    Capsule()
+                                        .fill(selectedCategory == cat ? Color.accentColor : Color.primary.opacity(0.06))
+                                )
+                                .foregroundStyle(selectedCategory == cat ? .white : .primary)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+
+                Spacer()
+
+                // Search field
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundStyle(.secondary)
+                        .font(.system(size: 11))
+                    TextField("搜索…", text: $searchText)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 11.5))
+                        .frame(width: 110)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundStyle(.secondary)
+                                .font(.system(size: 11))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color(NSColor.textBackgroundColor))
+                .clipShape(Capsule())
             }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 8)
+
+            Divider()
+
+            header
+            Divider()
+
             content
         }
         .background(Color(NSColor.windowBackgroundColor))
     }
 
+    private var currentCount: Int {
+        switch selectedCategory {
+        case .all:
+            return history.entries.count + history.audioEntries.count + history.ocrEntries.count + translationStore.entries.count + clipboardStore.entries.count
+        case .screenshot:
+            return screenshotEntries.count
+        case .recording:
+            return recordingEntries.count
+        case .audio:
+            return history.audioEntries.count
+        case .ocr:
+            return history.ocrEntries.count
+        case .translation:
+            return translationStore.entries.count
+        case .clipboard:
+            return clipboardStore.entries.count
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 8) {
-            Text("\(history.entries.count) 张截图")
-                .font(.system(size: 12, weight: .medium))
+            Text("\(selectedCategory.rawValue) · \(currentCount) 条记录")
+                .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.secondary)
             Spacer()
-            Button(role: .destructive) {
-                history.clear()
-            } label: {
-                Label("清空所有", systemImage: "trash")
-                    .font(.system(size: 12, weight: .medium))
+            if currentCount > 0 {
+                Button(role: .destructive) {
+                    clearCurrentCategory()
+                } label: {
+                    Label("清空此类", systemImage: "trash")
+                        .font(.system(size: 11.5, weight: .medium))
+                }
+                .buttonStyle(.borderless)
+                .foregroundStyle(.red)
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.red)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 9)
+        .padding(.vertical, 7)
+    }
+
+    private func clearCurrentCategory() {
+        switch selectedCategory {
+        case .all:
+            history.clear()
+            history.clearAudio()
+            history.clearOCR()
+            translationStore.clear()
+            clipboardStore.clear()
+        case .screenshot:
+            for entry in screenshotEntries { history.remove(entry) }
+        case .recording:
+            for entry in recordingEntries { history.remove(entry) }
+        case .audio:
+            history.clearAudio()
+        case .ocr:
+            history.clearOCR()
+        case .translation:
+            translationStore.clear()
+        case .clipboard:
+            clipboardStore.clear()
+        }
     }
 
     private var content: some View {
         Group {
-            if history.entries.isEmpty {
+            if currentCount == 0 {
                 emptyState
             } else {
                 ScrollView {
-                    LazyVGrid(columns: cols, spacing: 18) {
-                        ForEach(history.entries) { entry in
-                            HistoryCard(entry: entry)
+                    VStack(spacing: 14) {
+                        switch selectedCategory {
+                        case .all:
+                            allContent
+                        case .screenshot:
+                            screenshotsGrid(screenshotEntries)
+                        case .recording:
+                            screenshotsGrid(recordingEntries)
+                        case .audio:
+                            audioList
+                        case .ocr:
+                            ocrList
+                        case .translation:
+                            translationList
+                        case .clipboard:
+                            clipboardList
                         }
                     }
-                    .padding(20)
+                    .padding(16)
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var allContent: some View {
+        if !screenshotEntries.isEmpty {
+            sectionHeader("截图", count: screenshotEntries.count, icon: "photo")
+            screenshotsGrid(Array(screenshotEntries.prefix(6)))
+        }
+        if !recordingEntries.isEmpty {
+            sectionHeader("录屏", count: recordingEntries.count, icon: "video")
+            screenshotsGrid(Array(recordingEntries.prefix(4)))
+        }
+        if !history.audioEntries.isEmpty {
+            sectionHeader("录音", count: history.audioEntries.count, icon: "mic")
+            audioList
+        }
+        if !history.ocrEntries.isEmpty {
+            sectionHeader("提取文字", count: history.ocrEntries.count, icon: "text.viewfinder")
+            ocrList
+        }
+        if !translationStore.entries.isEmpty {
+            sectionHeader("翻译", count: translationStore.entries.count, icon: "globe")
+            translationList
+        }
+        if !clipboardStore.entries.isEmpty {
+            sectionHeader("复制记录", count: clipboardStore.entries.count, icon: "doc.on.clipboard")
+            clipboardList
+        }
+    }
+
+    private func sectionHeader(_ title: String, count: Int, icon: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+            Text("(\(count))")
+                .font(.system(size: 11))
+                .foregroundStyle(.tertiary)
+            Spacer()
+        }
+        .padding(.top, 4)
+    }
+
+    private func screenshotsGrid(_ entries: [CaptureEntry]) -> some View {
+        LazyVGrid(columns: cols, spacing: 16) {
+            ForEach(entries) { entry in
+                HistoryCard(entry: entry)
+            }
+        }
+    }
+
+    private var audioList: some View {
+        LazyVStack(spacing: 8) {
+            ForEach(history.audioEntries) { entry in
+                AudioHistoryRow(entry: entry) {
+                    history.removeAudio(entry)
+                }
+            }
+        }
+    }
+
+    private var ocrList: some View {
+        LazyVStack(spacing: 8) {
+            ForEach(history.ocrEntries) { entry in
+                OCRHistoryRow(entry: entry) {
+                    history.removeOCR(entry)
+                }
+            }
+        }
+    }
+
+    private var translationList: some View {
+        LazyVStack(spacing: 8) {
+            ForEach(translationStore.entries) { entry in
+                TranslationHistoryRow(entry: entry) {
+                    translationStore.remove(entry)
+                }
+            }
+        }
+    }
+
+    private var clipboardList: some View {
+        LazyVStack(spacing: 8) {
+            ForEach(clipboardStore.entries) { entry in
+                ClipboardHistoryListRow(entry: entry) {
+                    clipboardStore.remove(entry)
                 }
             }
         }
@@ -127,17 +374,335 @@ struct HistoryView: View {
                 RoundedRectangle(cornerRadius: 20)
                     .fill(Color.accentColor.opacity(0.1))
                     .frame(width: 80, height: 80)
-                Image(systemName: "photo.on.rectangle.angled")
+                Image(systemName: selectedCategory.icon)
                     .font(.system(size: 34, weight: .light))
                     .foregroundStyle(.tint)
             }
-            Text("暂无截图记录")
+            Text("暂无\(selectedCategory.rawValue)记录")
                 .font(.system(size: 15, weight: .semibold))
-            Text("在任意界面按下 \(ShortcutFormatter.describe(shortcuts.shortcut)) 即可截取区域")
+            Text("使用 ShotX 的各项功能后，历史记录将自动汇总于此")
                 .font(.system(size: 12))
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+// MARK: - Row Views for New History Types
+
+struct AudioHistoryRow: View {
+    let entry: AudioEntry
+    let onDelete: () -> Void
+
+    @State private var isHovering = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.green.opacity(0.15))
+                    .frame(width: 36, height: 36)
+                Image(systemName: "waveform")
+                    .font(.system(size: 16))
+                    .foregroundStyle(.green)
+            }
+
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.filename)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                HStack(spacing: 8) {
+                    Text(formatDuration(entry.duration))
+                        .font(.system(size: 11, weight: .medium))
+                        .foregroundStyle(.secondary)
+                    Text("·")
+                        .foregroundStyle(.tertiary)
+                    Text(entry.createdAt, style: .time)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                Button {
+                    let url = URL(fileURLWithPath: entry.filePath)
+                    NSWorkspace.shared.open(url)
+                } label: {
+                    Label("播放", systemImage: "play.fill")
+                        .font(.system(size: 11.5))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    let url = URL(fileURLWithPath: entry.filePath)
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                } label: {
+                    Image(systemName: "folder")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.borderless)
+                .help("在访达中显示")
+
+                Button {
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
+                .help("删除")
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(NSColor.controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+    }
+
+    private func formatDuration(_ t: TimeInterval) -> String {
+        let total = Int(t)
+        let m = total / 60
+        let s = total % 60
+        return String(format: "%d:%02d", m, s)
+    }
+}
+
+struct OCRHistoryRow: View {
+    let entry: OCREntry
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.blue.opacity(0.12))
+                    .frame(width: 34, height: 34)
+                Image(systemName: "text.viewfinder")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.blue)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                Text(entry.text)
+                    .font(.system(size: 13))
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+
+                HStack(spacing: 8) {
+                    Text("\(entry.text.count) 字")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                    Text("·")
+                        .foregroundStyle(.tertiary)
+                    Text(entry.createdAt, style: .time)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                Button {
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString(entry.text, forType: .string)
+                    ToastController.shared.show(
+                        message: "已复制文字到剪贴板",
+                        icon: "checkmark.circle.fill",
+                        tint: .systemGreen,
+                        duration: 1.5,
+                        position: .center
+                    )
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc")
+                        .font(.system(size: 11.5))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(NSColor.controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+    }
+}
+
+struct TranslationHistoryRow: View {
+    let entry: TranslationRecord
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.purple.opacity(0.12))
+                    .frame(width: 34, height: 34)
+                Image(systemName: "globe")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.purple)
+            }
+
+            VStack(alignment: .leading, spacing: 5) {
+                HStack(spacing: 6) {
+                    Text(entry.sourceLang)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    Image(systemName: "arrow.right")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.secondary)
+                    Text(entry.targetLang)
+                        .font(.system(size: 10.5, weight: .semibold))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                        .foregroundStyle(Color.accentColor)
+
+                    Spacer()
+                    Text(entry.createdAt, style: .time)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.tertiary)
+                }
+
+                Text("原文: \(entry.sourceText)")
+                    .font(.system(size: 12.5))
+                    .lineLimit(2)
+                    .foregroundStyle(.secondary)
+
+                Text("译文: \(entry.targetText)")
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(2)
+                    .foregroundStyle(.primary)
+            }
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                Button {
+                    let pb = NSPasteboard.general
+                    pb.clearContents()
+                    pb.setString(entry.targetText, forType: .string)
+                    ToastController.shared.show(
+                        message: "已复制译文到剪贴板",
+                        icon: "checkmark.circle.fill",
+                        tint: .systemGreen,
+                        duration: 1.5,
+                        position: .center
+                    )
+                } label: {
+                    Label("复制译文", systemImage: "doc.on.doc")
+                        .font(.system(size: 11.5))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(NSColor.controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
+    }
+}
+
+struct ClipboardHistoryListRow: View {
+    let entry: ClipboardEntry
+    let onDelete: () -> Void
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 12) {
+            ZStack {
+                Circle()
+                    .fill(Color.orange.opacity(0.12))
+                    .frame(width: 34, height: 34)
+                Image(systemName: entry.kind == .file ? "doc.fill" : "doc.on.clipboard")
+                    .font(.system(size: 15))
+                    .foregroundStyle(.orange)
+            }
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(entry.displayTitle)
+                    .font(.system(size: 13, weight: .medium))
+                    .lineLimit(1)
+                Text(entry.displaySubtitle)
+                    .font(.system(size: 11.5))
+                    .lineLimit(2)
+                    .foregroundStyle(.secondary)
+                Text(entry.createdAt, style: .time)
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.tertiary)
+            }
+
+            Spacer()
+
+            HStack(spacing: 8) {
+                Button {
+                    ClipboardStore.shared.copyToClipboard(entry)
+                } label: {
+                    Label("复制", systemImage: "doc.on.doc")
+                        .font(.system(size: 11.5))
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.small)
+
+                Button {
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red)
+                }
+                .buttonStyle(.borderless)
+            }
+        }
+        .padding(10)
+        .background(
+            RoundedRectangle(cornerRadius: 10)
+                .fill(Color(NSColor.controlBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .strokeBorder(Color.primary.opacity(0.06), lineWidth: 1)
+        )
     }
 }
 
@@ -615,6 +1180,27 @@ struct SettingsView: View {
                             binding: $shortcuts.allInOneShortcut,
                             defaultVal: .defaultAllInOne
                         )
+                        dividerLine
+                        shortcutRow(
+                            title: "划词翻译",
+                            desc: "选中任意屏幕文本后按快捷键，自动填入翻译框并立即翻译",
+                            binding: $shortcuts.selectionTranslationShortcut,
+                            defaultVal: .defaultSelectionTranslation
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "截图翻译",
+                            desc: "框选屏幕区域后自动提取文字并立即打开翻译框进行翻译",
+                            binding: $shortcuts.screenshotTranslationShortcut,
+                            defaultVal: .defaultScreenshotTranslation
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "记录复制 (剪贴板历史)",
+                            desc: "随时呼出历史剪贴板记录，支持搜索、快速预览并批量/重复使用",
+                            binding: $shortcuts.clipboardHistoryShortcut,
+                            defaultVal: .defaultClipboardHistory
+                        )
 
                         Divider().padding(.vertical, 4)
 
@@ -635,6 +1221,9 @@ struct SettingsView: View {
                                 shortcuts.colorPickerShortcut = .defaultColorPicker
                                 shortcuts.desktopIconsShortcut = .defaultDesktopIcons
                                 shortcuts.allInOneShortcut = .defaultAllInOne
+                                shortcuts.selectionTranslationShortcut = .defaultSelectionTranslation
+                                shortcuts.screenshotTranslationShortcut = .defaultScreenshotTranslation
+                                shortcuts.clipboardHistoryShortcut = .defaultClipboardHistory
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -652,7 +1241,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.3")")
+                                Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.4")")
                                     .font(.system(size: 13, weight: .medium))
                                 HStack(spacing: 8) {
                                     Text("开发者:")

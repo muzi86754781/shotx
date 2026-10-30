@@ -44,6 +44,7 @@ final class OverlayController {
                 snapshot: snapshots[screen],
                 isOCR: isOCR,
                 onOCRResult: { [weak self] img in
+                    self?.finish()
                     self?.onOCRResult?(img)
                 },
                 onActive: { [weak self] activeWindow in

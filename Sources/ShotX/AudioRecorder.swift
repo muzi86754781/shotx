@@ -104,6 +104,7 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
 
         if let fileURL = currentFileURL, FileManager.default.fileExists(atPath: fileURL.path) {
             SoundEffect.shared.playShutter()
+            HistoryStore.shared.addAudio(url: fileURL, duration: self.duration)
             NSWorkspace.shared.activateFileViewerSelecting([fileURL])
             ToastController.shared.show(
                 message: "录音已保存至: \(fileURL.lastPathComponent)",
