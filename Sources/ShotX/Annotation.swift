@@ -3,20 +3,28 @@ import Combine
 import SwiftUI
 
 enum AnnotationTool: String, CaseIterable, Identifiable {
-    case arrow, rectangle, text, step
+    case rectangle, oval, line, arrow, pen, mosaic, text, step
     var id: String { rawValue }
     var symbolName: String {
         switch self {
-        case .arrow: return "arrow.up.right"
         case .rectangle: return "rectangle"
+        case .oval: return "circle"
+        case .line: return "line.diagonal"
+        case .arrow: return "arrow.up.right"
+        case .pen: return "pencil.tip"
+        case .mosaic: return "checkerboard.rectangle"
         case .text: return "textformat"
         case .step: return "1.circle.fill"
         }
     }
     var label: String {
         switch self {
-        case .arrow: return "箭头"
         case .rectangle: return "矩形"
+        case .oval: return "圆形"
+        case .line: return "直线"
+        case .arrow: return "箭头"
+        case .pen: return "画笔"
+        case .mosaic: return "马赛克"
         case .text: return "文本"
         case .step: return "序号"
         }
@@ -25,8 +33,12 @@ enum AnnotationTool: String, CaseIterable, Identifiable {
 
 struct Annotation: Identifiable {
     enum Shape {
-        case arrow(from: CGPoint, to: CGPoint)
         case rectangle(CGRect)
+        case oval(CGRect)
+        case line(from: CGPoint, to: CGPoint)
+        case arrow(from: CGPoint, to: CGPoint)
+        case pen(points: [CGPoint])
+        case mosaic(CGRect)
         case text(origin: CGPoint, string: String, fontSize: CGFloat)
         case step(center: CGPoint, number: Int)
     }
@@ -34,15 +46,50 @@ struct Annotation: Identifiable {
     var shape: Shape
     var color: NSColor
     var thickness: CGFloat
+
+    func translatedBy(dx: CGFloat, dy: CGFloat) -> Annotation {
+        var copy = self
+        switch copy.shape {
+        case .rectangle(let r):
+            copy.shape = .rectangle(r.offsetBy(dx: dx, dy: dy))
+        case .oval(let r):
+            copy.shape = .oval(r.offsetBy(dx: dx, dy: dy))
+        case .line(let from, let to):
+            copy.shape = .line(from: CGPoint(x: from.x + dx, y: from.y + dy),
+                               to: CGPoint(x: to.x + dx, y: to.y + dy))
+        case .arrow(let from, let to):
+            copy.shape = .arrow(from: CGPoint(x: from.x + dx, y: from.y + dy),
+                                to: CGPoint(x: to.x + dx, y: to.y + dy))
+        case .pen(let points):
+            copy.shape = .pen(points: points.map { CGPoint(x: $0.x + dx, y: $0.y + dy) })
+        case .mosaic(let r):
+            copy.shape = .mosaic(r.offsetBy(dx: dx, dy: dy))
+        case .text(let origin, let string, let fontSize):
+            copy.shape = .text(origin: CGPoint(x: origin.x + dx, y: origin.y + dy),
+                               string: string, fontSize: fontSize)
+        case .step(let center, let number):
+            copy.shape = .step(center: CGPoint(x: center.x + dx, y: center.y + dy),
+                               number: number)
+        }
+        return copy
+    }
 }
 
 enum AnnotationRenderer {
-    static func draw(_ ann: Annotation) {
+    static func draw(_ ann: Annotation, baseImage: NSImage? = nil) {
         switch ann.shape {
         case .arrow(let from, let to):
             drawArrow(from: from, to: to, thickness: ann.thickness, color: ann.color)
         case .rectangle(let r):
             drawRectangle(r, thickness: ann.thickness, color: ann.color)
+        case .oval(let r):
+            drawOval(r, thickness: ann.thickness, color: ann.color)
+        case .line(let from, let to):
+            drawLine(from: from, to: to, thickness: ann.thickness, color: ann.color)
+        case .pen(let points):
+            drawPen(points: points, thickness: ann.thickness, color: ann.color)
+        case .mosaic(let r):
+            drawMosaic(r, baseImage: baseImage)
         case .text(let origin, let string, let fontSize):
             drawText(string, at: origin, fontSize: fontSize, color: ann.color)
         case .step(let center, let number):
@@ -106,6 +153,109 @@ enum AnnotationRenderer {
         shadow.set()
         color.setStroke()
         path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private static func drawOval(_ rect: CGRect, thickness: CGFloat, color: NSColor) {
+        let path = NSBezierPath(ovalIn: rect)
+        path.lineWidth = max(3, thickness)
+
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
+        shadow.shadowBlurRadius = 3
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        shadow.set()
+        color.setStroke()
+        path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private static func drawLine(from: CGPoint, to: CGPoint, thickness: CGFloat, color: NSColor) {
+        let path = NSBezierPath()
+        path.move(to: from)
+        path.line(to: to)
+        path.lineWidth = max(3, thickness)
+        path.lineCapStyle = .round
+
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
+        shadow.shadowBlurRadius = 3
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        shadow.set()
+        color.setStroke()
+        path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private static func drawPen(points: [CGPoint], thickness: CGFloat, color: NSColor) {
+        guard points.count > 1 else {
+            if let first = points.first {
+                color.setFill()
+                NSBezierPath(ovalIn: CGRect(x: first.x - thickness / 2, y: first.y - thickness / 2, width: thickness, height: thickness)).fill()
+            }
+            return
+        }
+        let path = NSBezierPath()
+        path.move(to: points[0])
+        for pt in points.dropFirst() {
+            path.line(to: pt)
+        }
+        path.lineWidth = max(3, thickness)
+        path.lineCapStyle = .round
+        path.lineJoinStyle = .round
+
+        NSGraphicsContext.saveGraphicsState()
+        let shadow = NSShadow()
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
+        shadow.shadowBlurRadius = 3
+        shadow.shadowOffset = NSSize(width: 0, height: -1)
+        shadow.set()
+        color.setStroke()
+        path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
+    }
+
+    private static func drawMosaic(_ rect: CGRect, baseImage: NSImage? = nil) {
+        guard rect.width > 2, rect.height > 2 else { return }
+        NSGraphicsContext.saveGraphicsState()
+        let clipPath = NSBezierPath(rect: rect)
+        clipPath.addClip()
+
+        if let baseImage = baseImage,
+           let cgImage = baseImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            let ciImage = CIImage(cgImage: cgImage)
+            let filter = CIFilter(name: "CIPixellate")
+            filter?.setValue(ciImage, forKey: kCIInputImageKey)
+            filter?.setValue(16.0, forKey: kCIInputScaleKey)
+            if let output = filter?.outputImage {
+                let rep = NSCIImageRep(ciImage: output)
+                let pixImage = NSImage(size: baseImage.size)
+                pixImage.addRepresentation(rep)
+                pixImage.draw(in: rect, from: rect, operation: .sourceOver, fraction: 1.0)
+                NSGraphicsContext.restoreGraphicsState()
+                return
+            }
+        }
+
+        let blockSize: CGFloat = 12
+        var isDark = false
+        var y = rect.minY
+        while y < rect.maxY {
+            var x = rect.minX
+            var rowDark = isDark
+            while x < rect.maxX {
+                let blockRect = CGRect(x: x, y: y, width: blockSize, height: blockSize).intersection(rect)
+                let color = rowDark ? NSColor(white: 0.45, alpha: 0.85) : NSColor(white: 0.75, alpha: 0.85)
+                color.setFill()
+                blockRect.fill()
+                rowDark.toggle()
+                x += blockSize
+            }
+            isDark.toggle()
+            y += blockSize
+        }
         NSGraphicsContext.restoreGraphicsState()
     }
 
@@ -429,6 +579,14 @@ final class AnnotationCanvas: NSView {
             inProgress = Annotation(shape: .arrow(from: p, to: p), color: currentColor, thickness: thickness)
         case .rectangle:
             inProgress = Annotation(shape: .rectangle(CGRect(origin: p, size: .zero)), color: currentColor, thickness: thickness)
+        case .oval:
+            inProgress = Annotation(shape: .oval(CGRect(origin: p, size: .zero)), color: currentColor, thickness: thickness)
+        case .line:
+            inProgress = Annotation(shape: .line(from: p, to: p), color: currentColor, thickness: thickness)
+        case .pen:
+            inProgress = Annotation(shape: .pen(points: [p]), color: currentColor, thickness: thickness)
+        case .mosaic:
+            inProgress = Annotation(shape: .mosaic(CGRect(origin: p, size: .zero)), color: currentColor, thickness: thickness)
         case .step:
             let ann = Annotation(shape: .step(center: p, number: nextStep), color: currentColor, thickness: thickness)
             nextStep += 1
@@ -453,6 +611,21 @@ final class AnnotationCanvas: NSView {
                 x: min(start.x, p.x), y: min(start.y, p.y),
                 width: abs(p.x - start.x), height: abs(p.y - start.y)
             ))
+        case .oval:
+            ann.shape = .oval(CGRect(
+                x: min(start.x, p.x), y: min(start.y, p.y),
+                width: abs(p.x - start.x), height: abs(p.y - start.y)
+            ))
+        case .line:
+            ann.shape = .line(from: start, to: p)
+        case .pen(var points):
+            points.append(p)
+            ann.shape = .pen(points: points)
+        case .mosaic:
+            ann.shape = .mosaic(CGRect(
+                x: min(start.x, p.x), y: min(start.y, p.y),
+                width: abs(p.x - start.x), height: abs(p.y - start.y)
+            ))
         default: break
         }
         inProgress = ann
@@ -469,8 +642,12 @@ final class AnnotationCanvas: NSView {
         switch ann.shape {
         case .arrow(let from, let to):
             if hypot(to.x - from.x, to.y - from.y) < 5 { return }
-        case .rectangle(let r):
+        case .rectangle(let r), .oval(let r), .mosaic(let r):
             if r.width < 5 || r.height < 5 { return }
+        case .line(let from, let to):
+            if hypot(to.x - from.x, to.y - from.y) < 5 { return }
+        case .pen(let pts):
+            if pts.isEmpty { return }
         default: break
         }
         annotations.append(ann)
@@ -521,8 +698,8 @@ final class AnnotationCanvas: NSView {
         NSColor.windowBackgroundColor.setFill()
         bounds.fill()
         image?.draw(in: bounds)
-        for ann in annotations { AnnotationRenderer.draw(ann) }
-        if let in_ = inProgress { AnnotationRenderer.draw(in_) }
+        for ann in annotations { AnnotationRenderer.draw(ann, baseImage: image) }
+        if let in_ = inProgress { AnnotationRenderer.draw(in_, baseImage: image) }
     }
 
     func flattenedImage() -> NSImage? {
@@ -552,7 +729,7 @@ final class AnnotationCanvas: NSView {
         let nsCtx = NSGraphicsContext(cgContext: ctx, flipped: false)
         NSGraphicsContext.saveGraphicsState()
         NSGraphicsContext.current = nsCtx
-        for ann in annotations { AnnotationRenderer.draw(ann) }
+        for ann in annotations { AnnotationRenderer.draw(ann, baseImage: image) }
         NSGraphicsContext.restoreGraphicsState()
 
         guard let output = ctx.makeImage() else { return nil }

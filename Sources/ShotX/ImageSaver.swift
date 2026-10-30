@@ -81,18 +81,42 @@ enum ImageSaver {
 
     @discardableResult
     static func saveToDesktop(_ image: NSImage) -> URL? {
-        guard let data = pngData(from: image) else { return nil }
-        return saveToDesktop(pngData: data)
+        saveToPreferencesFolder(image)
     }
 
     @discardableResult
     static func saveToDesktop(pngData: Data) -> URL? {
-        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
+        saveToPreferencesFolder(pngData: pngData)
+    }
+
+    @discardableResult
+    static func saveToPreferencesFolder(_ image: NSImage) -> URL? {
+        guard let data = pngData(from: image) else { return nil }
+        return saveToPreferencesFolder(pngData: data)
+    }
+
+    @discardableResult
+    static func saveToPreferencesFolder(pngData: Data) -> URL? {
+        let folder = PreferencesStore.shared.saveDirectoryURL
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        let url = desktop.appendingPathComponent("ShotX \(formatter.string(from: Date())).png")
-        try? pngData.write(to: url)
-        return url
+        let url = folder.appendingPathComponent("ShotX \(formatter.string(from: Date())).png")
+        do {
+            try pngData.write(to: url)
+            ToastController.shared.show(
+                message: "已保存至: \(url.lastPathComponent)",
+                icon: "checkmark.circle.fill",
+                tint: .systemGreen
+            )
+            return url
+        } catch {
+            ToastController.shared.show(
+                message: "保存失败: \(error.localizedDescription)",
+                icon: "exclamationmark.triangle.fill",
+                tint: .systemRed
+            )
+            return nil
+        }
     }
 
     static func copyToClipboard(_ image: NSImage) {

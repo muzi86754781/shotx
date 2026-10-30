@@ -21,6 +21,7 @@ final class MainWindowController {
         let root = MainView(state: state)
             .environmentObject(HistoryStore.shared)
             .environmentObject(ShortcutStore.shared)
+            .environmentObject(PreferencesStore.shared)
         let hosting = NSHostingController(rootView: root)
 
         let window = NSWindow(contentViewController: hosting)
@@ -391,10 +392,45 @@ private struct HistoryActionButton: View {
 
 struct SettingsView: View {
     @EnvironmentObject var shortcuts: ShortcutStore
+    @ObservedObject var preferences = PreferencesStore.shared
 
     var body: some View {
         ScrollView {
             VStack(spacing: 14) {
+                SettingsCard(
+                    icon: "folder.fill",
+                    tint: .orange,
+                    title: "截图保存路径",
+                    subtitle: "设置截图的默认保存目录（仅在点击保存时写入）"
+                ) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(alignment: .center, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(preferences.saveDirectoryURL.path)
+                                    .font(.system(size: 12.5, design: .monospaced))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .foregroundStyle(.primary)
+                                Text("截图完成后不会自动保存到磁盘，仅在点击标注栏中的“保存”按钮时才会保存到此路径。")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Button("更改…") {
+                                preferences.selectSaveFolder()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button("打开") {
+                                NSWorkspace.shared.open(preferences.saveDirectoryURL)
+                            }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+
                 SettingsCard(
                     icon: "command",
                     tint: .blue,
@@ -467,19 +503,41 @@ struct SettingsView: View {
                     title: "关于",
                     subtitle: "ShotX · 轻量高效的屏幕截图与录屏工具"
                 ) {
-                    HStack {
-                        Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "—")")
-                            .font(.system(size: 13))
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Button {
-                            NSApp.terminate(nil)
-                        } label: {
-                            Label("退出 ShotX", systemImage: "power")
-                                .font(.system(size: 12, weight: .medium))
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.1")")
+                                    .font(.system(size: 13, weight: .medium))
+                                HStack(spacing: 8) {
+                                    Text("开发者:")
+                                        .font(.system(size: 12))
+                                        .foregroundStyle(.secondary)
+                                    Link("@muzi86754781", destination: URL(string: "https://github.com/muzi86754781")!)
+                                        .font(.system(size: 12))
+                                    Text("·")
+                                        .foregroundStyle(.tertiary)
+                                    Link("github.com/muzi86754781/shotx", destination: URL(string: "https://github.com/muzi86754781/shotx")!)
+                                        .font(.system(size: 12))
+                                }
+                            }
+                            Spacer()
+                            HStack(spacing: 8) {
+                                Button("检查更新…") {
+                                    UpdaterController.shared.checkForUpdates()
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+
+                                Button {
+                                    NSApp.terminate(nil)
+                                } label: {
+                                    Label("退出 ShotX", systemImage: "power")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
+                            }
                         }
-                        .buttonStyle(.bordered)
-                        .controlSize(.small)
                     }
                 }
             }

@@ -394,13 +394,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard ensurePermissionOrPrompt() else { return }
         let controller = OverlayController()
         overlayController = controller
-        controller.begin { [weak self] image, rect, screen in
+        controller.begin { [weak self] in
             self?.overlayController = nil
-            guard let self = self, let image = image else { return }
-            if let rect = rect, let screen = screen {
-                LastCaptureStore.save(rect: rect, screen: screen)
-            }
-            self.handleCapturedImage(image)
         }
     }
 
@@ -460,45 +455,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     @objc private func captureAfterTimer(_ sender: NSMenuItem) {
         let seconds = sender.tag
-        guard overlayController == nil else { return }
-        guard ensurePermissionOrPrompt() else { return }
-
-        let controller = OverlayController()
-        overlayController = controller
-        controller.begin { [weak self] _, rect, screen in
-            self?.overlayController = nil
-            guard let self = self, let rect = rect, let screen = screen else { return }
-
-            // Show a viewfinder around the picked region so the user knows what's
-            // about to be captured.
-            let frame = RecordingFrameOverlay()
-            frame.show(rect: rect, recording: false)
-            self.timerFrameOverlay = frame
-
-            self.countdownController?.cancel()
-            let cd = CountdownController()
-            self.countdownController = cd
-            cd.start(
-                seconds: seconds,
-                onCancel: { [weak self] in
-                    self?.timerFrameOverlay?.dismiss()
-                    self?.timerFrameOverlay = nil
-                },
-                onFinish: { [weak self] in
-                    guard let self = self else { return }
-                    self.countdownController = nil
-                    // Take the viewfinder down before snapping. No settle delay
-                    // needed: retired chrome stays filtered out of the composite
-                    // for a while after close(), so a capture landing before the
-                    // window server catches up still can't see it.
-                    self.timerFrameOverlay?.dismiss()
-                    self.timerFrameOverlay = nil
-                    guard let image = ScreenCapture.capture(rectInScreenCoords: rect, screen: screen) else { return }
-                    LastCaptureStore.save(rect: rect, screen: screen)
-                    self.handleCapturedImage(image)
-                }
-            )
-        }
+        countdownController?.cancel()
+        let cd = CountdownController()
+        countdownController = cd
+        cd.start(
+            seconds: seconds,
+            onCancel: { [weak self] in
+                self?.countdownController = nil
+            },
+            onFinish: { [weak self] in
+                self?.countdownController = nil
+                self?.captureNow()
+            }
+        )
     }
 
     @objc private func captureWindow() {
@@ -514,38 +483,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func captureTextNow() {
-        guard overlayController == nil else { return }
-        guard ensurePermissionOrPrompt() else { return }
-        let controller = OverlayController()
-        overlayController = controller
-        controller.begin { [weak self] image, _, _ in
-            self?.overlayController = nil
-            // Convert to CGImage on the main thread before hopping onto a Task —
-            // CGImage is Sendable, NSImage is not.
-            guard let nsImage = image,
-                  let cgImage = MainActor.assumeIsolated({ OCR.cgImage(from: nsImage) })
-            else { return }
-            Task { @MainActor in
-                await OCR.runAndCopy(from: cgImage)
-            }
-        }
+        captureNow()
     }
 
     @objc private func pinToScreen() {
-        guard overlayController == nil else { return }
-        guard ensurePermissionOrPrompt() else { return }
-        let controller = OverlayController()
-        overlayController = controller
-        controller.begin { [weak self] image, rect, screen in
-            self?.overlayController = nil
-            guard let image = image else { return }
-            if let rect = rect, let screen = screen {
-                LastCaptureStore.save(rect: rect, screen: screen)
-            }
-            SoundEffect.shared.playShutter()
-            HistoryStore.shared.add(image)
-            PinnedImageController.shared.pin(image)
-        }
+        captureNow()
     }
 
     @objc private func toggleDesktopIcons() {
@@ -622,28 +564,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func handleCapturedImage(_ image: NSImage) {
         SoundEffect.shared.playShutter()
-
-        // Show the result first — the popup only needs the NSImage. Encoding a
-        // full-resolution capture to PNG takes long enough to be felt as a hang
-        // if it happens before anything appears on screen.
-        let popup = showPostCapturePopup(for: image)
-
-        // One rasterization, off the main thread, shared by the clipboard and
-        // the history file. The old path built a full uncompressed TIFF three
-        // times over, on the main thread, before the popup was drawn.
-        //
-        // The popup is captured directly rather than read back off `self`: a
-        // second capture taken while this one is still encoding would otherwise
-        // hand its predecessor's file URL to the newer popup.
-        ImageSaver.encodeInBackground(image) { [weak popup] encoded in
-            guard let encoded = encoded else { return }
-            ImageSaver.copyToClipboard(encoded)
-            let entry = HistoryStore.shared.add(png: encoded.png, size: image.size)
-            let fileURL = entry.map { HistoryStore.shared.fileURL(for: $0) }
-            MainActor.assumeIsolated {
-                popup?.attach(fileURL: fileURL, pngData: encoded.png)
-            }
-        }
+        ImageSaver.copyToClipboard(image)
+        HistoryStore.shared.add(image)
     }
 
     @discardableResult
@@ -714,17 +636,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ))
         credits.append(NSAttributedString(string: "Made by ", attributes: baseAttrs))
         credits.append(NSAttributedString(
-            string: "@aimen08",
+            string: "@muzi86754781",
             attributes: baseAttrs.merging([
-                .link: URL(string: "https://github.com/aimen08")!,
+                .link: URL(string: "https://github.com/muzi86754781")!,
                 .foregroundColor: NSColor.linkColor
             ]) { _, new in new }
         ))
         credits.append(NSAttributedString(string: "\n", attributes: baseAttrs))
         credits.append(NSAttributedString(
-            string: "github.com/aimen08/shotx",
+            string: "github.com/muzi86754781/shotx",
             attributes: baseAttrs.merging([
-                .link: URL(string: "https://github.com/aimen08/shotx")!,
+                .link: URL(string: "https://github.com/muzi86754781/shotx")!,
                 .foregroundColor: NSColor.linkColor
             ]) { _, new in new }
         ))

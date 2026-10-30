@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.1)'
+        description: 'Release version (e.g. 1.9.2)'
         required: false
-        default: '1.9.1'
+        default: '1.9.2'
 
 permissions:
   contents: write
@@ -39,7 +39,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.1"
+            VERSION="1.9.2"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -70,9 +70,18 @@ jobs:
             ### ShotX ${{ env.TAG }}
 
             #### 更新说明
-            - 操作界面全面支持中文显示
-            - 修复截屏框选桌面区域后页面卡死并无法操作的问题（调整窗口层级、即时释放全屏遮罩并恢复系统光标、增加麦克风权限预检与异常保护）
-            - 增强文字识别（OCR）对简体中文与繁体中文的支持
+            1. **GitHub 检查更新与开发者信息**：检查更新自动对接 muzi86754781/shotx 的 GitHub Releases，关于弹窗与设置页面展示开发者主页与更新状态。
+            2. **截图保存路径设置与按需保存**：偏好设置支持自定义截图保存路径。截图完成后仅复制到剪贴板，不点击保存按钮绝不保存文件到磁盘，防止产生垃圾文件。
+            3. **截屏十字光标、放大镜与快捷键卡片 (111.jpg)**：
+               - 框选区域前贯穿全屏的十字定位线。
+               - 放大镜实时展示 17×17 像素放大网格、中心十字准星、中文颜色名称识别（白色、黑色、灰色、红色等）、实时坐标及 RGB/HEX 色值。
+               - 左下角快捷键卡片：按 D 选择上一次截图区域、按 F 全屏选择、按 0~9 锁定框选比例（Free、1:1、2:3、3:4、4:5、5:7、9:16、16:9、3:2、4:3）、按 R 复制 RGB、按 H 复制 HEX、按 Z 复制自定义颜色、ESC/右键退出。
+            4. **就地标注与全新工具栏 (222.jpg)**：
+               - 截图框选完成后不再缩小到左下角，原位展开标注工具。
+               - 选区四角高亮蓝色 L 型角标。
+               - 选区上方悬浮蓝色药丸尺寸栏与阴影开关。
+               - 选区下方悬浮白色胶囊标注工具栏：矩形、圆形、直线、箭头、画笔、马赛克、文字、序号、贴图到屏幕、撤销、OCR 文字识别、取消、保存到文件夹、完成复制。
+               - 支持双击选区、回车或 Cmd+C 一键复制完成，Cmd+S 保存文件，Cmd+Z 撤销操作。
 
             #### 下载安装
             下载下方的 `ShotX-${{ env.VERSION }}.dmg` 文件，双击打开并将 ShotX 拖入 Applications（应用程序）文件夹即可。
