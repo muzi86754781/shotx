@@ -234,7 +234,7 @@ final class SelectionView: NSView {
 
         if mode == .selecting {
             guard let start = startPoint else { return }
-            var w = abs(p.x - start.x)
+            let w = abs(p.x - start.x)
             var h = abs(p.y - start.y)
 
             if let ratio = lockedRatio, ratio > 0 {
@@ -973,8 +973,12 @@ final class SelectionView: NSView {
         let cornerRadius = PreferencesStore.shared.cornerRadius
         NSColor.clear.setFill()
         if cornerRadius > 0 {
+            let ctx = NSGraphicsContext.current
+            let prevOp = ctx?.compositingOperation ?? .sourceOver
+            ctx?.compositingOperation = .copy
             let path = NSBezierPath(roundedRect: selectionRect, xRadius: cornerRadius, yRadius: cornerRadius)
-            path.fill(using: .copy)
+            path.fill()
+            ctx?.compositingOperation = prevOp
         } else {
             selectionRect.fill(using: .copy)
         }

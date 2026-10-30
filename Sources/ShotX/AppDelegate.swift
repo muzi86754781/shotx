@@ -508,9 +508,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard ensurePermissionOrPrompt() else { return }
         let controller = OverlayController()
         overlayController = controller
-        controller.begin { [weak self] in
+        controller.begin(completion: { [weak self] in
             self?.overlayController = nil
-        }
+        })
     }
 
     /// The status menu's dismissal animation outlives the action that triggered
@@ -627,9 +627,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         overlayController = controller
         controller.begin(isOCR: true, onOCRResult: { [weak self] ocrImage in
             self?.overlayController = nil
-            guard let image = ocrImage,
-                  let cgImage = OCR.cgImage(from: image) else { return }
+            guard let image = ocrImage else { return }
             Task { @MainActor in
+                guard let cgImage = OCR.cgImage(from: image) else { return }
                 if let text = await OCR.recognize(in: cgImage) {
                     ImageSaver.copyTextToClipboard(text)
                     SoundEffect.shared.playShutter()
