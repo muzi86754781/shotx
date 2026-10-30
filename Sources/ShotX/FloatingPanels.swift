@@ -150,6 +150,11 @@ private struct CountdownView: View {
 
 // MARK: - Toast
 
+enum ToastPosition {
+    case bottomLeft
+    case center
+}
+
 final class ToastController {
     static let shared = ToastController()
 
@@ -157,14 +162,18 @@ final class ToastController {
     private var timer: Timer?
 
     private static let size = NSSize(width: 320, height: 64)
+    private static let centerSize = NSSize(width: 360, height: 72)
 
     func show(
         message: String,
         icon: String = "checkmark.circle.fill",
         tint: NSColor = .systemGreen,
-        duration: TimeInterval = 3.0
+        duration: TimeInterval = 3.0,
+        position: ToastPosition = .bottomLeft
     ) {
         dismiss()
+
+        let targetSize = (position == .center) ? Self.centerSize : Self.size
 
         let view = ToastView(
             message: message,
@@ -173,10 +182,10 @@ final class ToastController {
             onDismiss: { [weak self] in self?.dismiss() }
         )
         let hosting = NSHostingController(rootView: view)
-        hosting.view.frame = NSRect(origin: .zero, size: Self.size)
+        hosting.view.frame = NSRect(origin: .zero, size: targetSize)
 
         let panel = NSPanel(
-            contentRect: NSRect(origin: .zero, size: Self.size),
+            contentRect: NSRect(origin: .zero, size: targetSize),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
             defer: false
@@ -191,13 +200,23 @@ final class ToastController {
         panel.isReleasedWhenClosed = false
 
         if let screen = NSScreen.main {
-            let margin: CGFloat = 24
-            let frame = NSRect(
-                x: screen.visibleFrame.minX + margin,
-                y: screen.visibleFrame.minY + margin,
-                width: Self.size.width,
-                height: Self.size.height
-            )
+            let frame: NSRect
+            if position == .center {
+                frame = NSRect(
+                    x: screen.frame.midX - targetSize.width / 2,
+                    y: screen.frame.midY - targetSize.height / 2,
+                    width: targetSize.width,
+                    height: targetSize.height
+                )
+            } else {
+                let margin: CGFloat = 24
+                frame = NSRect(
+                    x: screen.visibleFrame.minX + margin,
+                    y: screen.visibleFrame.minY + margin,
+                    width: targetSize.width,
+                    height: targetSize.height
+                )
+            }
             panel.setFrame(frame, display: true)
         }
         panel.orderFrontRegardless()

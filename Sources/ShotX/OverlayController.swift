@@ -4,21 +4,26 @@ final class OverlayController {
     private var windows: [OverlayWindow] = []
     private var completion: ((NSImage?, CGRect?, NSScreen?) -> Void)?
     private var onFinished: (() -> Void)?
+    private var onOCRResult: ((NSImage?) -> Void)?
     private var finished = false
     private var cursorHidden = false
 
-    func begin(completion: (() -> Void)? = nil) {
+    func begin(
+        isOCR: Bool = false,
+        onOCRResult: ((NSImage?) -> Void)? = nil,
+        completion: (() -> Void)? = nil
+    ) {
         self.onFinished = completion
-        startOverlay()
+        self.onOCRResult = onOCRResult
+        startOverlay(isOCR: isOCR)
     }
 
     func begin(legacyCompletion: @escaping (NSImage?, CGRect?, NSScreen?) -> Void) {
         self.completion = legacyCompletion
-        startOverlay()
+        startOverlay(isOCR: false)
     }
 
-    private func startOverlay() {
-        // Hide system cursor for crosshair
+    private func startOverlay(isOCR: Bool) {
         NSCursor.hide()
         cursorHidden = true
 
@@ -37,6 +42,10 @@ final class OverlayController {
             let window = OverlayWindow(
                 screen: screen,
                 snapshot: snapshots[screen],
+                isOCR: isOCR,
+                onOCRResult: { [weak self] img in
+                    self?.onOCRResult?(img)
+                },
                 onActive: { [weak self] activeWindow in
                     self?.dismissOtherWindows(except: activeWindow)
                 },

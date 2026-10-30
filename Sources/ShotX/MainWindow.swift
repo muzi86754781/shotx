@@ -396,22 +396,46 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 14) {
+            VStack(spacing: 16) {
+                // 1. 截图设置
                 SettingsCard(
-                    icon: "folder.fill",
-                    tint: .orange,
-                    title: "截图保存路径",
-                    subtitle: "设置截图的默认保存目录（仅在点击保存时写入）"
+                    icon: "camera.viewfinder",
+                    tint: .blue,
+                    title: "截图设置",
+                    subtitle: "配置截图格式与保存目录"
                 ) {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        // 格式选择
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("保存格式")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("支持 PNG（无损透明）、JPG（体积小）、HEIC（高效压缩）")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Picker("", selection: $preferences.screenshotFormat) {
+                                ForEach(ScreenshotFormat.allCases) { format in
+                                    Text(format.displayName).tag(format)
+                                }
+                            }
+                            .frame(width: 170)
+                        }
+
+                        Divider()
+
+                        // 保存路径
                         HStack(alignment: .center, spacing: 10) {
                             VStack(alignment: .leading, spacing: 4) {
+                                Text("保存路径")
+                                    .font(.system(size: 13, weight: .medium))
                                 Text(preferences.saveDirectoryURL.path)
-                                    .font(.system(size: 12.5, design: .monospaced))
+                                    .font(.system(size: 12, design: .monospaced))
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                                     .foregroundStyle(.primary)
-                                Text("截图完成后不会自动保存到磁盘，仅在点击标注栏中的“保存”按钮时才会保存到此路径。")
+                                Text("截图后不会自动保存到磁盘，仅在点击标注栏中的“保存”按钮时才会写入此路径。")
                                     .font(.system(size: 11))
                                     .foregroundStyle(.secondary)
                             }
@@ -431,72 +455,194 @@ struct SettingsView: View {
                     }
                 }
 
+                // 2. 录屏与录音保存设置
+                SettingsCard(
+                    icon: "video.fill",
+                    tint: .purple,
+                    title: "录屏与录音设置",
+                    subtitle: "配置屏幕录制与麦克风录音的默认保存目录"
+                ) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        // 录屏路径
+                        HStack(alignment: .center, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "record.circle")
+                                        .foregroundStyle(.red)
+                                    Text("录屏保存路径")
+                                        .font(.system(size: 13, weight: .medium))
+                                }
+                                Text(preferences.screenRecordingSaveDirectoryURL.path)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .foregroundStyle(.primary)
+                                Text("屏幕录制完成后，视频文件（MP4）将自动保存到此路径。")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Button("更改…") {
+                                preferences.selectScreenRecordingSaveFolder()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button("打开") {
+                                NSWorkspace.shared.open(preferences.screenRecordingSaveDirectoryURL)
+                            }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                        }
+
+                        Divider()
+
+                        // 录音路径
+                        HStack(alignment: .center, spacing: 10) {
+                            VStack(alignment: .leading, spacing: 4) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: "mic.fill")
+                                        .foregroundStyle(.green)
+                                    Text("录音保存路径")
+                                        .font(.system(size: 13, weight: .medium))
+                                }
+                                Text(preferences.audioRecordingSaveDirectoryURL.path)
+                                    .font(.system(size: 12, design: .monospaced))
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                                    .foregroundStyle(.primary)
+                                Text("麦克风录音结束后，音频文件（M4A）将自动保存到此路径。")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer(minLength: 8)
+                            Button("更改…") {
+                                preferences.selectAudioRecordingSaveFolder()
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button("打开") {
+                                NSWorkspace.shared.open(preferences.audioRecordingSaveDirectoryURL)
+                            }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+
+                // 3. 快捷键卡片
                 SettingsCard(
                     icon: "command",
                     tint: .blue,
                     title: "快捷键",
-                    subtitle: "自定义全局热键"
+                    subtitle: "自定义全部 11 种核心功能的全局热键"
                 ) {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 11) {
+                        shortcutRow(
+                            title: "区域截图",
+                            desc: "划选屏幕任意矩形区域并展开标注栏与长截图",
+                            binding: $shortcuts.shortcut,
+                            defaultVal: .default
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "截取全屏",
+                            desc: "一键截取当前整个主屏幕并在正中央提示",
+                            binding: $shortcuts.fullscreenShortcut,
+                            defaultVal: .defaultFullscreen
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "截取窗口",
+                            desc: "移动鼠标悬停并自动识别窗口轮廓截取",
+                            binding: $shortcuts.windowCaptureShortcut,
+                            defaultVal: .defaultWindow
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "截取上一区域",
+                            desc: "💡功能说明：重新截取上一次框选的屏幕坐标与尺寸，无需重复用鼠标手动划选",
+                            binding: $shortcuts.previousAreaShortcut,
+                            defaultVal: .defaultPrevious
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "提取文字 (OCR)",
+                            desc: "划选屏幕后直接提取文本并复制到剪贴板，无标注栏打扰",
+                            binding: $shortcuts.ocrShortcut,
+                            defaultVal: .defaultOCR
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "屏幕录制",
+                            desc: "划选区域开始录屏（支持声音、摄像头与按键显示）",
+                            binding: $shortcuts.recordScreenShortcut,
+                            defaultVal: .defaultRecordScreen
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "音频录制",
+                            desc: "开启/结束系统麦克风高音质录音，悬浮药丸实时显示时长",
+                            binding: $shortcuts.recordAudioShortcut,
+                            defaultVal: .defaultRecordAudio
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "贴图置顶",
+                            desc: "将剪贴板或截图钉在屏幕最上层悬浮展示，方便对比对照",
+                            binding: $shortcuts.pinShortcut,
+                            defaultVal: .defaultPin
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "拾色器",
+                            desc: "放大镜精准吸管取色，按 R 键拷贝 RGB，按 H 键拷贝 HEX",
+                            binding: $shortcuts.colorPickerShortcut,
+                            defaultVal: .defaultColorPicker
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "显示/隐藏桌面图标",
+                            desc: "💡功能说明：一键隐藏或恢复桌面上所有文件与快捷方式，录屏或截图时桌面整洁干净",
+                            binding: $shortcuts.desktopIconsShortcut,
+                            defaultVal: .defaultDesktopIcons
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "全能截图",
+                            desc: "集放大镜取色、九宫格比例参考、预设尺寸于一体的辅助截图模式",
+                            binding: $shortcuts.allInOneShortcut,
+                            defaultVal: .defaultAllInOne
+                        )
+
+                        Divider().padding(.vertical, 4)
+
                         HStack {
-                            Text("区域截图")
-                                .font(.system(size: 13))
-                            Spacer()
-                            ShortcutRecorder(shortcut: $shortcuts.shortcut)
-                                .frame(width: 150, height: 28)
-                            Button("重置") { shortcuts.shortcut = .default }
-                                .buttonStyle(.borderless)
+                            Text("点击输入框并按下新的组合键。按 Esc 键取消。")
+                                .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
-                                .font(.system(size: 12))
-                        }
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.08))
-                            .frame(height: 0.5)
-                        HStack {
-                            Text("截取全屏")
-                                .font(.system(size: 13))
                             Spacer()
-                            ShortcutRecorder(shortcut: $shortcuts.fullscreenShortcut)
-                                .frame(width: 150, height: 28)
-                            Button("重置") { shortcuts.fullscreenShortcut = .defaultFullscreen }
-                                .buttonStyle(.borderless)
-                                .foregroundStyle(.secondary)
-                                .font(.system(size: 12))
+                            Button("恢复全部默认快捷键") {
+                                shortcuts.shortcut = .default
+                                shortcuts.fullscreenShortcut = .defaultFullscreen
+                                shortcuts.windowCaptureShortcut = .defaultWindow
+                                shortcuts.previousAreaShortcut = .defaultPrevious
+                                shortcuts.ocrShortcut = .defaultOCR
+                                shortcuts.recordScreenShortcut = .defaultRecordScreen
+                                shortcuts.recordAudioShortcut = .defaultRecordAudio
+                                shortcuts.pinShortcut = .defaultPin
+                                shortcuts.colorPickerShortcut = .defaultColorPicker
+                                shortcuts.desktopIconsShortcut = .defaultDesktopIcons
+                                shortcuts.allInOneShortcut = .defaultAllInOne
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
                         }
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.08))
-                            .frame(height: 0.5)
-                        HStack {
-                            Text("拾色器")
-                                .font(.system(size: 13))
-                            Spacer()
-                            ShortcutRecorder(shortcut: $shortcuts.colorPickerShortcut)
-                                .frame(width: 150, height: 28)
-                            Button("重置") { shortcuts.colorPickerShortcut = .defaultColorPicker }
-                                .buttonStyle(.borderless)
-                                .foregroundStyle(.secondary)
-                                .font(.system(size: 12))
-                        }
-                        Rectangle()
-                            .fill(Color.primary.opacity(0.08))
-                            .frame(height: 0.5)
-                        HStack {
-                            Text("提取文字 (OCR)")
-                                .font(.system(size: 13))
-                            Spacer()
-                            ShortcutRecorder(shortcut: $shortcuts.ocrShortcut)
-                                .frame(width: 150, height: 28)
-                            Button("重置") { shortcuts.ocrShortcut = .defaultOCR }
-                                .buttonStyle(.borderless)
-                                .foregroundStyle(.secondary)
-                                .font(.system(size: 12))
-                        }
-                        Text("点击输入框并按下新的组合键。按 Esc 键取消。")
-                            .font(.system(size: 11))
-                            .foregroundStyle(.secondary)
                     }
                 }
 
+                // 4. 关于
                 SettingsCard(
                     icon: "info.circle.fill",
                     tint: .gray,
@@ -506,7 +652,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         HStack {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.1")")
+                                Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.3")")
                                     .font(.system(size: 13, weight: .medium))
                                 HStack(spacing: 8) {
                                     Text("开发者:")
@@ -544,6 +690,38 @@ struct SettingsView: View {
             .padding(20)
         }
         .background(Color(NSColor.windowBackgroundColor))
+    }
+
+    private var dividerLine: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.06))
+            .frame(height: 0.5)
+    }
+
+    private func shortcutRow(
+        title: String,
+        desc: String,
+        binding: Binding<Shortcut>,
+        defaultVal: Shortcut
+    ) -> some View {
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                Text(desc)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            ShortcutRecorder(shortcut: binding)
+                .frame(width: 140, height: 26)
+            Button("重置") {
+                binding.wrappedValue = defaultVal
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .font(.system(size: 11))
+        }
     }
 }
 

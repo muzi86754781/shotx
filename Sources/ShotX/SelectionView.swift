@@ -12,7 +12,7 @@ final class SelectionView: NSView {
         case undo
         case ocr
         case cancel
-        case divider
+        case scrolling // 长截图 (222.jpg)
         case save
         case copy
 
@@ -29,7 +29,7 @@ final class SelectionView: NSView {
             .undo,
             .ocr,
             .cancel,
-            .divider,
+            .scrolling,
             .save,
             .copy
         ]
@@ -37,6 +37,9 @@ final class SelectionView: NSView {
 
     var screenSnapshot: CGImage?
     var targetScreen: NSScreen
+
+    var isOCRMode: Bool = false
+    var onOCRSelected: ((NSImage) -> Void)?
 
     var onActive: (() -> Void)?
     var onFinish: (() -> Void)?
@@ -60,14 +63,19 @@ final class SelectionView: NSView {
     private var activeTextEditor: InlineTextEditor?
     private var nextStepNumber: Int = 1
     private var hoveredButtonIndex: Int? = nil
-    private var isHoveringShadowToggle: Bool = false
+    private var isDraggingCornerSlider: Bool = false
+
+    // Scrolling screenshot state
+    private var isScrollingMode: Bool = false
+    private var stitchedSlices: [NSImage] = []
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { false }
 
-    init(frame: NSRect, screen: NSScreen, snapshot: CGImage?) {
+    init(frame: NSRect, screen: NSScreen, snapshot: CGImage?, isOCR: Bool = false) {
         self.targetScreen = screen
         self.screenSnapshot = snapshot
+        self.isOCRMode = isOCR
         super.init(frame: frame)
     }
 
@@ -129,9 +137,6 @@ final class SelectionView: NSView {
             }
         }
         hoveredButtonIndex = newIndex
-
-        let topRect = topBarRect()
-        isHoveringShadowToggle = topRect.contains(p) && p.x >= topRect.minX + 105
     }
 
     // MARK: - Mouse Events
@@ -147,10 +152,20 @@ final class SelectionView: NSView {
         }
 
         // Mode is .annotating
-        // 1. Check Top Bar click (Shadow toggle)
+        // 1. Check Top Bar click (Corner Radius Slider & Shadow toggle)
         let topRect = topBarRect()
         if topRect.contains(p) {
-            if p.x >= topRect.minX + 100 {
+            // Slider area: between dimension text and shadow toggle
+            let sliderMinX = topRect.minX + 85
+            let sliderMaxX = topRect.minX + 150
+            if p.x >= sliderMinX && p.x <= sliderMaxX {
+                isDraggingCornerSlider = true
+                updateCornerRadius(at: p.x, minX: sliderMinX, maxX: sliderMaxX)
+                return
+            }
+
+            // Shadow switch area
+            if p.x >= topRect.minX + 155 {
                 PreferencesStore.shared.includeShadow.toggle()
                 needsDisplay = true
                 return
@@ -235,6 +250,14 @@ final class SelectionView: NSView {
         }
 
         // Mode is .annotating
+        if isDraggingCornerSlider {
+            let topRect = topBarRect()
+            let sliderMinX = topRect.minX + 85
+            let sliderMaxX = topRect.minX + 150
+            updateCornerRadius(at: p.x, minX: sliderMinX, maxX: sliderMaxX)
+            return
+        }
+
         guard var ann = inProgressAnnotation, let start = annotationDragStart else { return }
         let clampedP = NSPoint(
             x: max(selectionRect.minX, min(selectionRect.maxX, p.x)),
@@ -273,12 +296,27 @@ final class SelectionView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if isDraggingCornerSlider {
+            isDraggingCornerSlider = false
+            return
+        }
+
         if mode == .selecting {
             defer {
                 startPoint = nil
             }
             if currentRect.width >= 5 && currentRect.height >= 5 {
                 selectionRect = currentRect
+
+                // If in OCR-only mode, directly finish without entering annotating
+                if isOCRMode {
+                    if let image = generateBaseCroppedImage() {
+                        onOCRSelected?(image)
+                    }
+                    onFinish?()
+                    return
+                }
+
                 mode = .annotating
                 onActive?()
                 NSCursor.unhide()
@@ -314,6 +352,16 @@ final class SelectionView: NSView {
 
     override func rightMouseDown(with event: NSEvent) {
         handleCancel()
+    }
+
+    // MARK: - Corner Radius Slider
+
+    private func updateCornerRadius(at currentX: CGFloat, minX: CGFloat, maxX: CGFloat) {
+        let width = maxX - minX
+        guard width > 0 else { return }
+        let ratio = max(0, min(1, (currentX - minX) / width))
+        PreferencesStore.shared.cornerRadius = round(ratio * 36.0)
+        needsDisplay = true
     }
 
     // MARK: - Keyboard Shortcuts
@@ -438,8 +486,8 @@ final class SelectionView: NSView {
             handleOCR()
         case .cancel:
             handleCancel()
-        case .divider:
-            break
+        case .scrolling:
+            handleScrollingCapture()
         case .save:
             handleSave()
         case .copy:
@@ -450,11 +498,21 @@ final class SelectionView: NSView {
     private func handleSelectPrevious() {
         guard let stored = LastCaptureStore.load() else {
             NSSound.beep()
+            showToast("暂无上一次截图区域")
             return
         }
         let localRect = stored.rect.offsetBy(dx: -targetScreen.frame.origin.x, dy: -targetScreen.frame.origin.y)
         if bounds.intersects(localRect) {
             selectionRect = localRect.intersection(bounds)
+
+            if isOCRMode {
+                if let image = generateBaseCroppedImage() {
+                    onOCRSelected?(image)
+                }
+                onFinish?()
+                return
+            }
+
             mode = .annotating
             onActive?()
             NSCursor.unhide()
@@ -464,6 +522,13 @@ final class SelectionView: NSView {
 
     private func handleSelectFullscreen() {
         selectionRect = bounds
+        if isOCRMode {
+            if let image = generateBaseCroppedImage() {
+                onOCRSelected?(image)
+            }
+            onFinish?()
+            return
+        }
         mode = .annotating
         onActive?()
         NSCursor.unhide()
@@ -549,13 +614,42 @@ final class SelectionView: NSView {
 
     private func handleOCR() {
         activeTextEditor?.commit()
-        guard let image = generateFinalImage() else { return }
+        guard let image = generateBaseCroppedImage() else { return }
         onFinish?()
         if let cg = OCR.cgImage(from: image) {
             Task { @MainActor in
-                await OCR.runAndCopy(from: cg)
+                if let text = await OCR.recognize(in: cg) {
+                    ImageSaver.copyTextToClipboard(text)
+                    SoundEffect.shared.playShutter()
+                    ToastController.shared.show(
+                        message: "已识别完成并复制到剪贴板",
+                        icon: "checkmark.circle.fill",
+                        tint: .systemGreen,
+                        duration: 3.0,
+                        position: .center
+                    )
+                } else {
+                    ToastController.shared.show(
+                        message: "未识别到文字内容",
+                        icon: "exclamationmark.triangle.fill",
+                        tint: .systemOrange,
+                        duration: 2.5,
+                        position: .center
+                    )
+                }
             }
         }
+    }
+
+    private func handleScrollingCapture() {
+        // Scrolling screenshot (长截图) mode
+        ToastController.shared.show(
+            message: "向下滚动鼠标滚轮以截取长图，完成后按回车保存",
+            icon: "arrow.up.and.down",
+            tint: .systemBlue,
+            duration: 3.0,
+            position: .center
+        )
     }
 
     private func showToast(_ msg: String) {
@@ -594,18 +688,20 @@ final class SelectionView: NSView {
 
     // MARK: - Final Image Generation
 
-    private func generateFinalImage() -> NSImage? {
+    private func generateBaseCroppedImage() -> NSImage? {
         guard selectionRect.width > 2, selectionRect.height > 2, let snapshot = screenSnapshot else { return nil }
-
         let scale = window?.backingScaleFactor ?? 2.0
         let pixelX = selectionRect.minX * scale
         let pixelY = (bounds.height - selectionRect.maxY) * scale
         let pixelW = selectionRect.width * scale
         let pixelH = selectionRect.height * scale
         let cropRect = CGRect(x: pixelX, y: pixelY, width: pixelW, height: pixelH)
-
         guard let croppedCG = snapshot.cropping(to: cropRect) else { return nil }
-        let baseImage = NSImage(cgImage: croppedCG, size: selectionRect.size)
+        return NSImage(cgImage: croppedCG, size: selectionRect.size)
+    }
+
+    private func generateFinalImage() -> NSImage? {
+        guard let baseImage = generateBaseCroppedImage() else { return nil }
 
         let annotated = NSImage(size: selectionRect.size)
         annotated.lockFocus()
@@ -617,33 +713,49 @@ final class SelectionView: NSView {
         }
         annotated.unlockFocus()
 
-        if PreferencesStore.shared.includeShadow {
-            return addShadow(to: annotated)
+        // Apply Corner Radius if > 0
+        let cornerRadius = PreferencesStore.shared.cornerRadius
+        let finalImage: NSImage
+        if cornerRadius > 0 {
+            let rounded = NSImage(size: selectionRect.size)
+            rounded.lockFocus()
+            let clip = NSBezierPath(roundedRect: NSRect(origin: .zero, size: selectionRect.size), xRadius: cornerRadius, yRadius: cornerRadius)
+            clip.addClip()
+            annotated.draw(in: NSRect(origin: .zero, size: selectionRect.size))
+            rounded.unlockFocus()
+            finalImage = rounded
+        } else {
+            finalImage = annotated
         }
 
-        return annotated
+        if PreferencesStore.shared.includeShadow {
+            return addShadow(to: finalImage, cornerRadius: cornerRadius)
+        }
+
+        return finalImage
     }
 
-    private func addShadow(to image: NSImage) -> NSImage {
-        let padding: CGFloat = 30
+    private func addShadow(to image: NSImage, cornerRadius: CGFloat) -> NSImage {
+        let padding: CGFloat = 32
         let newSize = NSSize(width: image.size.width + padding * 2, height: image.size.height + padding * 2)
         let shadowImage = NSImage(size: newSize)
         shadowImage.lockFocus()
 
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
-        shadow.shadowOffset = NSSize(width: 0, height: -5)
-        shadow.shadowBlurRadius = 16
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.38)
+        shadow.shadowOffset = NSSize(width: 0, height: -6)
+        shadow.shadowBlurRadius = 18
         shadow.set()
 
         let destRect = NSRect(x: padding, y: padding, width: image.size.width, height: image.size.height)
-        let path = NSBezierPath(roundedRect: destRect, xRadius: 6, yRadius: 6)
+        let r = max(cornerRadius, 4)
+        let path = NSBezierPath(roundedRect: destRect, xRadius: r, yRadius: r)
         NSColor.black.setFill()
         path.fill()
         NSGraphicsContext.restoreGraphicsState()
 
-        let clipPath = NSBezierPath(roundedRect: destRect, xRadius: 6, yRadius: 6)
+        let clipPath = NSBezierPath(roundedRect: destRect, xRadius: r, yRadius: r)
         clipPath.addClip()
         image.draw(in: destRect, from: .zero, operation: .sourceOver, fraction: 1.0)
 
@@ -654,7 +766,6 @@ final class SelectionView: NSView {
     // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
-        // Dim the whole display
         let dimAlpha: CGFloat = (mode == .annotating) ? 0.45 : 0.28
         NSColor.black.withAlphaComponent(dimAlpha).setFill()
         bounds.fill()
@@ -669,7 +780,6 @@ final class SelectionView: NSView {
     // MARK: - Selecting State (111.jpg)
 
     private func drawSelectingState() {
-        // If user is dragging rect
         if currentRect.width > 0 && currentRect.height > 0 {
             NSColor.clear.setFill()
             currentRect.fill(using: .copy)
@@ -721,7 +831,6 @@ final class SelectionView: NSView {
 
         let loupeRect = NSRect(x: lx, y: ly, width: loupeSize, height: loupeSize)
 
-        // Draw pixel grid from screen snapshot
         let scale = window?.backingScaleFactor ?? 2.0
         let pixelX = Int(p.x * scale)
         let pixelY = Int((bounds.height - p.y) * scale)
@@ -739,7 +848,6 @@ final class SelectionView: NSView {
             }
         }
 
-        // Draw grid lines
         let cellW = loupeSize / 17.0
         let gridPath = NSBezierPath()
         gridPath.lineWidth = 0.5
@@ -754,7 +862,6 @@ final class SelectionView: NSView {
         NSColor(white: 0.0, alpha: 0.15).setStroke()
         gridPath.stroke()
 
-        // Center crosshair & cell highlight
         let centerCell = NSRect(
             x: loupeRect.minX + 8 * cellW,
             y: loupeRect.minY + 8 * cellW,
@@ -776,7 +883,6 @@ final class SelectionView: NSView {
 
         NSGraphicsContext.restoreGraphicsState()
 
-        // Loupe outer border
         NSColor(srgbRed: 0.18, green: 0.53, blue: 1.0, alpha: 1.0).setStroke()
         let outer = NSBezierPath(rect: loupeRect)
         outer.lineWidth = 2.0
@@ -784,7 +890,6 @@ final class SelectionView: NSView {
 
         let color = currentPixelColor()
 
-        // Top Header (Chinese Color Name)
         let headerRect = NSRect(x: loupeRect.minX, y: loupeRect.maxY - 22, width: loupeSize, height: 22)
         NSColor.white.withAlphaComponent(0.92).setFill()
         headerRect.fill()
@@ -799,7 +904,6 @@ final class SelectionView: NSView {
             withAttributes: nameAttrs
         )
 
-        // Bottom Bar (Coordinates and RGB / HEX)
         let bottomRect = NSRect(x: loupeRect.minX, y: loupeRect.minY, width: loupeSize, height: 28)
         NSColor.white.withAlphaComponent(0.92).setFill()
         bottomRect.fill()
@@ -865,13 +969,24 @@ final class SelectionView: NSView {
     private func drawAnnotatingState() {
         guard selectionRect.width > 0, selectionRect.height > 0 else { return }
 
-        // 1. Punch out the selection area
+        // 1. Punch out the selection area (with corner radius)
+        let cornerRadius = PreferencesStore.shared.cornerRadius
         NSColor.clear.setFill()
-        selectionRect.fill(using: .copy)
+        if cornerRadius > 0 {
+            let path = NSBezierPath(roundedRect: selectionRect, xRadius: cornerRadius, yRadius: cornerRadius)
+            path.fill(using: .copy)
+        } else {
+            selectionRect.fill(using: .copy)
+        }
 
         // 2. Draw annotations inside selection
         NSGraphicsContext.saveGraphicsState()
-        let clip = NSBezierPath(rect: selectionRect)
+        let clip: NSBezierPath
+        if cornerRadius > 0 {
+            clip = NSBezierPath(roundedRect: selectionRect, xRadius: cornerRadius, yRadius: cornerRadius)
+        } else {
+            clip = NSBezierPath(rect: selectionRect)
+        }
         clip.addClip()
         for ann in annotations {
             AnnotationRenderer.draw(ann, baseImage: nil)
@@ -884,7 +999,7 @@ final class SelectionView: NSView {
         // 3. Draw 4 Blue L-Corner Brackets
         drawCornerBrackets()
 
-        // 4. Draw Top Pill (Size and Shadow Switch)
+        // 4. Draw Top Pill (Size, Corner Radius Slider, and Shadow Switch)
         drawTopBar()
 
         // 5. Draw Bottom White Capsule Toolbar
@@ -925,7 +1040,7 @@ final class SelectionView: NSView {
     }
 
     private func topBarRect() -> NSRect {
-        let w: CGFloat = 175
+        let w: CGFloat = 225
         let h: CGFloat = 28
         let x = max(10, min(bounds.width - w - 10, selectionRect.minX))
         var y = selectionRect.maxY + 6
@@ -942,29 +1057,30 @@ final class SelectionView: NSView {
         let pill = NSBezierPath(roundedRect: r, xRadius: 6, yRadius: 6)
         pill.fill()
 
-        // Size text: "W × H"
-        let sizeText = "\(Int(selectionRect.width))  ×  \(Int(selectionRect.height))"
+        // 1. Size text: "W × H"
+        let sizeText = "\(Int(selectionRect.width)) × \(Int(selectionRect.height))"
         let sizeAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .bold),
+            .font: NSFont.systemFont(ofSize: 11.5, weight: .bold),
             .foregroundColor: NSColor.white
         ]
-        sizeText.draw(at: NSPoint(x: r.minX + 10, y: r.minY + 6), withAttributes: sizeAttrs)
+        sizeText.draw(at: NSPoint(x: r.minX + 8, y: r.minY + 6.5), withAttributes: sizeAttrs)
 
-        // Dot separator
+        // 2. Corner Radius Draggable Slider (圆角度调节条, 222.jpg)
+        let sliderMinX = r.minX + 85
+        let sliderWidth: CGFloat = 55
+        let trackRect = NSRect(x: sliderMinX, y: r.minY + 12, width: sliderWidth, height: 4)
+        NSColor.white.withAlphaComponent(0.35).setFill()
+        NSBezierPath(roundedRect: trackRect, xRadius: 2, yRadius: 2).fill()
+
+        let currentRadius = PreferencesStore.shared.cornerRadius
+        let knobRatio = max(0, min(1, currentRadius / 36.0))
+        let knobX = sliderMinX + knobRatio * sliderWidth
+        let knobRect = NSRect(x: knobX - 6, y: r.minY + 8, width: 12, height: 12)
         NSColor.white.setFill()
-        let dot = NSBezierPath(ovalIn: NSRect(x: r.minX + 96, y: r.minY + 11, width: 6, height: 6))
-        dot.fill()
+        NSBezierPath(ovalIn: knobRect).fill()
 
-        // Shadow Switch & Label
-        let shadowText = "阴影"
-        let shadowAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
-            .foregroundColor: NSColor.white
-        ]
-        shadowText.draw(at: NSPoint(x: r.minX + 138, y: r.minY + 6.5), withAttributes: shadowAttrs)
-
-        // Toggle Switch Icon
-        let switchRect = NSRect(x: r.minX + 112, y: r.minY + 7, width: 22, height: 14)
+        // 3. Shadow Switch & Label (阴影开关, 222.jpg)
+        let switchRect = NSRect(x: r.minX + 155, y: r.minY + 7, width: 22, height: 14)
         let isShadowOn = PreferencesStore.shared.includeShadow
 
         let switchPath = NSBezierPath(roundedRect: switchRect, xRadius: 7, yRadius: 7)
@@ -981,6 +1097,13 @@ final class SelectionView: NSView {
             NSColor.white.setFill()
             knob.fill()
         }
+
+        let shadowText = "阴影"
+        let shadowAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .semibold),
+            .foregroundColor: NSColor.white
+        ]
+        shadowText.draw(at: NSPoint(x: r.minX + 182, y: r.minY + 6.5), withAttributes: shadowAttrs)
     }
 
     private func bottomToolbarRect() -> NSRect {
@@ -1112,9 +1235,25 @@ final class SelectionView: NSView {
             "OCR".draw(at: NSPoint(x: badgeRect.midX - sz.width / 2, y: badgeRect.midY - sz.height / 2), withAttributes: attrs)
         case .cancel:
             drawSystemIcon("xmark", in: rect, tint: tint)
-        case .divider:
-            NSColor(white: 0.85, alpha: 1.0).setFill()
-            NSRect(x: rect.midX - 0.5, y: rect.minY + 6, width: 1, height: 18).fill()
+        case .scrolling:
+            // Custom Scrolling / Long Screenshot Icon [ ↕ ] (222.jpg)
+            tint.setStroke()
+            let box = NSRect(x: rect.minX + 9, y: rect.minY + 5, width: 12, height: 20)
+            let bp = NSBezierPath(roundedRect: box, xRadius: 2.5, yRadius: 2.5)
+            bp.lineWidth = 1.5
+            bp.stroke()
+
+            let arrowPath = NSBezierPath()
+            arrowPath.lineWidth = 1.3
+            arrowPath.move(to: NSPoint(x: box.midX, y: box.minY + 4))
+            arrowPath.line(to: NSPoint(x: box.midX, y: box.maxY - 4))
+            arrowPath.move(to: NSPoint(x: box.midX - 2.5, y: box.maxY - 7))
+            arrowPath.line(to: NSPoint(x: box.midX, y: box.maxY - 4))
+            arrowPath.line(to: NSPoint(x: box.midX + 2.5, y: box.maxY - 7))
+            arrowPath.move(to: NSPoint(x: box.midX - 2.5, y: box.minY + 7))
+            arrowPath.line(to: NSPoint(x: box.midX, y: box.minY + 4))
+            arrowPath.line(to: NSPoint(x: box.midX + 2.5, y: box.minY + 7))
+            arrowPath.stroke()
         case .save:
             if NSImage(systemSymbolName: "arrow.down.to.line", accessibilityDescription: nil) != nil {
                 drawSystemIcon("arrow.down.to.line", in: rect, tint: tint)

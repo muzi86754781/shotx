@@ -40,6 +40,28 @@ enum ImageSaver {
         }
     }
 
+    static func jpegData(from image: NSImage) -> Data? {
+        autoreleasepool {
+            bitmapRep(from: image)?.representation(using: .jpeg, properties: [.compressionFactor: 0.92])
+        }
+    }
+
+    static func heicData(from image: NSImage) -> Data? {
+        autoreleasepool {
+            var rect = NSRect(origin: .zero, size: image.size)
+            guard let cg = image.cgImage(forProposedRect: &rect, context: nil, hints: nil) else {
+                return pngData(from: image)
+            }
+            let data = NSMutableData()
+            guard let dest = CGImageDestinationCreateWithData(data as CFMutableData, "public.heic" as CFString, 1, nil) else {
+                return pngData(from: image)
+            }
+            CGImageDestinationAddImage(dest, cg, nil)
+            guard CGImageDestinationFinalize(dest) else { return pngData(from: image) }
+            return data as Data
+        }
+    }
+
     /// PNG and TIFF from one rasterization.
     static func encode(_ image: NSImage) -> EncodedImage? {
         autoreleasepool {
@@ -91,29 +113,46 @@ enum ImageSaver {
 
     @discardableResult
     static func saveToPreferencesFolder(_ image: NSImage) -> URL? {
-        guard let data = pngData(from: image) else { return nil }
-        return saveToPreferencesFolder(pngData: data)
+        let fmt = PreferencesStore.shared.screenshotFormat
+        let data: Data?
+        switch fmt {
+        case .png:
+            data = pngData(from: image)
+        case .jpg:
+            data = jpegData(from: image)
+        case .heic:
+            data = heicData(from: image)
+        }
+        guard let fileData = data else { return nil }
+        return saveToPreferencesFolder(data: fileData, fileExtension: fmt.fileExtension)
     }
 
     @discardableResult
     static func saveToPreferencesFolder(pngData: Data) -> URL? {
+        saveToPreferencesFolder(data: pngData, fileExtension: "png")
+    }
+
+    @discardableResult
+    static func saveToPreferencesFolder(data: Data, fileExtension: String) -> URL? {
         let folder = PreferencesStore.shared.saveDirectoryURL
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
-        let url = folder.appendingPathComponent("ShotX \(formatter.string(from: Date())).png")
+        let url = folder.appendingPathComponent("ShotX \(formatter.string(from: Date())).\(fileExtension)")
         do {
-            try pngData.write(to: url)
+            try data.write(to: url)
             ToastController.shared.show(
                 message: "已保存至: \(url.lastPathComponent)",
                 icon: "checkmark.circle.fill",
-                tint: .systemGreen
+                tint: .systemGreen,
+                position: .center
             )
             return url
         } catch {
             ToastController.shared.show(
                 message: "保存失败: \(error.localizedDescription)",
                 icon: "exclamationmark.triangle.fill",
-                tint: .systemRed
+                tint: .systemRed,
+                position: .center
             )
             return nil
         }

@@ -165,9 +165,10 @@ final class RecordingCompletePopupController {
             try FileManager.default.copyItem(at: tempURL, to: dest)
             if revealInFinder {
                 ToastController.shared.show(
-                    message: "录屏已保存到桌面",
+                    message: "录屏已保存至: \(dest.lastPathComponent)",
                     icon: "checkmark.circle.fill",
-                    tint: .systemGreen
+                    tint: .systemGreen,
+                    position: .center
                 )
                 NSWorkspace.shared.activateFileViewerSelecting([dest])
             }
@@ -195,11 +196,11 @@ final class RecordingCompletePopupController {
     }
 
     private static func desktopDestination(extension ext: String) -> URL {
-        let desktop = FileManager.default.urls(for: .desktopDirectory, in: .userDomainMask).first!
+        let folder = PreferencesStore.shared.screenRecordingSaveDirectoryURL
         let formatter = DateFormatter()
         formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         let safeExt = ext.isEmpty ? "mp4" : ext
-        return desktop.appendingPathComponent("ShotX Recording \(formatter.string(from: Date())).\(safeExt)")
+        return folder.appendingPathComponent("ShotX 录屏 \(formatter.string(from: Date())).\(safeExt)")
     }
 }
 

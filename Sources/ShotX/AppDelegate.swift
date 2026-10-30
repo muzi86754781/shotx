@@ -5,9 +5,17 @@ import UniformTypeIdentifiers
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
     private var hotKeyManager: HotKeyManager!
-    private var colorPickerHotKeyManager: HotKeyManager!
     private var fullscreenHotKeyManager: HotKeyManager!
+    private var windowHotKeyManager: HotKeyManager!
+    private var previousAreaHotKeyManager: HotKeyManager!
     private var ocrHotKeyManager: HotKeyManager!
+    private var recordScreenHotKeyManager: HotKeyManager!
+    private var recordAudioHotKeyManager: HotKeyManager!
+    private var pinHotKeyManager: HotKeyManager!
+    private var colorPickerHotKeyManager: HotKeyManager!
+    private var desktopIconsHotKeyManager: HotKeyManager!
+    private var allInOneHotKeyManager: HotKeyManager!
+
     private var overlayController: OverlayController?
     private var popupController: PostCapturePopupController?
     private var annotationControllers: [AnnotationWindowController] = []
@@ -139,7 +147,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(menuItem(
             title: "全能截图",
             symbol: "square.grid.2x2",
-            action: #selector(showAllInOne)
+            action: #selector(showAllInOne),
+            shortcut: ShortcutStore.shared.allInOneShortcut
         ))
 
         menu.addItem(.separator())
@@ -154,8 +163,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let prev = menuItem(
             title: "截取上一区域",
             symbol: "arrow.clockwise",
-            action: #selector(capturePreviousAreaFromMenu)
+            action: #selector(capturePreviousAreaFromMenu),
+            shortcut: ShortcutStore.shared.previousAreaShortcut
         )
+        prev.toolTip = "按照上一次截图的相同位置和大小自动截图，无需重新拉框"
         prev.isEnabled = LastCaptureStore.hasPrevious
         menu.addItem(prev)
 
@@ -169,7 +180,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(menuItem(
             title: "截取窗口",
             symbol: "macwindow",
-            action: #selector(captureWindow)
+            action: #selector(captureWindow),
+            shortcut: ShortcutStore.shared.windowCaptureShortcut
         ))
 
         menu.addItem(menuItem(
@@ -186,16 +198,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             let stop = menuItem(
                 title: "停止录制",
                 symbol: "stop.fill",
-                action: #selector(stopRecording)
+                action: #selector(stopRecording),
+                shortcut: ShortcutStore.shared.recordScreenShortcut
             )
             menu.addItem(stop)
         } else {
             menu.addItem(menuItem(
                 title: "屏幕录制",
                 symbol: "video",
-                action: #selector(recordScreen)
+                action: #selector(recordScreen),
+                shortcut: ShortcutStore.shared.recordScreenShortcut
             ))
         }
+
+        let isAudioRec = AudioRecorderController.shared.isRecording
+        menu.addItem(menuItem(
+            title: isAudioRec ? "停止录音" : "屏幕录音",
+            symbol: isAudioRec ? "stop.circle.fill" : "mic.fill",
+            action: #selector(toggleAudioRecording),
+            shortcut: ShortcutStore.shared.recordAudioShortcut
+        ))
 
         menu.addItem(.separator())
 
@@ -217,12 +239,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
         menu.addItem(.separator())
 
+        let isDeskVisible = DesktopIcons.isVisible()
         let showDesktop = menuItem(
-            title: "显示桌面图标",
-            symbol: "menubar.dock.rectangle",
-            action: #selector(toggleDesktopIcons)
+            title: isDeskVisible ? "隐藏桌面图标" : "显示桌面图标",
+            symbol: isDeskVisible ? "eye.slash" : "eye",
+            action: #selector(toggleDesktopIcons),
+            shortcut: ShortcutStore.shared.desktopIconsShortcut
         )
-        showDesktop.state = DesktopIcons.isVisible() ? .on : .off
+        showDesktop.toolTip = "一键隐藏或恢复桌面上所有文件和图标，录屏或演示更整洁"
         menu.addItem(showDesktop)
 
         menu.addItem(menuItem(
@@ -248,7 +272,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         menu.addItem(menuItem(
             title: "贴图到屏幕…",
             symbol: "pin",
-            action: #selector(pinToScreen)
+            action: #selector(pinToScreen),
+            shortcut: ShortcutStore.shared.pinShortcut
         ))
 
         menu.addItem(.separator())
@@ -331,25 +356,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     private func setupHotKey() {
         hotKeyManager = HotKeyManager()
-        colorPickerHotKeyManager = HotKeyManager()
         fullscreenHotKeyManager = HotKeyManager()
+        windowHotKeyManager = HotKeyManager()
+        previousAreaHotKeyManager = HotKeyManager()
         ocrHotKeyManager = HotKeyManager()
+        recordScreenHotKeyManager = HotKeyManager()
+        recordAudioHotKeyManager = HotKeyManager()
+        pinHotKeyManager = HotKeyManager()
+        colorPickerHotKeyManager = HotKeyManager()
+        desktopIconsHotKeyManager = HotKeyManager()
+        allInOneHotKeyManager = HotKeyManager()
 
         applyCaptureShortcut(ShortcutStore.shared.shortcut)
-        applyColorPickerShortcut(ShortcutStore.shared.colorPickerShortcut)
         applyFullscreenShortcut(ShortcutStore.shared.fullscreenShortcut)
+        applyWindowShortcut(ShortcutStore.shared.windowCaptureShortcut)
+        applyPreviousAreaShortcut(ShortcutStore.shared.previousAreaShortcut)
         applyOCRShortcut(ShortcutStore.shared.ocrShortcut)
+        applyRecordScreenShortcut(ShortcutStore.shared.recordScreenShortcut)
+        applyRecordAudioShortcut(ShortcutStore.shared.recordAudioShortcut)
+        applyPinShortcut(ShortcutStore.shared.pinShortcut)
+        applyColorPickerShortcut(ShortcutStore.shared.colorPickerShortcut)
+        applyDesktopIconsShortcut(ShortcutStore.shared.desktopIconsShortcut)
+        applyAllInOneShortcut(ShortcutStore.shared.allInOneShortcut)
 
-        // @Published fires BEFORE willSet, so reading the property in the sink
-        // would still see the old value. Use the new value from the publisher.
         ShortcutStore.shared.$shortcut
             .dropFirst()
             .sink { [weak self] new in self?.applyCaptureShortcut(new) }
-            .store(in: &shortcutCancellables)
-
-        ShortcutStore.shared.$colorPickerShortcut
-            .dropFirst()
-            .sink { [weak self] new in self?.applyColorPickerShortcut(new) }
             .store(in: &shortcutCancellables)
 
         ShortcutStore.shared.$fullscreenShortcut
@@ -357,9 +389,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .sink { [weak self] new in self?.applyFullscreenShortcut(new) }
             .store(in: &shortcutCancellables)
 
+        ShortcutStore.shared.$windowCaptureShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyWindowShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$previousAreaShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyPreviousAreaShortcut(new) }
+            .store(in: &shortcutCancellables)
+
         ShortcutStore.shared.$ocrShortcut
             .dropFirst()
             .sink { [weak self] new in self?.applyOCRShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$recordScreenShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyRecordScreenShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$recordAudioShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyRecordAudioShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$pinShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyPinShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$colorPickerShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyColorPickerShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$desktopIconsShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyDesktopIconsShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$allInOneShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyAllInOneShortcut(new) }
             .store(in: &shortcutCancellables)
     }
 
@@ -369,21 +441,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
-    private func applyColorPickerShortcut(_ s: Shortcut) {
-        colorPickerHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
-            self?.pickColor()
-        }
-    }
-
     private func applyFullscreenShortcut(_ s: Shortcut) {
         fullscreenHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
             self?.captureFullscreen(settleDelay: 0)
         }
     }
 
+    private func applyWindowShortcut(_ s: Shortcut) {
+        windowHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.captureWindow()
+        }
+    }
+
+    private func applyPreviousAreaShortcut(_ s: Shortcut) {
+        previousAreaHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.capturePreviousArea(settleDelay: 0)
+        }
+    }
+
     private func applyOCRShortcut(_ s: Shortcut) {
         ocrHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
             self?.captureTextNow()
+        }
+    }
+
+    private func applyRecordScreenShortcut(_ s: Shortcut) {
+        recordScreenHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.recordScreen()
+        }
+    }
+
+    private func applyRecordAudioShortcut(_ s: Shortcut) {
+        recordAudioHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.toggleAudioRecording()
+        }
+    }
+
+    private func applyPinShortcut(_ s: Shortcut) {
+        pinHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.pinToScreen()
+        }
+    }
+
+    private func applyColorPickerShortcut(_ s: Shortcut) {
+        colorPickerHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.pickColor()
+        }
+    }
+
+    private func applyDesktopIconsShortcut(_ s: Shortcut) {
+        desktopIconsHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.toggleDesktopIcons()
+        }
+    }
+
+    private func applyAllInOneShortcut(_ s: Shortcut) {
+        allInOneHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.showAllInOne()
         }
     }
 
@@ -422,6 +536,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             else { return }
             LastCaptureStore.save(rect: screen.frame, screen: screen)
             self.handleCapturedImage(image)
+            ToastController.shared.show(
+                message: "全屏截图已复制到剪贴板",
+                icon: "display",
+                tint: .systemGreen,
+                position: .center
+            )
         }
     }
 
@@ -433,6 +553,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         guard ensurePermissionOrPrompt() else { return }
         guard let stored = LastCaptureStore.load() else {
             NSSound.beep()
+            ToastController.shared.show(
+                message: "暂无上一次截图区域，请先进行一次截图",
+                icon: "exclamationmark.triangle.fill",
+                tint: .systemOrange,
+                position: .center
+            )
             return
         }
         after(settleDelay) { [weak self] in
@@ -440,6 +566,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                   let image = ScreenCapture.capture(rectInScreenCoords: stored.rect, screen: stored.screen)
             else { return }
             self.handleCapturedImage(image)
+            ToastController.shared.show(
+                message: "上一区域截图已复制到剪贴板",
+                icon: "arrow.clockwise",
+                tint: .systemGreen,
+                position: .center
+            )
         }
     }
 
@@ -479,11 +611,48 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             self?.windowCaptureController = nil
             guard let image = image else { return }
             self?.handleCapturedImage(image)
+            ToastController.shared.show(
+                message: "窗口截图已复制到剪贴板",
+                icon: "macwindow",
+                tint: .systemGreen,
+                position: .center
+            )
         }
     }
 
     @objc func captureTextNow() {
-        captureNow()
+        guard overlayController == nil else { return }
+        guard ensurePermissionOrPrompt() else { return }
+        let controller = OverlayController()
+        overlayController = controller
+        controller.begin(isOCR: true, onOCRResult: { [weak self] ocrImage in
+            self?.overlayController = nil
+            guard let image = ocrImage,
+                  let cgImage = OCR.cgImage(from: image) else { return }
+            Task { @MainActor in
+                if let text = await OCR.recognize(in: cgImage) {
+                    ImageSaver.copyTextToClipboard(text)
+                    SoundEffect.shared.playShutter()
+                    ToastController.shared.show(
+                        message: "已识别完成并复制到剪贴板",
+                        icon: "checkmark.circle.fill",
+                        tint: .systemGreen,
+                        duration: 3.0,
+                        position: .center
+                    )
+                } else {
+                    ToastController.shared.show(
+                        message: "未识别到文字内容",
+                        icon: "exclamationmark.triangle.fill",
+                        tint: .systemOrange,
+                        duration: 2.5,
+                        position: .center
+                    )
+                }
+            }
+        }, completion: { [weak self] in
+            self?.overlayController = nil
+        })
     }
 
     @objc private func pinToScreen() {
@@ -491,7 +660,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func toggleDesktopIcons() {
+        let willBeVisible = !DesktopIcons.isVisible()
         DesktopIcons.toggle()
+        let msg = willBeVisible ? "桌面图标已恢复显示" : "桌面图标已隐藏"
+        let icon = willBeVisible ? "eye.fill" : "eye.slash.fill"
+        ToastController.shared.show(
+            message: msg,
+            icon: icon,
+            tint: .systemBlue,
+            position: .center
+        )
+    }
+
+    @objc private func toggleAudioRecording() {
+        AudioRecorderController.shared.toggleRecording()
     }
 
     @objc private func pickColor() {

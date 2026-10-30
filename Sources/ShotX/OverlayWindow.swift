@@ -7,6 +7,8 @@ final class OverlayWindow: NSWindow {
     init(
         screen: NSScreen,
         snapshot: CGImage?,
+        isOCR: Bool = false,
+        onOCRResult: ((NSImage) -> Void)? = nil,
         onActive: @escaping (OverlayWindow) -> Void,
         onFinish: @escaping () -> Void,
         onCancel: @escaping () -> Void
@@ -15,7 +17,8 @@ final class OverlayWindow: NSWindow {
         self.selectionView = SelectionView(
             frame: NSRect(origin: .zero, size: screen.frame.size),
             screen: screen,
-            snapshot: snapshot
+            snapshot: snapshot,
+            isOCR: isOCR
         )
 
         super.init(
@@ -36,6 +39,7 @@ final class OverlayWindow: NSWindow {
         acceptsMouseMovedEvents = true
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
 
+        selectionView.onOCRSelected = onOCRResult
         selectionView.onActive = { [weak self] in
             guard let self = self else { return }
             onActive(self)
