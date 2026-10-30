@@ -95,8 +95,3 @@ jobs:
           files: dist/ShotX-*.dmg
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          draft: false
-          prerelease: false
-          files: dist/ShotX-*.dmg
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
