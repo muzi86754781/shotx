@@ -1,6 +1,7 @@
 import Cocoa
 import Combine
 import UniformTypeIdentifiers
+import Carbon.HIToolbox
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
@@ -745,11 +746,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let oldChangeCount = NSPasteboard.general.changeCount
         let src = CGEventSource(stateID: .hidSystemState)
         let keyDown = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: true)
-        keyDown?.flags = .maskCommand
+        keyDown?.flags = CGEventFlags.maskCommand
         let keyUp = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: false)
-        keyUp?.flags = .maskCommand
-        keyDown?.post(tap: .cghidEventTap)
-        keyUp?.post(tap: .cghidEventTap)
+        keyUp?.flags = CGEventFlags.maskCommand
+        keyDown?.post(tap: CGEventTapLocation.cghidEventTap)
+        keyUp?.post(tap: CGEventTapLocation.cghidEventTap)
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
             if NSPasteboard.general.changeCount != oldChangeCount,
