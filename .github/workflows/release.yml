@@ -1,0 +1,83 @@
+name: Build and Release
+
+on:
+  push:
+    branches:
+      - main
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.9.1)'
+        required: false
+        default: '1.9.1'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Release DMG
+    runs-on: macos-14
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s /Applications/Xcode.app
+          swift --version
+
+      - name: Determine Version
+        id: get_version
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            VERSION="1.9.1"
+          fi
+          TAG="v$VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "Building ShotX version: $VERSION ($TAG)"
+
+      - name: Build App & DMG
+        run: |
+          chmod +x Scripts/*.sh
+          export VERSION="$VERSION"
+          ./Scripts/build-app.sh
+          ./Scripts/make-dmg.sh
+
+      - name: Verify Artifacts
+        run: |
+          ls -la dist/
+          if [ ! -f "dist/ShotX-$VERSION.dmg" ]; then
+            echo "Expected DMG not found: dist/ShotX-$VERSION.dmg"
+            exit 1
+          fi
+
+      - name: Create or Update GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ShotX ${{ env.TAG }}
+          body: |
+            ### ShotX ${{ env.TAG }}
+
+            #### 更新说明
+            - 操作界面全面支持中文显示
+            - 修复截屏框选桌面区域后页面卡死并无法操作的问题（调整窗口层级、即时释放全屏遮罩并恢复系统光标、增加麦克风权限预检与异常保护）
+            - 增强文字识别（OCR）对简体中文与繁体中文的支持
+
+            #### 下载安装
+            下载下方的 `ShotX-${{ env.VERSION }}.dmg` 文件，双击打开并将 ShotX 拖入 Applications（应用程序）文件夹即可。
+          draft: false
+          prerelease: false
+          files: dist/ShotX-*.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

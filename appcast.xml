@@ -1,0 +1,171 @@
+<?xml version="1.0" standalone="yes"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle" xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <channel>
+        <title>ShotX Updates</title>
+        <link>https://raw.githubusercontent.com/aimen08/shotx/main/appcast.xml</link>
+        <description>Updates for ShotX</description>
+        <language>en</language>
+
+        <item>
+            <title>Version 1.9.10</title>
+            <pubDate>Mon, 31 Aug 2026 00:45:46 +0000</pubDate>
+            <sparkle:version>1.9.10</sparkle:version>
+            <sparkle:shortVersionString>1.9.10</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9.10/ShotX-1.9.10.dmg" length="2326206" type="application/octet-stream" sparkle:edSignature="nlQrJ4n61RClonjhY2/fYjUBfkWBKgt3QC3tnZRu3CdpiaG8o1xqfVuzY9zSsxS6difYyHONmN/c9w2alg8nDA==" />
+        </item>
+
+        <item>
+            <title>Version 1.9.9</title>
+            <pubDate>Sun, 30 Aug 2026 13:38:32 +0000</pubDate>
+            <sparkle:version>1.9.9</sparkle:version>
+            <sparkle:shortVersionString>1.9.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9.9/ShotX-1.9.9.dmg" length="2319068" type="application/octet-stream" sparkle:edSignature="ShHVwWSE4r4y9H5+zV1B1tg7XqW2obyzlbT1MfmMB9MwCg00e/lm3CmN8t8S5jfPhZRfyO1ucp11hREXRfjvAQ==" />
+        </item>
+
+        <item>
+            <title>Version 1.9.8</title>
+            <pubDate>Tue, 09 Jun 2026 00:48:07 +0000</pubDate>
+            <sparkle:version>1.9.8</sparkle:version>
+            <sparkle:shortVersionString>1.9.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9.8/ShotX-1.9.8.dmg" length="2270590" type="application/octet-stream" sparkle:edSignature="u2jat3lzm8OrEMg5rapMbKZ6nzCjw2GGzXYnNx5GIwom/Wo4uN+30d+hG0gBbva8b590YEXJODZ+TAw2JJh7Dg==" />
+        </item>
+
+        <item>
+            <title>Version 1.9.7</title>
+            <pubDate>Sat, 25 Apr 2026 19:45:21 +0000</pubDate>
+            <sparkle:version>1.9.7</sparkle:version>
+            <sparkle:shortVersionString>1.9.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9.7/ShotX-1.9.7.dmg" length="2271218" type="application/octet-stream" sparkle:edSignature="eOwfC5A/Q5nkDcusF0nY1lYgiIIqrOVi0Ak7dfc5kVpPvDu668uAEmBZbnOK+ctzEemetAJxpdJBzKmNnnfgBw==" />
+        </item>
+
+        <item>
+            <title>Version 1.9.6</title>
+            <pubDate>Fri, 24 Apr 2026 13:58:10 +0000</pubDate>
+            <sparkle:version>1.9.6</sparkle:version>
+            <sparkle:shortVersionString>1.9.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9.6/ShotX-1.9.6.dmg" length="2248250" type="application/octet-stream" sparkle:edSignature="UAU4CA6BoOWCq1zde09JejxnP0narQcPnjuECFmdyy51RhE0BniUzTbfvCDD/FSufP6GRM3MdX/redixKvVjDg==" />
+        </item>
+
+        <item>
+            <title>Version 1.9.5</title>
+            <pubDate>Fri, 24 Apr 2026 00:59:42 +0000</pubDate>
+            <sparkle:version>1.9.5</sparkle:version>
+            <sparkle:shortVersionString>1.9.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9.5/ShotX-1.9.5.dmg" length="2226681" type="application/octet-stream" sparkle:edSignature="TZdfW1r6vD9I5KV3Ua/tJXPYqMfYihZFxrL1NUptJEC4Z4bVh+rR6RapEURhr3NZ8kd5LcU/ZasiLgOFqqNoDg==" />
+        </item>
+
+        <item>
+            <title>Version 1.9.4</title>
+            <pubDate>Thu, 23 Apr 2026 20:55:52 +0000</pubDate>
+            <sparkle:version>1.9.4</sparkle:version>
+            <sparkle:shortVersionString>1.9.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9.4/ShotX-1.9.4.dmg" length="2224369" type="application/octet-stream" sparkle:edSignature="i+VkUXP3wfE5UvRhKrOALo+KlGVY6PMLFKNS7VICJTcQs1/EcuUjFvaQZa6ftTYaPcMvENLGKtxCUIWBjBrqDw==" />
+        </item>
+
+        <item>
+            <title>Version 1.9.3</title>
+            <pubDate>Thu, 23 Apr 2026 20:28:21 +0000</pubDate>
+            <sparkle:version>1.9.3</sparkle:version>
+            <sparkle:shortVersionString>1.9.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9.3/ShotX-1.9.3.dmg" length="2227678" type="application/octet-stream" sparkle:edSignature="4DzbTHvqXy4D/sj6h4Swuzcrzbj+4UkiVnPQDXXCJwjgretNo43sgp0AYxhz2WsAJQW7uYwjykaFosZlXldiBg==" />
+        </item>
+
+        <item>
+            <title>Version 1.9.2</title>
+            <pubDate>Thu, 23 Apr 2026 19:39:39 +0000</pubDate>
+            <sparkle:version>1.9.2</sparkle:version>
+            <sparkle:shortVersionString>1.9.2</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9.2/ShotX-1.9.2.dmg" length="2223559" type="application/octet-stream" sparkle:edSignature="tFSRusukC+1eCeVjcnnq05Z/vo/UwVuf2W9v24DRI+pY5WrhLfuvUiHa5q1bBuJy6NVMUhSu71memc2wa3QJDQ==" />
+        </item>
+
+        <item>
+            <title>Version 1.9.1</title>
+            <pubDate>Thu, 23 Apr 2026 19:06:09 +0000</pubDate>
+            <sparkle:version>1.9.1</sparkle:version>
+            <sparkle:shortVersionString>1.9.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9.1/ShotX-1.9.1.dmg" length="2194810" type="application/octet-stream" sparkle:edSignature="Z75YvVOrWqnlFmAHxD+PQHQs00z2+8SyLERYhGwqCqjeEO7X/D2ouz9DqpDhwl5kc0/vKfmZoM6U9oSxPpaiBw==" />
+        </item>
+
+        <item>
+            <title>Version 1.9</title>
+            <pubDate>Thu, 23 Apr 2026 18:39:07 +0000</pubDate>
+            <sparkle:version>1.9</sparkle:version>
+            <sparkle:shortVersionString>1.9</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.9/ShotX-1.9.dmg" length="2169236" type="application/octet-stream" sparkle:edSignature="qSWKGGqBfu2J+nnk6XhQBqJZebzqrM6rdjQySR7cWmKhH4B9wxmpM7ZnHMerm88NyMcJxB10NkAAYfkeS85yCQ==" />
+        </item>
+
+        <item>
+            <title>Version 1.8.1</title>
+            <pubDate>Thu, 23 Apr 2026 14:08:29 +0000</pubDate>
+            <sparkle:version>1.8.1</sparkle:version>
+            <sparkle:shortVersionString>1.8.1</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.8.1/ShotX-1.8.1.dmg" length="1634637" type="application/octet-stream" sparkle:edSignature="CAxBUiJi+oANV1IrTa7fYpdIIX7RZqGO07GYuGaWM9Y55tdJjX1L4jhllbC48kYyAjLoooGRfNjV4QaNLGnFBA==" />
+        </item>
+
+        <item>
+            <title>Version 1.8</title>
+            <pubDate>Thu, 23 Apr 2026 13:22:10 +0000</pubDate>
+            <sparkle:version>1.8</sparkle:version>
+            <sparkle:shortVersionString>1.8</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.8/ShotX-1.8.dmg" length="1622420" type="application/octet-stream" sparkle:edSignature="aH6o4fNq5ATG/YiB9WNr+LFQS7KG12XdTu3pe4g1b2xeOwPJl6YYiMEQTjs8wH+dc7A/lMwQpv2J6RWckoZMAg==" />
+        </item>
+
+        <item>
+            <title>Version 1.7</title>
+            <pubDate>Thu, 23 Apr 2026 02:26:24 +0000</pubDate>
+            <sparkle:version>1.7</sparkle:version>
+            <sparkle:shortVersionString>1.7</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.7/ShotX-1.7.dmg" length="1614435" type="application/octet-stream" sparkle:edSignature="SIfjFnOzMUmyZVVlsKH059xDYV+DGAVMjIupfH/Usq3m6kCcdLrZswWo8XBr+ZfMXdV3tz10AzecH7LqbSKKBQ==" />
+        </item>
+
+        <item>
+            <title>Version 1.6</title>
+            <pubDate>Thu, 23 Apr 2026 02:22:30 +0000</pubDate>
+            <sparkle:version>1.6</sparkle:version>
+            <sparkle:shortVersionString>1.6</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.6/ShotX-1.6.dmg" length="1614343" type="application/octet-stream" sparkle:edSignature="ZMtHXn1hEmho1gToZwKzmgiDPpNxbxuE7XFbP19vy8BXq5jW+HfIWdwM/2XUSY2FRtvyN3Ii3TaNNSEEyKYyBA==" />
+        </item>
+
+        <item>
+            <title>Version 1.5</title>
+            <pubDate>Thu, 23 Apr 2026 02:00:56 +0000</pubDate>
+            <sparkle:version>1.5</sparkle:version>
+            <sparkle:shortVersionString>1.5</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.5/ShotX-1.5.dmg" length="1598524" type="application/octet-stream" sparkle:edSignature="3EgaYSafTwCYeWikco0dINZnXvCGVH9/E3t5HP6eOT6v/BGwVBOPbJAuXk/SN+AIRc1noSjV8n0EDL9lmntoDw==" />
+        </item>
+
+        <item>
+            <title>Version 1.4</title>
+            <pubDate>Thu, 23 Apr 2026 01:51:38 +0000</pubDate>
+            <sparkle:version>1.4</sparkle:version>
+            <sparkle:shortVersionString>1.4</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.4/ShotX-1.4.dmg" length="1598546" type="application/octet-stream" sparkle:edSignature="Hkpy16Dic42Zf1iousnNNd0F3NuACWCWuD3I3PIXp1+WHhjAPUR3TH4iIvIZuYxBWin9Xr2A5Y+RDWg4He2DCw==" />
+        </item>
+
+        <item>
+            <title>Version 1.3</title>
+            <pubDate>Thu, 23 Apr 2026 01:46:16 +0000</pubDate>
+            <sparkle:version>1.3</sparkle:version>
+            <sparkle:shortVersionString>1.3</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/aimen08/shotx/releases/download/v1.3/ShotX-1.3.dmg" length="1598503" type="application/octet-stream" sparkle:edSignature="HuUUvt4lJKKHZHkCU35lVu35LEJZqbPrddJKoYYLjnvcHlTVPTzOTR2pPl4R/Q7+tfalCJmm3TfKyJ30LS4qAA==" />
+        </item>
+    </channel>
+</rss>
