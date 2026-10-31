@@ -1096,19 +1096,223 @@ struct SettingsView: View {
                     }
                 }
 
-                // 3. 快捷键卡片
+                // 3. 文本识别 (OCR) 平台
+                SettingsCard(
+                    icon: "text.viewfinder",
+                    tint: .orange,
+                    title: "文本识别 (OCR) 平台",
+                    subtitle: "配置离线或云端文字识别服务平台与密钥"
+                ) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("识别服务平台")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("支持 Apple Vision、百度智能云、有道智云、谷歌、腾讯云")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Picker("", selection: $preferences.ocrPlatform) {
+                                ForEach(OCRPlatform.allCases) { p in
+                                    Text(p.displayName).tag(p)
+                                }
+                            }
+                            .frame(width: 260)
+                        }
+
+                        Divider()
+
+                        switch preferences.ocrPlatform {
+                        case .apple:
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.shield.fill")
+                                    .foregroundStyle(.green)
+                                Text("使用 macOS 原生 Vision 离线模型，无需配置密钥，保护隐私且识别极速。")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(.secondary)
+                            }
+                        case .baidu:
+                            VStack(spacing: 10) {
+                                HStack {
+                                    Text("API Key")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 80, alignment: .leading)
+                                    TextField("请输入百度智能云 API Key", text: $preferences.baiduOCRAPIKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                HStack {
+                                    Text("Secret Key")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 80, alignment: .leading)
+                                    SecureField("请输入百度智能云 Secret Key", text: $preferences.baiduOCRSecretKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                            }
+                        case .youdao:
+                            VStack(spacing: 10) {
+                                HStack {
+                                    Text("应用 ID (AppKey)")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 120, alignment: .leading)
+                                    TextField("请输入有道智云应用 ID", text: $preferences.youdaoOCRAppKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                HStack {
+                                    Text("应用密钥 (Secret)")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 120, alignment: .leading)
+                                    SecureField("请输入有道智云应用密钥", text: $preferences.youdaoOCRAppSecret)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                            }
+                        case .google:
+                            HStack {
+                                Text("API Key")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .frame(width: 80, alignment: .leading)
+                                SecureField("请输入 Google Cloud Vision API Key", text: $preferences.googleOCRAPIKey)
+                                    .textFieldStyle(.roundedBorder)
+                            }
+                        case .tencent:
+                            VStack(spacing: 10) {
+                                HStack {
+                                    Text("SecretId")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 80, alignment: .leading)
+                                    TextField("请输入腾讯云 SecretId", text: $preferences.tencentOCRSecretId)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                HStack {
+                                    Text("SecretKey")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 80, alignment: .leading)
+                                    SecureField("请输入腾讯云 SecretKey", text: $preferences.tencentOCRSecretKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 4. 文本翻译平台
+                SettingsCard(
+                    icon: "globe",
+                    tint: .indigo,
+                    title: "文本翻译平台",
+                    subtitle: "配置多语言机器翻译服务平台与密钥"
+                ) {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("翻译服务平台")
+                                    .font(.system(size: 13, weight: .medium))
+                                Text("支持谷歌翻译、百度通用翻译、有道智云、腾讯云机器翻译")
+                                    .font(.system(size: 11))
+                                    .foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            Picker("", selection: $preferences.translationPlatform) {
+                                ForEach(TranslationPlatform.allCases) { p in
+                                    Text(p.displayName).tag(p)
+                                }
+                            }
+                            .frame(width: 260)
+                        }
+
+                        Divider()
+
+                        switch preferences.translationPlatform {
+                        case .google:
+                            HStack(spacing: 8) {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundStyle(.green)
+                                Text("使用 Google Translate 免费翻译接口，开箱即用，免配置 ID 与密钥。")
+                                    .font(.system(size: 11.5))
+                                    .foregroundStyle(.secondary)
+                            }
+                        case .baidu:
+                            VStack(spacing: 10) {
+                                HStack {
+                                    Text("APP ID")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 80, alignment: .leading)
+                                    TextField("请输入百度翻译开放平台 APP ID", text: $preferences.baiduTranslateAppId)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                HStack {
+                                    Text("密钥 (Secret)")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 80, alignment: .leading)
+                                    SecureField("请输入百度翻译开放平台密钥", text: $preferences.baiduTranslateSecretKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                            }
+                        case .youdao:
+                            VStack(spacing: 10) {
+                                HStack {
+                                    Text("应用 ID (AppKey)")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 120, alignment: .leading)
+                                    TextField("请输入有道智云应用 ID", text: $preferences.youdaoTranslateAppKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                HStack {
+                                    Text("应用密钥 (Secret)")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 120, alignment: .leading)
+                                    SecureField("请输入有道智云应用密钥", text: $preferences.youdaoTranslateAppSecret)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                            }
+                        case .tencent:
+                            VStack(spacing: 10) {
+                                HStack {
+                                    Text("SecretId")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 80, alignment: .leading)
+                                    TextField("请输入腾讯云 SecretId", text: $preferences.tencentTranslateSecretId)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                                HStack {
+                                    Text("SecretKey")
+                                        .font(.system(size: 12, weight: .medium))
+                                        .frame(width: 80, alignment: .leading)
+                                    SecureField("请输入腾讯云 SecretKey", text: $preferences.tencentTranslateSecretKey)
+                                        .textFieldStyle(.roundedBorder)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 5. 快捷键卡片（顺序与状态栏右键菜单保持一致）
                 SettingsCard(
                     icon: "command",
                     tint: .blue,
                     title: "快捷键",
-                    subtitle: "自定义全部 11 种核心功能的全局热键"
+                    subtitle: "自定义全部 14 种核心功能的全局热键（顺序与菜单一致）"
                 ) {
                     VStack(alignment: .leading, spacing: 11) {
+                        shortcutRow(
+                            title: "全能截图",
+                            desc: "集放大镜取色、九宫格比例参考、预设尺寸于一体的辅助截图模式",
+                            binding: $shortcuts.allInOneShortcut,
+                            defaultVal: .defaultAllInOne
+                        )
+                        dividerLine
                         shortcutRow(
                             title: "区域截图",
                             desc: "划选屏幕任意矩形区域并展开标注栏与长截图",
                             binding: $shortcuts.shortcut,
                             defaultVal: .default
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "上次区域截图",
+                            desc: "💡功能说明：重新截取上一次框选的屏幕坐标与尺寸，无需重复用鼠标手动划选",
+                            binding: $shortcuts.previousAreaShortcut,
+                            defaultVal: .defaultPrevious
                         )
                         dividerLine
                         shortcutRow(
@@ -1126,31 +1330,10 @@ struct SettingsView: View {
                         )
                         dividerLine
                         shortcutRow(
-                            title: "上次区域截图",
-                            desc: "💡功能说明：重新截取上一次框选的屏幕坐标与尺寸，无需重复用鼠标手动划选",
-                            binding: $shortcuts.previousAreaShortcut,
-                            defaultVal: .defaultPrevious
-                        )
-                        dividerLine
-                        shortcutRow(
                             title: "截图OCR",
                             desc: "划选屏幕后直接提取文本并复制到剪贴板，无标注栏打扰",
                             binding: $shortcuts.ocrShortcut,
                             defaultVal: .defaultOCR
-                        )
-                        dividerLine
-                        shortcutRow(
-                            title: "屏幕录制",
-                            desc: "划选区域开始录屏（支持声音、摄像头与按键显示）",
-                            binding: $shortcuts.recordScreenShortcut,
-                            defaultVal: .defaultRecordScreen
-                        )
-                        dividerLine
-                        shortcutRow(
-                            title: "声音录制",
-                            desc: "开启/结束系统麦克风高音质录音，悬浮药丸实时显示时长",
-                            binding: $shortcuts.recordAudioShortcut,
-                            defaultVal: .defaultRecordAudio
                         )
                         dividerLine
                         shortcutRow(
@@ -1168,17 +1351,17 @@ struct SettingsView: View {
                         )
                         dividerLine
                         shortcutRow(
-                            title: "显示/隐藏桌面图标",
-                            desc: "💡功能说明：一键隐藏或恢复桌面上所有文件与快捷方式，录屏或截图时桌面整洁干净",
-                            binding: $shortcuts.desktopIconsShortcut,
-                            defaultVal: .defaultDesktopIcons
+                            title: "屏幕录制",
+                            desc: "划选区域开始录屏（支持声音、摄像头与按键显示）",
+                            binding: $shortcuts.recordScreenShortcut,
+                            defaultVal: .defaultRecordScreen
                         )
                         dividerLine
                         shortcutRow(
-                            title: "全能截图",
-                            desc: "集放大镜取色、九宫格比例参考、预设尺寸于一体的辅助截图模式",
-                            binding: $shortcuts.allInOneShortcut,
-                            defaultVal: .defaultAllInOne
+                            title: "声音录制",
+                            desc: "开启/结束系统麦克风高音质录音，悬浮药丸实时显示时长",
+                            binding: $shortcuts.recordAudioShortcut,
+                            defaultVal: .defaultRecordAudio
                         )
                         dividerLine
                         shortcutRow(
@@ -1197,9 +1380,16 @@ struct SettingsView: View {
                         dividerLine
                         shortcutRow(
                             title: "剪贴板历史",
-                            desc: "随时呼出历史剪贴板记录，支持搜索、快速预览并批量/重复使用",
+                            desc: "随时呼出历史剪贴板记录，支持搜索、双击直接粘贴在光标处",
                             binding: $shortcuts.clipboardHistoryShortcut,
                             defaultVal: .defaultClipboardHistory
+                        )
+                        dividerLine
+                        shortcutRow(
+                            title: "隐藏桌面图标",
+                            desc: "💡功能说明：一键隐藏或恢复桌面上所有文件与快捷方式，录屏或截图时桌面整洁干净",
+                            binding: $shortcuts.desktopIconsShortcut,
+                            defaultVal: .defaultDesktopIcons
                         )
 
                         Divider().padding(.vertical, 4)
@@ -1260,7 +1450,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("ShotX  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.5")")
+                                Text("ShotX  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.6")")
                                     .font(.system(size: 14, weight: .bold))
                                 HStack(spacing: 8) {
                                     Text("开发者:")

@@ -975,68 +975,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func showAbout() {
-        NSApp.activate(ignoringOtherApps: true)
-
-        let credits = NSMutableAttributedString()
-        let baseAttrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 11),
-            .foregroundColor: NSColor.labelColor,
-            .paragraphStyle: {
-                let p = NSMutableParagraphStyle()
-                p.alignment = .center
-                p.lineSpacing = 3
-                return p
-            }()
-        ]
-
-        let fullIntro = """
-        ShotX · 现代 macOS 全能屏幕截图与录屏录音工具
-
-        ✨ 核心功能：
-        • 全能截图 / 区域截图 / 窗口与全屏截图 / 上次区域截图 / 定时截图
-        • 丰富的就地几何、箭头、荧光笔、序号标注、马赛克、圆角与阴影调节
-        • 滚动长截图智能实时拼接预览
-        • 离线高精度 OCR 屏幕文字识别与快速复制
-        • 取色放大镜拾色器（支持 RGB / HEX 拷贝）与贴图置顶
-        • 屏幕高清录制（支持声音、摄像头、按键显示与光标高亮，导出 MP4/GIF）
-        • 独立麦克风声音录制（支持悬浮计时药丸，导出 M4A）
-        • 划词翻译、截图翻译、输入翻译（多引擎中英互换、TTS 语音朗读与历史记录）
-        • 剪贴板历史管理（多格式记录、搜索与快速复用）
-        • 一键隐藏/恢复桌面图标与全功能历史记录中心
-
-        联系作者 QQ: 285351298
-
-        """
-
-        credits.append(NSAttributedString(
-            string: fullIntro,
-            attributes: baseAttrs
-        ))
-        credits.append(NSAttributedString(string: "Made with ❤️ by ", attributes: baseAttrs))
-        credits.append(NSAttributedString(
-            string: "@muzi86754781",
-            attributes: baseAttrs.merging([
-                .link: URL(string: "https://github.com/muzi86754781")!,
-                .foregroundColor: NSColor.linkColor
-            ]) { _, new in new }
-        ))
-        credits.append(NSAttributedString(string: "\n", attributes: baseAttrs))
-        credits.append(NSAttributedString(
-            string: "github.com/muzi86754781/shotx",
-            attributes: baseAttrs.merging([
-                .link: URL(string: "https://github.com/muzi86754781/shotx")!,
-                .foregroundColor: NSColor.linkColor
-            ]) { _, new in new }
-        ))
-
-        // applicationName auto-populates from CFBundleName.
-        // The "Version X" line uses CFBundleShortVersionString automatically.
-        // Pass an empty .applicationVersion (CFBundleVersion) so the panel
-        // doesn't render "Version 1.6 (1.6)" when both are the same string.
-        NSApp.orderFrontStandardAboutPanel(options: [
-            .applicationVersion: "",
-            .credits: credits
-        ])
+        MainActor.assumeIsolated {
+            AboutWindowController.shared.show()
+        }
     }
 
     @objc private func quit() {

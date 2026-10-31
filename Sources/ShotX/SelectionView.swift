@@ -69,6 +69,11 @@ final class SelectionView: NSView {
     private var isScrollingMode: Bool = false
     private var stitchedLongImage: NSImage?
     private var lastCapturedFrame: NSImage?
+    private var scrollingScrollMonitor: Any?
+    private var scrollingMouseMonitor: Any?
+    private var scrollingKeyMonitor: Any?
+    private var scrollingTimer: Timer?
+    private var lastScrollCaptureTime: TimeInterval = 0
 
     private var currentToolbarItems: [ToolbarItem] {
         if isScrollingMode {
@@ -582,18 +587,14 @@ final class SelectionView: NSView {
 
     private func handleCancel() {
         activeTextEditor?.cancel()
-        if isScrollingMode {
-            isScrollingMode = false
-            stitchedLongImage = nil
-            needsDisplay = true
-            return
-        }
+        cleanupScrollingMode()
         onCancel?()
     }
 
     private func handleCopy() {
         activeTextEditor?.commit()
         let imageToCopy = isScrollingMode ? (stitchedLongImage ?? generateFinalImage()) : generateFinalImage()
+        cleanupScrollingMode()
         guard let image = imageToCopy else { return }
         SoundEffect.shared.playShutter()
         ImageSaver.copyToClipboard(image)
@@ -602,12 +603,21 @@ final class SelectionView: NSView {
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         LastCaptureStore.save(rect: globalRect, screen: targetScreen)
 
+        ToastController.shared.show(
+            message: "已复制到剪贴板并记录",
+            icon: "checkmark.circle.fill",
+            tint: .systemGreen,
+            duration: 1.5,
+            position: .center
+        )
+
         onFinish?()
     }
 
     private func handleSave() {
         activeTextEditor?.commit()
         let imageToSave = isScrollingMode ? (stitchedLongImage ?? generateFinalImage()) : generateFinalImage()
+        cleanupScrollingMode()
         guard let image = imageToSave else { return }
         SoundEffect.shared.playShutter()
         _ = ImageSaver.saveToPreferencesFolder(image)
@@ -616,6 +626,14 @@ final class SelectionView: NSView {
 
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         LastCaptureStore.save(rect: globalRect, screen: targetScreen)
+
+        ToastController.shared.show(
+            message: "已保存到文件夹与剪贴板",
+            icon: "arrow.down.circle.fill",
+            tint: .systemGreen,
+            duration: 1.8,
+            position: .center
+        )
 
         onFinish?()
     }
@@ -659,12 +677,110 @@ final class SelectionView: NSView {
         }
     }
 
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil {
+            cleanupScrollingMode()
+        }
+    }
+
+    deinit {
+        cleanupScrollingMode()
+    }
+
+    private func cleanupScrollingMode() {
+        isScrollingMode = false
+        scrollingTimer?.invalidate()
+        scrollingTimer = nil
+        if let m = scrollingScrollMonitor {
+            NSEvent.removeMonitor(m)
+            scrollingScrollMonitor = nil
+        }
+        if let m = scrollingMouseMonitor {
+            NSEvent.removeMonitor(m)
+            scrollingMouseMonitor = nil
+        }
+        if let m = scrollingKeyMonitor {
+            NSEvent.removeMonitor(m)
+            scrollingKeyMonitor = nil
+        }
+        window?.ignoresMouseEvents = false
+    }
+
+    private func updateMouseIgnoreState() {
+        guard isScrollingMode, let win = window else { return }
+        let screenMouseLoc = NSEvent.mouseLocation
+        let p = NSPoint(x: screenMouseLoc.x - targetScreen.frame.origin.x, y: screenMouseLoc.y - targetScreen.frame.origin.y)
+
+        let toolbarRect = bottomToolbarRect().insetBy(dx: -12, dy: -12)
+        let previewRect = scrollingPreviewPanelRect().insetBy(dx: -12, dy: -12)
+
+        let isOverControls = toolbarRect.contains(p) || previewRect.contains(p)
+        let isInsideSelection = selectionRect.contains(p)
+
+        if isOverControls || !isInsideSelection {
+            if win.ignoresMouseEvents {
+                win.ignoresMouseEvents = false
+            }
+        } else {
+            if !win.ignoresMouseEvents {
+                win.ignoresMouseEvents = true
+            }
+        }
+    }
+
+    private func setupScrollingMonitors() {
+        cleanupScrollingMode()
+        isScrollingMode = true
+
+        // 1. 每 40ms 检测鼠标位置，动态在选区内放行原生鼠标/滚轮给底层软件，在工具栏上拦截以便点击
+        scrollingTimer = Timer.scheduledTimer(withTimeInterval: 0.04, repeats: true) { [weak self] _ in
+            self?.updateMouseIgnoreState()
+        }
+
+        // 2. 全局滚轮监听：当底层 App 原生滚动时触发捕获与比对拼接
+        scrollingScrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.scrollWheel]) { [weak self] event in
+            guard let self = self, self.isScrollingMode else { return }
+            self.handleExternalScroll(event: event)
+        }
+
+        // 3. 全局鼠标移动监听：即时切换事件穿透状态
+        scrollingMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
+            self?.updateMouseIgnoreState()
+        }
+
+        // 4. 全局键盘监听：无论哪个 App 处于激活状态，按 ESC 键（keyCode 53）均直接退出长截图
+        scrollingKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+            guard let self = self, self.isScrollingMode else { return }
+            if event.keyCode == 53 {
+                DispatchQueue.main.async {
+                    self.handleCancel()
+                }
+            }
+        }
+    }
+
+    private func handleExternalScroll(event: NSEvent) {
+        let now = Date().timeIntervalSinceReferenceDate
+        // 节流采样：滚动期间约 12 FPS 比对拼接，停止后执行尾帧捕捉
+        guard now - lastScrollCaptureTime >= 0.08 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                self?.captureAndStitchSlice(deltaY: event.scrollingDeltaY)
+            }
+            return
+        }
+        lastScrollCaptureTime = now
+        DispatchQueue.main.async { [weak self] in
+            self?.captureAndStitchSlice(deltaY: event.scrollingDeltaY)
+        }
+    }
+
     override func scrollWheel(with event: NSEvent) {
         if isScrollingMode {
             let p = convert(event.locationInWindow, from: nil)
             if selectionRect.contains(p) {
-                forwardScrollToUnderlyingApp(event: event)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                updateMouseIgnoreState()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
                     self?.captureAndStitchSlice(deltaY: event.scrollingDeltaY)
                 }
                 return
@@ -673,39 +789,19 @@ final class SelectionView: NSView {
         super.scrollWheel(with: event)
     }
 
-    private func forwardScrollToUnderlyingApp(event: NSEvent) {
-        let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
-        let excluded = CaptureExclusions.windowIDs
-        let windowInfos = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
-        for info in windowInfos {
-            guard let winID = info[kCGWindowNumber as String] as? CGWindowID,
-                  !excluded.contains(winID),
-                  let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
-                  let winBounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
-                continue
-            }
-            if winBounds.intersects(globalRect), let pid = info[kCGWindowOwnerPID as String] as? pid_t {
-                if let cg = event.cgEvent?.copy() {
-                    cg.postToPid(pid)
-                }
-                break
-            }
-        }
-    }
-
     private func handleScrollingCapture() {
         // Scrolling screenshot (长截图) mode (333.jpg)
-        isScrollingMode = true
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         if let initial = ScreenCapture.capture(rectInScreenCoords: globalRect, screen: targetScreen) ?? generateBaseCroppedImage() {
             stitchedLongImage = initial
             lastCapturedFrame = initial
         }
+        setupScrollingMonitors()
         ToastController.shared.show(
-            message: "请在选框内滚动鼠标以拼接长图，点击对勾完成",
+            message: "已开启长截图：在选框内滚动页面拼接，点击对勾完成，按 Esc 或叉号直接退出",
             icon: "arrow.up.and.down",
             tint: .systemBlue,
-            duration: 3.0,
+            duration: 3.5,
             position: .center
         )
         needsDisplay = true

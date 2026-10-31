@@ -201,13 +201,12 @@ final class ClipboardHistoryController {
 
         let p = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .fullSizeContentView, .nonactivatingPanel],
+            styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
-        p.title = "记录复制 (剪贴板历史)"
+        p.title = "剪贴板历史"
         p.titleVisibility = .hidden
-        p.titlebarAppearsTransparent = true
         p.isMovableByWindowBackground = true
         p.isFloatingPanel = true
         p.level = .floating
@@ -215,6 +214,7 @@ final class ClipboardHistoryController {
         p.isReleasedWhenClosed = false
         p.hasShadow = true
         p.backgroundColor = .clear
+        p.isOpaque = false
 
         if let screen = NSScreen.main {
             let origin = NSPoint(
@@ -231,6 +231,20 @@ final class ClipboardHistoryController {
     func dismiss() {
         panel?.orderOut(nil)
         panel = nil
+    }
+
+    static func pasteAtCursor(_ entry: ClipboardEntry) {
+        ClipboardStore.shared.copyToClipboard(entry)
+        shared.dismiss()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+            let src = CGEventSource(stateID: .combinedSessionState)
+            let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true)
+            keyDown?.flags = .maskCommand
+            let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false)
+            keyUp?.flags = .maskCommand
+            keyDown?.post(tap: .cghidEventTap)
+            keyUp?.post(tap: .cghidEventTap)
+        }
     }
 }
 
@@ -252,22 +266,26 @@ struct ClipboardHistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header
+            // Header (Borderless clean card header)
             HStack(spacing: 10) {
                 Image(systemName: "doc.on.clipboard.fill")
                     .foregroundStyle(.blue)
-                    .font(.system(size: 16))
-                Text("记录复制 (剪贴板历史)")
+                    .font(.system(size: 15, weight: .semibold))
+                Text("剪贴板历史")
                     .font(.system(size: 14, weight: .semibold))
                 Spacer()
                 Button {
                     onClose()
                 } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 16))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.secondary)
+                        .frame(width: 22, height: 22)
+                        .background(Color.primary.opacity(0.06))
+                        .clipShape(Circle())
                 }
                 .buttonStyle(.plain)
+                .help("关闭窗口")
             }
             .padding(.horizontal, 16)
             .padding(.top, 14)
@@ -318,12 +336,19 @@ struct ClipboardHistoryView: View {
                 ScrollView {
                     LazyVStack(spacing: 6) {
                         ForEach(filteredEntries) { entry in
-                            ClipboardRowView(entry: entry) {
-                                store.copyToClipboard(entry)
-                                onClose()
-                            } onDelete: {
-                                store.remove(entry)
-                            }
+                            ClipboardRowView(
+                                entry: entry,
+                                onCopy: {
+                                    store.copyToClipboard(entry)
+                                    onClose()
+                                },
+                                onPaste: {
+                                    ClipboardHistoryController.pasteAtCursor(entry)
+                                },
+                                onDelete: {
+                                    store.remove(entry)
+                                }
+                            )
                         }
                     }
                     .padding(12)
@@ -334,8 +359,8 @@ struct ClipboardHistoryView: View {
 
             // Footer
             HStack {
-                Text("\(store.entries.count) 条记录")
-                    .font(.system(size: 11))
+                Text("双击条目直接在光标处粘贴 · \(store.entries.count) 条记录")
+                    .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
                 Spacer()
                 if !store.entries.isEmpty {
@@ -353,13 +378,22 @@ struct ClipboardHistoryView: View {
             .padding(.vertical, 8)
         }
         .frame(width: 420, height: 480)
-        .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(NSColor.windowBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
     }
 }
 
 private struct ClipboardRowView: View {
     let entry: ClipboardEntry
     let onCopy: () -> Void
+    let onPaste: () -> Void
     let onDelete: () -> Void
 
     @State private var isHovering = false
@@ -391,6 +425,20 @@ private struct ClipboardRowView: View {
 
             if isHovering {
                 HStack(spacing: 6) {
+                    Button {
+                        onPaste()
+                    } label: {
+                        Text("粘贴")
+                            .font(.system(size: 10, weight: .semibold))
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 3)
+                            .background(Color.accentColor.opacity(0.15))
+                            .foregroundStyle(Color.accentColor)
+                            .clipShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .help("直接在光标处粘贴 (或双击)")
+
                     Button {
                         onCopy()
                     } label: {
@@ -425,7 +473,10 @@ private struct ClipboardRowView: View {
                 .fill(isHovering ? Color.accentColor.opacity(0.08) : Color(NSColor.controlBackgroundColor).opacity(0.6))
         )
         .onHover { isHovering = $0 }
-        .onTapGesture {
+        .onTapGesture(count: 2) {
+            onPaste()
+        }
+        .onTapGesture(count: 1) {
             onCopy()
         }
     }

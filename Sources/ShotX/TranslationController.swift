@@ -2,6 +2,7 @@ import Cocoa
 import SwiftUI
 import NaturalLanguage
 import AVFoundation
+import CommonCrypto
 
 struct TranslationRecord: Identifiable, Codable, Equatable {
     let id: UUID
@@ -19,7 +20,7 @@ struct TranslationRecord: Identifiable, Codable, Equatable {
         targetText: String,
         sourceLang: String,
         targetLang: String,
-        engine: String = "百度翻译"
+        engine: String = "谷歌翻译"
     ) {
         self.id = id
         self.createdAt = createdAt
@@ -129,14 +130,21 @@ enum TranslationService {
         // Determine destination language if auto
         var destLang = target
         if destLang == "auto" {
-            // If text contains Chinese characters, translate to English; otherwise translate to Chinese
             let containsChinese = trimmed.unicodeScalars.contains { $0.value >= 0x4E00 && $0.value <= 0x9FA5 }
             destLang = containsChinese ? "en" : "zh"
         }
 
         let sourceLang = (source == "auto") ? "auto" : source
 
-        // 1. Google Translate API free endpoint
+        // Check configured platform
+        let platform = PreferencesStore.shared.translationPlatform
+        if platform == .baidu {
+            if let result = await translateBaidu(text: trimmed, from: sourceLang, to: destLang) {
+                return (result, sourceLang)
+            }
+        }
+
+        // Default: Google Translate API free endpoint
         if let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             let urlString = "https://translate.googleapis.com/translate_a/single?client=gtx&sl=\(sourceLang)&tl=\(destLang)&dt=t&q=\(encoded)"
             if let url = URL(string: urlString) {
@@ -160,7 +168,7 @@ enum TranslationService {
             }
         }
 
-        // 2. Fallback: MyMemory API
+        // Fallback: MyMemory API
         if let encoded = trimmed.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             let pair = (source == "auto" ? "autodetect" : source) + "|\(destLang)"
             let urlString = "https://api.mymemory.translated.net/get?q=\(encoded)&langpair=\(pair)"
@@ -175,6 +183,45 @@ enum TranslationService {
         }
 
         return ("翻译服务连接中，请稍候重试…", source)
+    }
+
+    private static func translateBaidu(text: String, from: String, to: String) async -> String? {
+        let appid = PreferencesStore.shared.baiduTranslateAppId.trimmingCharacters(in: .whitespacesAndNewlines)
+        let key = PreferencesStore.shared.baiduTranslateSecretKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !appid.isEmpty, !key.isEmpty else { return nil }
+
+        let salt = "\(Int(Date().timeIntervalSince1970))"
+        let signStr = "\(appid)\(text)\(salt)\(key)"
+        let sign = md5(signStr)
+
+        let baiduFrom = (from == "zh") ? "zh" : ((from == "en") ? "en" : "auto")
+        let baiduTo = (to == "zh") ? "zh" : "en"
+
+        guard let encodedQ = text.addingPercentEncoding(withAllowedCharacters: .alphanumerics) else { return nil }
+        let urlStr = "https://fanyi-api.baidu.com/api/trans/vip/translate?q=\(encodedQ)&from=\(baiduFrom)&to=\(baiduTo)&appid=\(appid)&salt=\(salt)&sign=\(sign)"
+        guard let url = URL(string: urlStr) else { return nil }
+
+        var req = URLRequest(url: url)
+        req.timeoutInterval = 6.0
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let transResult = json["trans_result"] as? [[String: Any]] else {
+            return nil
+        }
+
+        let dsts = transResult.compactMap { $0["dst"] as? String }
+        return dsts.joined(separator: "\n")
+    }
+
+    private static func md5(_ string: String) -> String {
+        let length = Int(CC_MD5_DIGEST_LENGTH)
+        var digest = [UInt8](repeating: 0, count: length)
+        if let d = string.data(using: .utf8) {
+            _ = d.withUnsafeBytes { (body: UnsafeRawBufferPointer) in
+                CC_MD5(body.baseAddress, CC_LONG(d.count), &digest)
+            }
+        }
+        return (0..<length).map { String(format: "%02x", digest[$0]) }.joined()
     }
 
     private static let speechSynthesizer = AVSpeechSynthesizer()
@@ -202,35 +249,111 @@ enum TranslationService {
     }
 }
 
+// MARK: - View Model (Reactive state)
+
+final class TranslationViewModel: ObservableObject {
+    @Published var inputText: String = ""
+    @Published var translatedText: String = ""
+    @Published var sourceLanguage: TranslationLanguage = .auto
+    @Published var targetLanguage: TranslationLanguage = .auto
+    @Published var isPinned: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isPinned, forKey: "com.shotx.translation.isPinned")
+        }
+    }
+    @Published var isTranslating: Bool = false
+    @Published var engineName: String = "谷歌翻译"
+
+    init() {
+        if UserDefaults.standard.object(forKey: "com.shotx.translation.isPinned") != nil {
+            isPinned = UserDefaults.standard.bool(forKey: "com.shotx.translation.isPinned")
+        }
+        engineName = PreferencesStore.shared.translationPlatform.displayName
+    }
+
+    func performTranslation() {
+        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else {
+            translatedText = ""
+            return
+        }
+        isTranslating = true
+        Task {
+            let res = await TranslationService.translate(
+                text: text,
+                from: sourceLanguage.rawValue,
+                to: targetLanguage.rawValue
+            )
+            await MainActor.run {
+                self.translatedText = res.translatedText
+                self.isTranslating = false
+                self.engineName = PreferencesStore.shared.translationPlatform.displayName
+                TranslationStore.shared.add(
+                    source: text,
+                    target: res.translatedText,
+                    from: self.sourceLanguage.displayName,
+                    to: self.targetLanguage.displayName,
+                    engine: self.engineName
+                )
+            }
+        }
+    }
+
+    func swapLanguages() {
+        var curSrc = sourceLanguage
+        var curDst = targetLanguage
+
+        if curSrc == .auto {
+            let containsChinese = inputText.unicodeScalars.contains { $0.value >= 0x4E00 && $0.value <= 0x9FA5 }
+            curSrc = containsChinese ? .zh : .en
+        }
+        if curDst == .auto {
+            curDst = (curSrc == .zh) ? .en : .zh
+        }
+
+        sourceLanguage = curDst
+        targetLanguage = curSrc
+
+        if !translatedText.isEmpty {
+            let temp = inputText
+            inputText = translatedText
+            translatedText = temp
+        }
+
+        performTranslation()
+    }
+}
+
 // MARK: - Translation Window Controller
 
 final class TranslationController {
     static let shared = TranslationController()
     private var window: NSPanel?
     private var hosting: NSHostingController<TranslationWindowView>?
+    let viewModel = TranslationViewModel()
 
     func show(text: String = "") {
+        if !text.isEmpty {
+            viewModel.inputText = text
+            viewModel.performTranslation()
+        }
+
         if let w = window {
-            if let h = hosting {
-                h.rootView.inputText = text
-                if !text.isEmpty {
-                    h.rootView.performTranslation()
-                }
-            }
+            updateWindowLevel(w)
             w.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        var panelRef: NSPanel?
-
         let view = TranslationWindowView(
-            initialText: text,
+            viewModel: viewModel,
             onClose: { [weak self] in
                 self?.dismiss()
             },
-            onPinToggled: { pinned in
-                panelRef?.level = pinned ? .floating : .normal
+            onPinToggled: { [weak self] _ in
+                if let win = self?.window {
+                    self?.updateWindowLevel(win)
+                }
             }
         )
         let h = NSHostingController(rootView: view)
@@ -247,14 +370,14 @@ final class TranslationController {
         )
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
-        panel.level = .floating
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        updateWindowLevel(panel)
         panel.contentViewController = h
         panel.isReleasedWhenClosed = false
         panel.hasShadow = true
         panel.backgroundColor = .clear
         panel.isOpaque = false
-
-        panelRef = panel
 
         let mouse = NSEvent.mouseLocation
         if let screen = NSScreen.main {
@@ -269,6 +392,15 @@ final class TranslationController {
         self.window = panel
     }
 
+    func updateWindowLevel(_ panel: NSPanel) {
+        if viewModel.isPinned {
+            panel.level = .floating
+            panel.orderFrontRegardless()
+        } else {
+            panel.level = .normal
+        }
+    }
+
     func dismiss() {
         window?.orderOut(nil)
         window = nil
@@ -279,44 +411,25 @@ final class TranslationController {
 // MARK: - Translation View (444.jpg)
 
 struct TranslationWindowView: View {
-    @State var inputText: String
+    @ObservedObject var viewModel: TranslationViewModel
     let onClose: () -> Void
     var onPinToggled: ((Bool) -> Void)? = nil
 
-    @State var translatedText: String = ""
-    @State var sourceLanguage: TranslationLanguage = .auto
-    @State var targetLanguage: TranslationLanguage = .auto
-    @State var isPinned: Bool = true
-    @State var isTranslating: Bool = false
-    @State var engineName: String = "百度翻译"
-
-    private let speechSynth = AVSpeechSynthesizer()
-
-    init(
-        initialText: String = "",
-        onClose: @escaping () -> Void,
-        onPinToggled: ((Bool) -> Void)? = nil
-    ) {
-        _inputText = State(initialValue: initialText)
-        self.onClose = onClose
-        self.onPinToggled = onPinToggled
-    }
-
     var body: some View {
         VStack(spacing: 12) {
-            // Top Bar: Pin & Action buttons (444.jpg: Pin on left, History & Settings & Close on right)
+            // Top Bar: Pin & Action buttons (444.jpg)
             HStack(spacing: 10) {
                 Button {
-                    isPinned.toggle()
-                    onPinToggled?(isPinned)
+                    viewModel.isPinned.toggle()
+                    onPinToggled?(viewModel.isPinned)
                 } label: {
-                    Image(systemName: isPinned ? "pin.fill" : "pin")
+                    Image(systemName: viewModel.isPinned ? "pin.fill" : "pin")
                         .font(.system(size: 16, weight: .semibold))
-                        .foregroundStyle(isPinned ? Color.primary : Color.secondary)
+                        .foregroundStyle(viewModel.isPinned ? Color.primary : Color.secondary)
                         .rotationEffect(.degrees(45))
                 }
                 .buttonStyle(.plain)
-                .help(isPinned ? "已置顶（点击取消置顶）" : "点击置顶窗口")
+                .help(viewModel.isPinned ? "已置顶（始终保持在最前）" : "点击置顶窗口")
 
                 Spacer()
 
@@ -375,20 +488,31 @@ struct TranslationWindowView: View {
             .padding(.horizontal, 16)
             .padding(.top, 14)
 
-            // Source Text Card
+            // Source Text Card (Editable TextEditor)
             VStack(alignment: .leading, spacing: 6) {
-                TextEditor(text: $inputText)
-                    .font(.system(size: 14))
-                    .frame(minHeight: 80, maxHeight: 110)
-                    .scrollContentBackground(.hidden)
-                    .background(Color.clear)
-                    .onChange(of: inputText) { _ in
-                        debounceTranslation()
+                ZStack(alignment: .topLeading) {
+                    if viewModel.inputText.isEmpty {
+                        Text("请输入或粘贴需要翻译的文本…")
+                            .font(.system(size: 13.5))
+                            .foregroundStyle(Color.secondary.opacity(0.7))
+                            .padding(.top, 4)
+                            .padding(.leading, 4)
+                            .allowsHitTesting(false)
                     }
+
+                    TextEditor(text: $viewModel.inputText)
+                        .font(.system(size: 14))
+                        .frame(minHeight: 80, maxHeight: 110)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
+                        .onChange(of: viewModel.inputText) { _ in
+                            debounceTranslation()
+                        }
+                }
 
                 HStack(spacing: 14) {
                     Button {
-                        TranslationService.speak(text: inputText, language: sourceLanguage.rawValue)
+                        TranslationService.speak(text: viewModel.inputText, language: viewModel.sourceLanguage.rawValue)
                     } label: {
                         Image(systemName: "speaker.wave.2")
                             .font(.system(size: 14))
@@ -398,7 +522,7 @@ struct TranslationWindowView: View {
                     .help("朗读原文")
 
                     Button {
-                        copyToClipboard(inputText)
+                        copyToClipboard(viewModel.inputText)
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 13))
@@ -409,7 +533,7 @@ struct TranslationWindowView: View {
 
                     Spacer()
 
-                    Text("\(inputText.count) 字")
+                    Text("\(viewModel.inputText.count) 字")
                         .font(.system(size: 11))
                         .foregroundStyle(.tertiary)
                 }
@@ -427,13 +551,13 @@ struct TranslationWindowView: View {
                 Menu {
                     ForEach(TranslationLanguage.allCases) { lang in
                         Button(lang.displayName) {
-                            sourceLanguage = lang
-                            performTranslation()
+                            viewModel.sourceLanguage = lang
+                            viewModel.performTranslation()
                         }
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(sourceLanguage.displayName)
+                        Text(viewModel.sourceLanguage.displayName)
                             .font(.system(size: 13, weight: .medium))
                         Image(systemName: "chevron.down")
                             .font(.system(size: 9))
@@ -443,7 +567,7 @@ struct TranslationWindowView: View {
                 .menuStyle(.borderlessButton)
 
                 Button {
-                    swapLanguages()
+                    viewModel.swapLanguages()
                 } label: {
                     Image(systemName: "arrow.left.arrow.right")
                         .font(.system(size: 13, weight: .semibold))
@@ -456,13 +580,13 @@ struct TranslationWindowView: View {
                 Menu {
                     ForEach(TranslationLanguage.allCases.filter { $0 != .auto }) { lang in
                         Button(lang.displayName) {
-                            targetLanguage = lang
-                            performTranslation()
+                            viewModel.targetLanguage = lang
+                            viewModel.performTranslation()
                         }
                     }
                 } label: {
                     HStack(spacing: 4) {
-                        Text(targetLanguage == .auto ? "自动选择" : targetLanguage.displayName)
+                        Text(viewModel.targetLanguage == .auto ? "自动选择" : viewModel.targetLanguage.displayName)
                             .font(.system(size: 13, weight: .medium))
                         Image(systemName: "chevron.down")
                             .font(.system(size: 9))
@@ -478,7 +602,7 @@ struct TranslationWindowView: View {
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .padding(.horizontal, 16)
 
-            // Translation Result Card (444.jpg)
+            // Translation Result Card (Both click and editable!)
             VStack(alignment: .leading, spacing: 8) {
                 // Engine Header
                 HStack(spacing: 6) {
@@ -491,33 +615,41 @@ struct TranslationWindowView: View {
                             .foregroundStyle(.white)
                     }
 
-                    Text(engineName)
+                    Text(viewModel.engineName)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundStyle(.secondary)
 
                     Spacer()
 
-                    if isTranslating {
+                    if viewModel.isTranslating {
                         ProgressView()
                             .scaleEffect(0.6)
                             .frame(width: 16, height: 16)
                     }
                 }
 
-                // Translated Content
-                ScrollView {
-                    Text(translatedText.isEmpty ? (isTranslating ? "正在翻译中…" : "翻译结果将显示在此处") : translatedText)
+                // Translated Content (Editable TextEditor)
+                ZStack(alignment: .topLeading) {
+                    if viewModel.translatedText.isEmpty && !viewModel.isTranslating {
+                        Text("翻译结果将显示在此处（亦可直接点击输入或编辑）")
+                            .font(.system(size: 13.5))
+                            .foregroundStyle(Color.secondary.opacity(0.7))
+                            .padding(.top, 4)
+                            .padding(.leading, 4)
+                            .allowsHitTesting(false)
+                    }
+
+                    TextEditor(text: $viewModel.translatedText)
                         .font(.system(size: 14))
-                        .foregroundStyle(translatedText.isEmpty ? .secondary : .primary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .textSelection(.enabled)
+                        .frame(minHeight: 80, maxHeight: 110)
+                        .scrollContentBackground(.hidden)
+                        .background(Color.clear)
                 }
-                .frame(minHeight: 70, maxHeight: 110)
 
                 // Actions: Speak & Copy
                 HStack(spacing: 14) {
                     Button {
-                        TranslationService.speak(text: translatedText, language: targetLanguage.rawValue)
+                        TranslationService.speak(text: viewModel.translatedText, language: viewModel.targetLanguage.rawValue)
                     } label: {
                         Image(systemName: "speaker.wave.2")
                             .font(.system(size: 14))
@@ -525,10 +657,10 @@ struct TranslationWindowView: View {
                     }
                     .buttonStyle(.plain)
                     .help("朗读译文")
-                    .disabled(translatedText.isEmpty)
+                    .disabled(viewModel.translatedText.isEmpty)
 
                     Button {
-                        copyToClipboard(translatedText)
+                        copyToClipboard(viewModel.translatedText)
                     } label: {
                         Image(systemName: "doc.on.doc")
                             .font(.system(size: 13))
@@ -536,7 +668,7 @@ struct TranslationWindowView: View {
                     }
                     .buttonStyle(.plain)
                     .help("复制译文")
-                    .disabled(translatedText.isEmpty)
+                    .disabled(viewModel.translatedText.isEmpty)
 
                     Spacer()
                 }
@@ -557,71 +689,14 @@ struct TranslationWindowView: View {
                 .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
         )
         .clipShape(RoundedRectangle(cornerRadius: 16))
-        .onAppear {
-            if !inputText.isEmpty {
-                performTranslation()
-            }
-        }
-    }
-
-    private func swapLanguages() {
-        // Determine effective source and destination
-        var curSrc = sourceLanguage
-        var curDst = targetLanguage
-
-        if curSrc == .auto {
-            let containsChinese = inputText.unicodeScalars.contains { $0.value >= 0x4E00 && $0.value <= 0x9FA5 }
-            curSrc = containsChinese ? .zh : .en
-        }
-        if curDst == .auto {
-            curDst = (curSrc == .zh) ? .en : .zh
-        }
-
-        sourceLanguage = curDst
-        targetLanguage = curSrc
-
-        if !translatedText.isEmpty {
-            let temp = inputText
-            inputText = translatedText
-            translatedText = temp
-        }
-
-        performTranslation()
     }
 
     private func debounceTranslation() {
         NSObject.cancelPreviousPerformRequests(withTarget: Debouncer.shared)
-        Debouncer.shared.action = {
-            performTranslation()
+        Debouncer.shared.action = { [weak viewModel] in
+            viewModel?.performTranslation()
         }
         Debouncer.shared.perform(#selector(Debouncer.fire), with: nil, afterDelay: 0.35)
-    }
-
-    func performTranslation() {
-        let text = inputText.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            translatedText = ""
-            return
-        }
-        isTranslating = true
-        Task {
-            let res = await TranslationService.translate(
-                text: text,
-                from: sourceLanguage.rawValue,
-                to: targetLanguage.rawValue
-            )
-            await MainActor.run {
-                self.translatedText = res.translatedText
-                self.isTranslating = false
-                TranslationStore.shared.add(
-                    source: text,
-                    target: res.translatedText,
-                    from: sourceLanguage.displayName,
-                    to: targetLanguage.displayName,
-                    engine: engineName
-                )
-            }
-        }
     }
 
     private func copyToClipboard(_ str: String) {

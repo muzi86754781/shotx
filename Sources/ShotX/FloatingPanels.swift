@@ -187,11 +187,11 @@ final class ToastController {
         icon: String = "checkmark.circle.fill",
         tint: NSColor = .systemGreen,
         duration: TimeInterval = 3.0,
-        position: ToastPosition = .bottomLeft
+        position: ToastPosition = .center
     ) {
         dismiss()
 
-        let targetSize = (position == .center) ? Self.centerSize : Self.size
+        let targetSize = Self.centerSize
 
         let view = ToastView(
             message: message,
@@ -218,23 +218,12 @@ final class ToastController {
         panel.isReleasedWhenClosed = false
 
         if let screen = NSScreen.main {
-            let frame: NSRect
-            if position == .center {
-                frame = NSRect(
-                    x: screen.frame.midX - targetSize.width / 2,
-                    y: screen.frame.midY - targetSize.height / 2,
-                    width: targetSize.width,
-                    height: targetSize.height
-                )
-            } else {
-                let margin: CGFloat = 24
-                frame = NSRect(
-                    x: screen.visibleFrame.minX + margin,
-                    y: screen.visibleFrame.minY + margin,
-                    width: targetSize.width,
-                    height: targetSize.height
-                )
-            }
+            let frame = NSRect(
+                x: screen.frame.midX - targetSize.width / 2,
+                y: screen.frame.midY - targetSize.height / 2,
+                width: targetSize.width,
+                height: targetSize.height
+            )
             panel.setFrame(frame, display: true)
         }
         panel.orderFrontRegardless()
