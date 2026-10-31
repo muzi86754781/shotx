@@ -821,14 +821,14 @@ final class SelectionView: NSView {
     private func grayscaleSample(cgImage: CGImage, width: Int, height: Int) -> [UInt8]? {
         var buffer = [UInt8](repeating: 0, count: width * height)
         let colorSpace = CGColorSpaceCreateDeviceGray()
-        guard let ctx = CGBitmapContextCreate(
-            &buffer,
-            width,
-            height,
-            8,
-            width,
-            colorSpace,
-            CGImageAlphaInfo.none.rawValue
+        guard let ctx = CGContext(
+            data: &buffer,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: width,
+            space: colorSpace,
+            bitmapInfo: CGImageAlphaInfo.none.rawValue
         ) else {
             return nil
         }

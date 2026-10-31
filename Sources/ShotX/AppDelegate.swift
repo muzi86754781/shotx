@@ -948,14 +948,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
 
     // MARK: - Windows
 
-    @objc private func showHistory() {
+    @objc func showHistory() {
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
         }
         mainWindowController?.show(tab: .history)
     }
 
-    @objc private func showSettings() {
+    @objc func showSettings() {
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
         }
