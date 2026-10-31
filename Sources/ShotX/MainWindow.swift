@@ -1112,28 +1112,28 @@ struct SettingsView: View {
                         )
                         dividerLine
                         shortcutRow(
-                            title: "截取全屏",
+                            title: "全屏截图",
                             desc: "一键截取当前整个主屏幕并在正中央提示",
                             binding: $shortcuts.fullscreenShortcut,
                             defaultVal: .defaultFullscreen
                         )
                         dividerLine
                         shortcutRow(
-                            title: "截取窗口",
+                            title: "窗口截图",
                             desc: "移动鼠标悬停并自动识别窗口轮廓截取",
                             binding: $shortcuts.windowCaptureShortcut,
                             defaultVal: .defaultWindow
                         )
                         dividerLine
                         shortcutRow(
-                            title: "截取上一区域",
+                            title: "上次区域截图",
                             desc: "💡功能说明：重新截取上一次框选的屏幕坐标与尺寸，无需重复用鼠标手动划选",
                             binding: $shortcuts.previousAreaShortcut,
                             defaultVal: .defaultPrevious
                         )
                         dividerLine
                         shortcutRow(
-                            title: "提取文字 (OCR)",
+                            title: "截图OCR",
                             desc: "划选屏幕后直接提取文本并复制到剪贴板，无标注栏打扰",
                             binding: $shortcuts.ocrShortcut,
                             defaultVal: .defaultOCR
@@ -1147,14 +1147,14 @@ struct SettingsView: View {
                         )
                         dividerLine
                         shortcutRow(
-                            title: "音频录制",
+                            title: "声音录制",
                             desc: "开启/结束系统麦克风高音质录音，悬浮药丸实时显示时长",
                             binding: $shortcuts.recordAudioShortcut,
                             defaultVal: .defaultRecordAudio
                         )
                         dividerLine
                         shortcutRow(
-                            title: "贴图置顶",
+                            title: "从剪贴板贴图",
                             desc: "将剪贴板或截图钉在屏幕最上层悬浮展示，方便对比对照",
                             binding: $shortcuts.pinShortcut,
                             defaultVal: .defaultPin
@@ -1196,7 +1196,7 @@ struct SettingsView: View {
                         )
                         dividerLine
                         shortcutRow(
-                            title: "记录复制 (剪贴板历史)",
+                            title: "剪贴板历史",
                             desc: "随时呼出历史剪贴板记录，支持搜索、快速预览并批量/重复使用",
                             binding: $shortcuts.clipboardHistoryShortcut,
                             defaultVal: .defaultClipboardHistory
@@ -1209,7 +1209,26 @@ struct SettingsView: View {
                                 .font(.system(size: 11))
                                 .foregroundStyle(.secondary)
                             Spacer()
-                            Button("恢复全部默认快捷键") {
+                            Button("清空全部") {
+                                shortcuts.shortcut = .none
+                                shortcuts.fullscreenShortcut = .none
+                                shortcuts.windowCaptureShortcut = .none
+                                shortcuts.previousAreaShortcut = .none
+                                shortcuts.ocrShortcut = .none
+                                shortcuts.recordScreenShortcut = .none
+                                shortcuts.recordAudioShortcut = .none
+                                shortcuts.pinShortcut = .none
+                                shortcuts.colorPickerShortcut = .none
+                                shortcuts.desktopIconsShortcut = .none
+                                shortcuts.allInOneShortcut = .none
+                                shortcuts.selectionTranslationShortcut = .none
+                                shortcuts.screenshotTranslationShortcut = .none
+                                shortcuts.clipboardHistoryShortcut = .none
+                            }
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button("恢复全部默认") {
                                 shortcuts.shortcut = .default
                                 shortcuts.fullscreenShortcut = .defaultFullscreen
                                 shortcuts.windowCaptureShortcut = .defaultWindow
@@ -1235,14 +1254,14 @@ struct SettingsView: View {
                 SettingsCard(
                     icon: "info.circle.fill",
                     tint: .gray,
-                    title: "关于",
-                    subtitle: "ShotX · 轻量高效的屏幕截图与录屏工具"
+                    title: "关于 ShotX",
+                    subtitle: "现代 macOS 全能屏幕截图、就地标注、长截图与录屏录音工具"
                 ) {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
+                    VStack(alignment: .leading, spacing: 14) {
+                        HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("版本 \(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.4")")
-                                    .font(.system(size: 13, weight: .medium))
+                                Text("ShotX  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.5")")
+                                    .font(.system(size: 14, weight: .bold))
                                 HStack(spacing: 8) {
                                     Text("开发者:")
                                         .font(.system(size: 12))
@@ -1254,10 +1273,25 @@ struct SettingsView: View {
                                     Link("github.com/muzi86754781/shotx", destination: URL(string: "https://github.com/muzi86754781/shotx")!)
                                         .font(.system(size: 12))
                                 }
+                                Text("QQ: 285351298")
+                                    .font(.system(size: 11.5, design: .monospaced))
+                                    .foregroundStyle(.secondary)
                             }
+
                             Spacer()
+
                             HStack(spacing: 8) {
-                                Button("检查更新…") {
+                                Button {
+                                    SupportAuthorController.shared.show()
+                                } label: {
+                                    Label("支持作者", systemImage: "cup.and.saucer.fill")
+                                        .font(.system(size: 12, weight: .medium))
+                                }
+                                .buttonStyle(.borderedProminent)
+                                .tint(.orange)
+                                .controlSize(.small)
+
+                                Button("检查更新") {
                                     UpdaterController.shared.checkForUpdates()
                                 }
                                 .buttonStyle(.bordered)
@@ -1272,6 +1306,27 @@ struct SettingsView: View {
                                 .buttonStyle(.bordered)
                                 .controlSize(.small)
                             }
+                        }
+
+                        Divider()
+
+                        // 功能介绍详细卡片
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("功能亮点与介绍：")
+                                .font(.system(size: 12.5, weight: .semibold))
+
+                            Group {
+                                Text("• 全能辅助截图：支持放大镜取色、九宫格比例网格与常用分辨率快速框选。")
+                                Text("• 区域 / 窗口 / 全屏 / 定时截图：多维度即时捕捉，支持阴影与圆角实时调整。")
+                                Text("• 滚动长截图：在截图区域内滑动鼠标，实时检测滚动变化并无缝拼接长图。")
+                                Text("• 截图 OCR：框选屏幕即刻离线识别文字并自动复制到剪贴板，无多余干扰。")
+                                Text("• 屏幕与音频录制：高清录屏（摄像头/声音/光标/按键高亮），以及独立麦克风录音。")
+                                Text("• 多模态翻译：支持划词翻译、截图翻译与输入翻译窗口，中英互换与 TTS 朗读。")
+                                Text("• 剪贴板历史：自动记录复制内容，支持按类检索、快速粘贴与多格式管理。")
+                                Text("• 贴图置顶 & 拾色器 & 隐藏桌面图标：让桌面井然有序，提升日常生产力。")
+                            }
+                            .font(.system(size: 11.5))
+                            .foregroundStyle(.secondary)
                         }
                     }
                 }
@@ -1304,8 +1359,8 @@ struct SettingsView: View {
             Spacer(minLength: 8)
             ShortcutRecorder(shortcut: binding)
                 .frame(width: 140, height: 26)
-            Button("重置") {
-                binding.wrappedValue = defaultVal
+            Button("清除") {
+                binding.wrappedValue = .none
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)

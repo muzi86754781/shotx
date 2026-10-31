@@ -1,8 +1,8 @@
 import { AppIcon, useIsMobile } from './ShotXUI.jsx';
 
-const GITHUB_URL = 'https://github.com/aimen08/shotx';
-const RELEASES_URL = 'https://github.com/aimen08/shotx/releases/latest';
-const ISSUES_URL = 'https://github.com/aimen08/shotx/issues';
+const GITHUB_URL = 'https://github.com/muzi86754781/shotx';
+const RELEASES_URL = 'https://github.com/muzi86754781/shotx/releases/latest';
+const ISSUES_URL = 'https://github.com/muzi86754781/shotx/issues';
 
 const link = {
   color: 'rgba(235,235,245,.65)',
@@ -56,7 +56,7 @@ export default function Footer() {
 
       <div style={{ maxWidth: 1280, margin: '56px auto 0', paddingTop: 24, borderTop: '1px solid rgba(255,255,255,.06)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
         <div style={{ fontSize: 13, color: 'rgba(235,235,245,.45)' }}>© {new Date().getFullYear()} ShotX · Open source and free</div>
-        <div style={{ fontSize: 13, color: 'rgba(235,235,245,.45)', fontFamily: 'JetBrains Mono, monospace', letterSpacing: .3 }}>github.com/aimen08/shotx</div>
+        <div style={{ fontSize: 13, color: 'rgba(235,235,245,.45)', fontFamily: 'JetBrains Mono, monospace', letterSpacing: .3 }}>github.com/muzi86754781/shotx</div>
       </div>
     </footer>
   );

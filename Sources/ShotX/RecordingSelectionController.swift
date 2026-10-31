@@ -288,3 +288,4 @@ final class RecordingSelectionView: NSView {
         label.draw(at: NSPoint(x: pillRect.minX + padX, y: pillRect.minY + padY), withAttributes: attrs)
     }
 }
+

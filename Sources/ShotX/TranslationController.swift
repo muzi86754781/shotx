@@ -222,9 +222,17 @@ final class TranslationController {
             return
         }
 
-        let view = TranslationWindowView(initialText: text) { [weak self] in
-            self?.dismiss()
-        }
+        var panelRef: NSPanel?
+
+        let view = TranslationWindowView(
+            initialText: text,
+            onClose: { [weak self] in
+                self?.dismiss()
+            },
+            onPinToggled: { pinned in
+                panelRef?.level = pinned ? .floating : .normal
+            }
+        )
         let h = NSHostingController(rootView: view)
         self.hosting = h
 
@@ -233,13 +241,10 @@ final class TranslationController {
 
         let panel = NSPanel(
             contentRect: NSRect(origin: .zero, size: size),
-            styleMask: [.titled, .closable, .resizable, .fullSizeContentView],
+            styleMask: [.borderless, .resizable],
             backing: .buffered,
             defer: false
         )
-        panel.title = "翻译"
-        panel.titleVisibility = .hidden
-        panel.titlebarAppearsTransparent = true
         panel.isMovableByWindowBackground = true
         panel.isFloatingPanel = true
         panel.level = .floating
@@ -247,6 +252,9 @@ final class TranslationController {
         panel.isReleasedWhenClosed = false
         panel.hasShadow = true
         panel.backgroundColor = .clear
+        panel.isOpaque = false
+
+        panelRef = panel
 
         let mouse = NSEvent.mouseLocation
         if let screen = NSScreen.main {
@@ -273,6 +281,7 @@ final class TranslationController {
 struct TranslationWindowView: View {
     @State var inputText: String
     let onClose: () -> Void
+    var onPinToggled: ((Bool) -> Void)? = nil
 
     @State var translatedText: String = ""
     @State var sourceLanguage: TranslationLanguage = .auto
@@ -283,66 +292,84 @@ struct TranslationWindowView: View {
 
     private let speechSynth = AVSpeechSynthesizer()
 
-    init(initialText: String = "", onClose: @escaping () -> Void) {
+    init(
+        initialText: String = "",
+        onClose: @escaping () -> Void,
+        onPinToggled: ((Bool) -> Void)? = nil
+    ) {
         _inputText = State(initialValue: initialText)
         self.onClose = onClose
+        self.onPinToggled = onPinToggled
     }
 
     var body: some View {
         VStack(spacing: 12) {
-            // Top Bar: Pin & Action buttons
-            HStack {
+            // Top Bar: Pin & Action buttons (444.jpg: Pin on left, History & Settings & Close on right)
+            HStack(spacing: 10) {
                 Button {
                     isPinned.toggle()
+                    onPinToggled?(isPinned)
                 } label: {
                     Image(systemName: isPinned ? "pin.fill" : "pin")
-                        .font(.system(size: 15))
-                        .foregroundStyle(isPinned ? .black : .secondary)
+                        .font(.system(size: 16, weight: .semibold))
+                        .foregroundStyle(isPinned ? Color.primary : Color.secondary)
                         .rotationEffect(.degrees(45))
                 }
                 .buttonStyle(.plain)
-                .help(isPinned ? "已置顶（点击取消）" : "点击置顶窗口")
+                .help(isPinned ? "已置顶（点击取消置顶）" : "点击置顶窗口")
 
                 Spacer()
 
                 HStack(spacing: 8) {
+                    // 历史记录按钮
                     Button {
-                        // Swap languages
-                        if sourceLanguage != .auto && targetLanguage != .auto {
-                            let temp = sourceLanguage
-                            sourceLanguage = targetLanguage
-                            targetLanguage = temp
-                            inputText = translatedText
-                            performTranslation()
+                        if let appDelegate = NSApp.delegate as? AppDelegate {
+                            appDelegate.showHistory()
                         }
                     } label: {
                         ZStack {
                             Circle()
                                 .fill(Color.blue)
                                 .frame(width: 26, height: 26)
-                            Image(systemName: "arrow.left.arrow.right")
-                                .font(.system(size: 11, weight: .bold))
-                                .foregroundStyle(.white)
-                        }
-                    }
-                    .buttonStyle(.plain)
-                    .help("互换语言与内容")
-
-                    Button {
-                        inputText = ""
-                        translatedText = ""
-                    } label: {
-                        ZStack {
-                            Circle()
-                                .fill(Color.blue)
-                                .frame(width: 26, height: 26)
-                            Image(systemName: "pencil")
+                            Image(systemName: "clock.arrow.circlepath")
                                 .font(.system(size: 12, weight: .bold))
                                 .foregroundStyle(.white)
                         }
                     }
                     .buttonStyle(.plain)
-                    .help("清空并编辑")
+                    .help("翻译历史记录")
+
+                    // 设置按钮
+                    Button {
+                        if let appDelegate = NSApp.delegate as? AppDelegate {
+                            appDelegate.showSettings()
+                        }
+                    } label: {
+                        ZStack {
+                            Circle()
+                                .fill(Color.blue)
+                                .frame(width: 26, height: 26)
+                            Image(systemName: "gearshape.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(.white)
+                        }
+                    }
+                    .buttonStyle(.plain)
+                    .help("偏好设置")
+
+                    // 关闭按钮
+                    Button {
+                        onClose()
+                    } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold))
+                            .foregroundStyle(.secondary)
+                            .frame(width: 24, height: 24)
+                            .background(Color.primary.opacity(0.06))
+                            .clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("关闭翻译窗口")
                 }
             }
             .padding(.horizontal, 16)
@@ -416,18 +443,15 @@ struct TranslationWindowView: View {
                 .menuStyle(.borderlessButton)
 
                 Button {
-                    if sourceLanguage != .auto && targetLanguage != .auto {
-                        let temp = sourceLanguage
-                        sourceLanguage = targetLanguage
-                        targetLanguage = temp
-                        performTranslation()
-                    }
+                    swapLanguages()
                 } label: {
                     Image(systemName: "arrow.left.arrow.right")
-                        .font(.system(size: 12))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(Color.accentColor)
+                        .padding(.horizontal, 4)
                 }
                 .buttonStyle(.plain)
+                .help("互换语言并重新翻译")
 
                 Menu {
                     ForEach(TranslationLanguage.allCases.filter { $0 != .auto }) { lang in
@@ -449,8 +473,8 @@ struct TranslationWindowView: View {
 
                 Spacer()
             }
-            .padding(.vertical, 4)
-            .background(Color(NSColor.controlBackgroundColor).opacity(0.5))
+            .padding(.vertical, 6)
+            .background(Color(NSColor.controlBackgroundColor).opacity(0.6))
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .padding(.horizontal, 16)
 
@@ -524,12 +548,45 @@ struct TranslationWindowView: View {
             .padding(.bottom, 14)
         }
         .frame(width: 480, height: 420)
-        .background(VisualEffectView(material: .sidebar, blendingMode: .behindWindow))
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(Color(NSColor.windowBackgroundColor))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 16)
+                .strokeBorder(Color.primary.opacity(0.12), lineWidth: 1)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear {
             if !inputText.isEmpty {
                 performTranslation()
             }
         }
+    }
+
+    private func swapLanguages() {
+        // Determine effective source and destination
+        var curSrc = sourceLanguage
+        var curDst = targetLanguage
+
+        if curSrc == .auto {
+            let containsChinese = inputText.unicodeScalars.contains { $0.value >= 0x4E00 && $0.value <= 0x9FA5 }
+            curSrc = containsChinese ? .zh : .en
+        }
+        if curDst == .auto {
+            curDst = (curSrc == .zh) ? .en : .zh
+        }
+
+        sourceLanguage = curDst
+        targetLanguage = curSrc
+
+        if !translatedText.isEmpty {
+            let temp = inputText
+            inputText = translatedText
+            translatedText = temp
+        }
+
+        performTranslation()
     }
 
     private func debounceTranslation() {

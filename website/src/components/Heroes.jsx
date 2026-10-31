@@ -14,8 +14,8 @@ import {
 } from './ShotXUI.jsx';
 import ScaledArtboard from './ScaledArtboard.jsx';
 
-const GITHUB_URL = 'https://github.com/aimen08/shotx';
-const DOWNLOAD_URL = 'https://github.com/aimen08/shotx/releases/latest';
+const GITHUB_URL = 'https://github.com/muzi86754781/shotx';
+const DOWNLOAD_URL = 'https://github.com/muzi86754781/shotx/releases/latest';
 
 const linkReset = { textDecoration: 'none', color: 'inherit' };
 
@@ -74,7 +74,7 @@ export const HeroClassic = () => (
         <span style={{ opacity:.4 }}>//</span>
         <span>MIT licensed</span>
         <span style={{ opacity:.4 }}>//</span>
-        <span>github.com/aimen08/shotx</span>
+        <span>github.com/muzi86754781/shotx</span>
       </div>
     </div>
 

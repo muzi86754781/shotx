@@ -73,7 +73,8 @@ if command -v lipo >/dev/null 2>&1; then
     echo "    architectures: $ARCHS"
 fi
 
-cp "Resources/AppIcon.icns" "$RESOURCES/AppIcon.icns"
+mkdir -p "$RESOURCES"
+cp -R Resources/* "$RESOURCES/"
 
 # Embed Sparkle.framework — without this, the app launches but Sparkle won't function.
 # Sparkle ships as an xcframework artifact via SPM; pick the one matching the host arch.

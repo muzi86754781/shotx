@@ -6,6 +6,12 @@ struct Shortcut: Codable, Equatable {
     var keyCode: UInt32
     var modifiers: UInt32
 
+    var isEmpty: Bool {
+        return keyCode == 0 && modifiers == 0
+    }
+
+    static let none = Shortcut(keyCode: 0, modifiers: 0)
+
     static let `default` = Shortcut(
         keyCode: UInt32(kVK_ANSI_X),
         modifiers: UInt32(optionKey)
@@ -184,6 +190,7 @@ final class ShortcutStore: ObservableObject {
 
 enum ShortcutFormatter {
     static func describe(_ s: Shortcut) -> String {
+        if s.isEmpty { return "未设置" }
         var parts: [String] = []
         if s.modifiers & UInt32(controlKey) != 0 { parts.append("⌃") }
         if s.modifiers & UInt32(optionKey) != 0 { parts.append("⌥") }
@@ -194,12 +201,14 @@ enum ShortcutFormatter {
     }
 
     static func keyName(for keyCode: UInt32) -> String {
+        if keyCode == 0 { return "" }
         if let named = specialKeyNames[keyCode] { return named }
         return letterOrDigit(for: keyCode) ?? "Key \(keyCode)"
     }
 
     static func menuKeyEquivalent(for keyCode: UInt32) -> String? {
-        letterOrDigit(for: keyCode)?.lowercased()
+        if keyCode == 0 { return nil }
+        return letterOrDigit(for: keyCode)?.lowercased()
     }
 
     static func nsModifierFlags(from carbon: UInt32) -> NSEvent.ModifierFlags {

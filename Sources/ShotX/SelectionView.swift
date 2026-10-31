@@ -68,6 +68,7 @@ final class SelectionView: NSView {
     // Scrolling screenshot state (333.jpg)
     private var isScrollingMode: Bool = false
     private var stitchedLongImage: NSImage?
+    private var lastCapturedFrame: NSImage?
 
     private var currentToolbarItems: [ToolbarItem] {
         if isScrollingMode {
@@ -662,11 +663,34 @@ final class SelectionView: NSView {
         if isScrollingMode {
             let p = convert(event.locationInWindow, from: nil)
             if selectionRect.contains(p) {
-                captureAndStitchSlice(deltaY: event.scrollingDeltaY)
+                forwardScrollToUnderlyingApp(event: event)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                    self?.captureAndStitchSlice(deltaY: event.scrollingDeltaY)
+                }
                 return
             }
         }
         super.scrollWheel(with: event)
+    }
+
+    private func forwardScrollToUnderlyingApp(event: NSEvent) {
+        let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
+        let excluded = CaptureExclusions.windowIDs
+        let windowInfos = (CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]]) ?? []
+        for info in windowInfos {
+            guard let winID = info[kCGWindowNumber as String] as? CGWindowID,
+                  !excluded.contains(winID),
+                  let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
+                  let winBounds = CGRect(dictionaryRepresentation: boundsDict as CFDictionary) else {
+                continue
+            }
+            if winBounds.intersects(globalRect), let pid = info[kCGWindowOwnerPID as String] as? pid_t {
+                if let cg = event.cgEvent?.copy() {
+                    cg.postToPid(pid)
+                }
+                break
+            }
+        }
     }
 
     private func handleScrollingCapture() {
@@ -675,6 +699,7 @@ final class SelectionView: NSView {
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         if let initial = ScreenCapture.capture(rectInScreenCoords: globalRect, screen: targetScreen) ?? generateBaseCroppedImage() {
             stitchedLongImage = initial
+            lastCapturedFrame = initial
         }
         ToastController.shared.show(
             message: "请在选框内滚动鼠标以拼接长图，点击对勾完成",
@@ -690,29 +715,126 @@ final class SelectionView: NSView {
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         guard let fresh = ScreenCapture.capture(rectInScreenCoords: globalRect, screen: targetScreen) else { return }
 
-        if let base = stitchedLongImage {
-            let appendHeight: CGFloat = max(15, min(selectionRect.height * 0.4, abs(deltaY) * 3 + 15))
-            let newTotalHeight = base.size.height + appendHeight
-            let newSize = NSSize(width: base.size.width, height: newTotalHeight)
-
-            let composite = NSImage(size: newSize)
-            composite.lockFocus()
-
-            base.draw(in: NSRect(x: 0, y: appendHeight, width: base.size.width, height: base.size.height),
-                      from: NSRect(origin: .zero, size: base.size),
-                      operation: .copy, fraction: 1.0)
-
-            let freshSliceRect = NSRect(x: 0, y: 0, width: fresh.size.width, height: appendHeight)
-            fresh.draw(in: NSRect(x: 0, y: 0, width: base.size.width, height: appendHeight),
-                       from: freshSliceRect,
-                       operation: .sourceOver, fraction: 1.0)
-
-            composite.unlockFocus()
-            self.stitchedLongImage = composite
-        } else {
+        guard let base = stitchedLongImage, let last = lastCapturedFrame else {
             self.stitchedLongImage = fresh
+            self.lastCapturedFrame = fresh
+            needsDisplay = true
+            return
         }
+
+        let movement = detectScrollMovement(oldImage: last, newImage: fresh)
+        // 关键：截图区域内有滚动内容变化时才拼接长图，不是滑动就拼接长图
+        guard movement.hasMovement, movement.offsetY > 2 else {
+            return
+        }
+
+        let appendHeight = CGFloat(movement.offsetY)
+        let newTotalHeight = base.size.height + appendHeight
+        let newSize = NSSize(width: base.size.width, height: newTotalHeight)
+
+        let composite = NSImage(size: newSize)
+        composite.lockFocus()
+
+        base.draw(in: NSRect(x: 0, y: appendHeight, width: base.size.width, height: base.size.height),
+                  from: NSRect(origin: .zero, size: base.size),
+                  operation: .copy, fraction: 1.0)
+
+        let freshSliceRect = NSRect(x: 0, y: 0, width: fresh.size.width, height: appendHeight)
+        fresh.draw(in: NSRect(x: 0, y: 0, width: base.size.width, height: appendHeight),
+                   from: freshSliceRect,
+                   operation: .sourceOver, fraction: 1.0)
+
+        composite.unlockFocus()
+        self.stitchedLongImage = composite
+        self.lastCapturedFrame = fresh
         needsDisplay = true
+    }
+
+    private func detectScrollMovement(oldImage: NSImage, newImage: NSImage) -> (hasMovement: Bool, offsetY: Int) {
+        guard let oldCG = oldImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let newCG = newImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+            return (false, 0)
+        }
+
+        let sampleW = 40
+        let sampleH = min(200, max(60, oldCG.height / 2))
+        guard let oldBuf = grayscaleSample(cgImage: oldCG, width: sampleW, height: sampleH),
+              let newBuf = grayscaleSample(cgImage: newCG, width: sampleW, height: sampleH) else {
+            return (false, 0)
+        }
+
+        // 1. Calculate overall mean difference between old and new frame
+        var totalDiff: Int = 0
+        let count = sampleW * sampleH
+        for i in 0..<count {
+            totalDiff += abs(Int(oldBuf[i]) - Int(newBuf[i]))
+        }
+        let meanDiff = Double(totalDiff) / Double(count)
+
+        // If overall difference is under 2.2 (out of 255), content is virtually identical -> no scrolling!
+        if meanDiff < 2.2 {
+            return (false, 0)
+        }
+
+        // 2. Find row shift dy where old[y + dy] matches new[y]
+        let maxDy = min(sampleH / 2, 70)
+        var bestDy: Int = 0
+        var bestError: Double = Double.greatestFiniteMagnitude
+
+        for dy in 2...maxDy {
+            var diffSum: Int = 0
+            var sampleCount: Int = 0
+            for y in stride(from: 0, to: sampleH - dy, by: 2) {
+                let oldRowStart = (y + dy) * sampleW
+                let newRowStart = y * sampleW
+                for x in stride(from: 0, to: sampleW, by: 3) {
+                    diffSum += abs(Int(oldBuf[oldRowStart + x]) - Int(newBuf[newRowStart + x]))
+                    sampleCount += 1
+                }
+            }
+            if sampleCount > 0 {
+                let err = Double(diffSum) / Double(sampleCount)
+                if err < bestError {
+                    bestError = err
+                    bestDy = dy
+                }
+            }
+        }
+
+        let scale = CGFloat(newImage.size.height) / CGFloat(sampleH)
+
+        // If a clear matching row offset was found with low error
+        if bestError < 15.0 && bestDy >= 2 {
+            let realDy = Int(round(CGFloat(bestDy) * scale))
+            return (true, max(4, realDy))
+        }
+
+        // If image clearly changed (meanDiff >= 15.0) but row matching had higher error (e.g. fast swipe)
+        if meanDiff >= 15.0 {
+            let fallbackDy = Int(round(CGFloat(min(sampleH / 5, 25)) * scale))
+            return (true, max(10, fallbackDy))
+        }
+
+        return (false, 0)
+    }
+
+    private func grayscaleSample(cgImage: CGImage, width: Int, height: Int) -> [UInt8]? {
+        var buffer = [UInt8](repeating: 0, count: width * height)
+        let colorSpace = CGColorSpaceCreateDeviceGray()
+        guard let ctx = CGBitmapContextCreate(
+            &buffer,
+            width,
+            height,
+            8,
+            width,
+            colorSpace,
+            CGImageAlphaInfo.none.rawValue
+        ) else {
+            return nil
+        }
+        ctx.interpolationQuality = .low
+        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        return buffer
     }
 
     private func scrollingPreviewPanelRect() -> NSRect {

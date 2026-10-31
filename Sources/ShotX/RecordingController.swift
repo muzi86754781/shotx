@@ -8,6 +8,8 @@ final class RecordingController {
     private var selectionController: RecordingSelectionController?
     private var optionsPanel: NSPanel?
     private var optionsOutsideMonitor: Any?
+    private var optionsKeyMonitorLocal: Any?
+    private var optionsKeyMonitorGlobal: Any?
 
     private var stopPanel: NSPanel?
     private var stopState = RecordingStopState()
@@ -96,6 +98,22 @@ final class RecordingController {
         optionsOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.handleOutsideClick(at: NSEvent.mouseLocation)
         }
+
+        optionsKeyMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // Escape
+                self?.cancelOptions()
+                return nil
+            }
+            return event
+        }
+
+        optionsKeyMonitorGlobal = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 { // Escape
+                DispatchQueue.main.async {
+                    self?.cancelOptions()
+                }
+            }
+        }
     }
 
     private func handleOutsideClick(at point: NSPoint) {
@@ -140,6 +158,14 @@ final class RecordingController {
         if let monitor = optionsOutsideMonitor {
             NSEvent.removeMonitor(monitor)
             optionsOutsideMonitor = nil
+        }
+        if let monitor = optionsKeyMonitorLocal {
+            NSEvent.removeMonitor(monitor)
+            optionsKeyMonitorLocal = nil
+        }
+        if let monitor = optionsKeyMonitorGlobal {
+            NSEvent.removeMonitor(monitor)
+            optionsKeyMonitorGlobal = nil
         }
         closePanel(&optionsPanel)
     }

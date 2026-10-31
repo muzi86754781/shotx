@@ -1,7 +1,7 @@
 import { Icon, useIsMobile } from './ShotXUI.jsx';
 
-const DOWNLOAD_URL = 'https://github.com/aimen08/shotx/releases/latest';
-const GITHUB_URL = 'https://github.com/aimen08/shotx';
+const DOWNLOAD_URL = 'https://github.com/muzi86754781/shotx/releases/latest';
+const GITHUB_URL = 'https://github.com/muzi86754781/shotx';
 
 const GridBg = ({ opacity = .04, size = 48 }) => (
   <div aria-hidden style={{ position:'absolute', inset:0, backgroundImage: `linear-gradient(rgba(255,255,255,${opacity}) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,${opacity}) 1px, transparent 1px)`, backgroundSize: `${size}px ${size}px`, maskImage:'radial-gradient(ellipse at 50% 50%, #000 30%, transparent 80%)', WebkitMaskImage:'radial-gradient(ellipse at 50% 50%, #000 30%, transparent 80%)' }}/>

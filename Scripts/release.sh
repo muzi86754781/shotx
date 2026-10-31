@@ -104,7 +104,7 @@ if [ -f ".sparkle-tools/bin/sign_update" ] && [ -f ".sparkle-public-key" ]; then
         exit 1
     fi
     DMG_LENGTH=$(stat -f %z "$DMG_PATH")
-    DMG_URL="https://github.com/aimen08/shotx/releases/download/${TAG}/ShotX-${VERSION}.dmg"
+    DMG_URL="https://github.com/muzi86754781/shotx/releases/download/${TAG}/ShotX-${VERSION}.dmg"
     echo "→ Updating appcast.xml"
     Scripts/update-appcast.swift "$VERSION" "$DMG_URL" "$SIGNATURE" "$DMG_LENGTH"
 else

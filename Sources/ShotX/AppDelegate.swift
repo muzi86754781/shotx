@@ -148,6 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     private func populateStatusMenu(_ menu: NSMenu) {
+        // 1. 全能截图
         menu.addItem(menuItem(
             title: "全能截图",
             symbol: "square.grid.2x2",
@@ -155,8 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             shortcut: ShortcutStore.shared.allInOneShortcut
         ))
 
-        menu.addItem(.separator())
-
+        // 2. 区域截图
         menu.addItem(menuItem(
             title: "区域截图",
             symbol: "rectangle.dashed",
@@ -164,8 +164,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             shortcut: ShortcutStore.shared.shortcut
         ))
 
+        // 3. 上次区域截图
         let prev = menuItem(
-            title: "截取上一区域",
+            title: "上次区域截图",
             symbol: "arrow.clockwise",
             action: #selector(capturePreviousAreaFromMenu),
             shortcut: ShortcutStore.shared.previousAreaShortcut
@@ -174,29 +175,83 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         prev.isEnabled = LastCaptureStore.hasPrevious
         menu.addItem(prev)
 
+        // 4. 全屏截图
         menu.addItem(menuItem(
-            title: "截取全屏",
+            title: "全屏截图",
             symbol: "display",
             action: #selector(captureFullscreenFromMenu),
             shortcut: ShortcutStore.shared.fullscreenShortcut
         ))
 
+        // 5. 窗口截图
         menu.addItem(menuItem(
-            title: "截取窗口",
+            title: "窗口截图",
             symbol: "macwindow",
             action: #selector(captureWindow),
             shortcut: ShortcutStore.shared.windowCaptureShortcut
         ))
 
+        // 6. 定时截图
+        let timerItem = NSMenuItem(title: "定时截图", action: nil, keyEquivalent: "")
+        timerItem.image = NSImage(systemSymbolName: "timer", accessibilityDescription: nil)
+        let timerMenu = NSMenu()
+        for seconds in [3, 5, 10] {
+            let item = NSMenuItem(
+                title: "\(seconds) 秒",
+                action: #selector(captureAfterTimer(_:)),
+                keyEquivalent: ""
+            )
+            item.tag = seconds
+            item.target = self
+            timerMenu.addItem(item)
+        }
+        timerItem.submenu = timerMenu
+        menu.addItem(timerItem)
+
+        // 7. 截图OCR
         menu.addItem(menuItem(
-            title: "提取文字 (OCR)",
+            title: "截图OCR",
             symbol: "doc.text.viewfinder",
             action: #selector(captureTextNow),
             shortcut: ShortcutStore.shared.ocrShortcut
         ))
 
+        // 8. 从剪贴板贴图
+        menu.addItem(menuItem(
+            title: "从剪贴板贴图",
+            symbol: "pin",
+            action: #selector(pinToScreen),
+            shortcut: ShortcutStore.shared.pinShortcut
+        ))
+
+        // 9. 改图-打开图片
+        menu.addItem(menuItem(
+            title: "改图-打开图片",
+            symbol: "folder",
+            action: #selector(openImageFile)
+        ))
+
+        // 10. 改图-从剪贴板打开
+        menu.addItem(menuItem(
+            title: "改图-从剪贴板打开",
+            symbol: "doc.on.clipboard",
+            action: #selector(openFromClipboard),
+            keyEquivalent: "v",
+            keyEquivalentModifiers: [.command, .shift]
+        ))
+
+        // 11. 拾色器
+        menu.addItem(menuItem(
+            title: "拾色器",
+            symbol: "eyedropper",
+            action: #selector(pickColor),
+            shortcut: ShortcutStore.shared.colorPickerShortcut
+        ))
+
+        // --- 分割线 ---
         menu.addItem(.separator())
 
+        // 12. 屏幕录制
         let recording = MainActor.assumeIsolated { RecordingController.shared.isRecording }
         if recording {
             let stop = menuItem(
@@ -215,34 +270,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ))
         }
 
+        // 13. 声音录制
         let isAudioRec = AudioRecorderController.shared.isRecording
         menu.addItem(menuItem(
-            title: isAudioRec ? "停止录音" : "屏幕录音",
+            title: isAudioRec ? "停止录音" : "声音录制",
             symbol: isAudioRec ? "stop.circle.fill" : "mic.fill",
             action: #selector(toggleAudioRecording),
             shortcut: ShortcutStore.shared.recordAudioShortcut
         ))
 
+        // --- 分割线 ---
         menu.addItem(.separator())
 
-        let timerItem = NSMenuItem(title: "定时截图", action: nil, keyEquivalent: "")
-        timerItem.image = NSImage(systemSymbolName: "timer", accessibilityDescription: nil)
-        let timerMenu = NSMenu()
-        for seconds in [3, 5, 10] {
-            let item = NSMenuItem(
-                title: "\(seconds) 秒",
-                action: #selector(captureAfterTimer(_:)),
-                keyEquivalent: ""
-            )
-            item.tag = seconds
-            item.target = self
-            timerMenu.addItem(item)
-        }
-        timerItem.submenu = timerMenu
-        menu.addItem(timerItem)
+        // 14. 划词翻译
+        menu.addItem(menuItem(
+            title: "划词翻译",
+            symbol: "character.book.closed.fill",
+            action: #selector(translateSelection),
+            shortcut: ShortcutStore.shared.selectionTranslationShortcut
+        ))
 
+        // 15. 截图翻译
+        menu.addItem(menuItem(
+            title: "截图翻译",
+            symbol: "viewfinder.circle",
+            action: #selector(translateScreenshot),
+            shortcut: ShortcutStore.shared.screenshotTranslationShortcut
+        ))
+
+        // 16. 输入翻译
+        menu.addItem(menuItem(
+            title: "输入翻译",
+            symbol: "globe",
+            action: #selector(openTranslationWindow)
+        ))
+
+        // --- 分割线 ---
         menu.addItem(.separator())
 
+        // 17. 剪贴板历史
+        menu.addItem(menuItem(
+            title: "剪贴板历史",
+            symbol: "list.bullet.clipboard.fill",
+            action: #selector(toggleClipboardHistory),
+            shortcut: ShortcutStore.shared.clipboardHistoryShortcut
+        ))
+
+        // --- 分割线 ---
+        menu.addItem(.separator())
+
+        // 18. 隐藏/显示桌面图标
         let isDeskVisible = DesktopIcons.isVisible()
         let showDesktop = menuItem(
             title: isDeskVisible ? "隐藏桌面图标" : "显示桌面图标",
@@ -253,107 +330,56 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showDesktop.toolTip = "一键隐藏或恢复桌面上所有文件和图标，录屏或演示更整洁"
         menu.addItem(showDesktop)
 
+        // 19. 历史记录
         menu.addItem(menuItem(
-            title: "拾色器…",
-            symbol: "eyedropper",
-            action: #selector(pickColor),
-            shortcut: ShortcutStore.shared.colorPickerShortcut
-        ))
-
-        menu.addItem(menuItem(
-            title: "打开图片…",
-            symbol: "folder",
-            action: #selector(openImageFile)
-        ))
-        menu.addItem(menuItem(
-            title: "从剪贴板打开",
-            symbol: "doc.on.clipboard",
-            action: #selector(openFromClipboard),
-            keyEquivalent: "v",
-            keyEquivalentModifiers: [.command, .shift]
-        ))
-
-        menu.addItem(menuItem(
-            title: "贴图到屏幕…",
-            symbol: "pin",
-            action: #selector(pinToScreen),
-            shortcut: ShortcutStore.shared.pinShortcut
-        ))
-
-        menu.addItem(.separator())
-
-        menu.addItem(menuItem(
-            title: "划词翻译",
-            symbol: "character.book.closed.fill",
-            action: #selector(translateSelection),
-            shortcut: ShortcutStore.shared.selectionTranslationShortcut
-        ))
-
-        menu.addItem(menuItem(
-            title: "截图翻译",
-            symbol: "viewfinder.circle",
-            action: #selector(translateScreenshot),
-            shortcut: ShortcutStore.shared.screenshotTranslationShortcut
-        ))
-
-        menu.addItem(menuItem(
-            title: "翻译窗口…",
-            symbol: "globe",
-            action: #selector(openTranslationWindow)
-        ))
-
-        menu.addItem(menuItem(
-            title: "记录复制 (剪贴板历史)…",
-            symbol: "list.bullet.clipboard.fill",
-            action: #selector(toggleClipboardHistory),
-            shortcut: ShortcutStore.shared.clipboardHistoryShortcut
-        ))
-
-        menu.addItem(.separator())
-
-        menu.addItem(menuItem(
-            title: "历史记录…",
+            title: "历史记录",
             symbol: "clock.arrow.circlepath",
             action: #selector(showHistory)
         ))
 
+        // --- 分割线 ---
         menu.addItem(.separator())
 
-        if Permissions.screenRecordingGranted {
-            let granted = NSMenuItem(title: "权限已获取", action: nil, keyEquivalent: "")
-            let config = NSImage.SymbolConfiguration(paletteColors: [NSColor.systemGreen])
-            let icon = NSImage(systemSymbolName: "checkmark.circle.fill", accessibilityDescription: nil)?
-                .withSymbolConfiguration(config)
-            icon?.isTemplate = false
-            granted.image = icon
-            granted.isEnabled = false
-            menu.addItem(granted)
-        } else {
-            menu.addItem(menuItem(
-                title: "需要权限…",
-                symbol: "exclamationmark.shield",
-                action: #selector(openPermissions)
-            ))
-        }
-
+        // 20. 支持作者
         menu.addItem(menuItem(
-            title: "检查更新…",
-            symbol: "arrow.down.circle",
-            action: #selector(checkForUpdates)
+            title: "支持作者",
+            symbol: "cup.and.saucer.fill",
+            action: #selector(showSupportAuthor)
         ))
 
+        // 21. 偏好设置
         menu.addItem(menuItem(
-            title: "关于 ShotX",
-            symbol: "info.circle",
-            action: #selector(showAbout)
-        ))
-        menu.addItem(menuItem(
-            title: "偏好设置…",
+            title: "偏好设置",
             symbol: "gearshape",
             action: #selector(showSettings),
             keyEquivalent: ",",
             keyEquivalentModifiers: .command
         ))
+
+        // 22. 检查更新
+        menu.addItem(menuItem(
+            title: "检查更新",
+            symbol: "arrow.down.circle",
+            action: #selector(checkForUpdates)
+        ))
+
+        // 23. 关于 ShotX
+        menu.addItem(menuItem(
+            title: "关于 ShotX",
+            symbol: "info.circle",
+            action: #selector(showAbout)
+        ))
+
+        // 权限状态提示（如未授权）
+        if !Permissions.screenRecordingGranted {
+            menu.addItem(menuItem(
+                title: "需要权限",
+                symbol: "exclamationmark.shield",
+                action: #selector(openPermissions)
+            ))
+        }
+
+        // 24. 退出 ShotX
         menu.addItem(menuItem(
             title: "退出 ShotX",
             symbol: "power",
@@ -942,6 +968,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         }
     }
 
+    @objc private func showSupportAuthor() {
+        MainActor.assumeIsolated {
+            SupportAuthorController.shared.show()
+        }
+    }
+
     @objc private func showAbout() {
         NSApp.activate(ignoringOtherApps: true)
 
@@ -952,16 +984,35 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .paragraphStyle: {
                 let p = NSMutableParagraphStyle()
                 p.alignment = .center
-                p.lineSpacing = 2
+                p.lineSpacing = 3
                 return p
             }()
         ]
 
+        let fullIntro = """
+        ShotX · 现代 macOS 全能屏幕截图与录屏录音工具
+
+        ✨ 核心功能：
+        • 全能截图 / 区域截图 / 窗口与全屏截图 / 上次区域截图 / 定时截图
+        • 丰富的就地几何、箭头、荧光笔、序号标注、马赛克、圆角与阴影调节
+        • 滚动长截图智能实时拼接预览
+        • 离线高精度 OCR 屏幕文字识别与快速复制
+        • 取色放大镜拾色器（支持 RGB / HEX 拷贝）与贴图置顶
+        • 屏幕高清录制（支持声音、摄像头、按键显示与光标高亮，导出 MP4/GIF）
+        • 独立麦克风声音录制（支持悬浮计时药丸，导出 M4A）
+        • 划词翻译、截图翻译、输入翻译（多引擎中英互换、TTS 语音朗读与历史记录）
+        • 剪贴板历史管理（多格式记录、搜索与快速复用）
+        • 一键隐藏/恢复桌面图标与全功能历史记录中心
+
+        联系作者 QQ: 285351298
+
+        """
+
         credits.append(NSAttributedString(
-            string: "现代 macOS 菜单栏截图与录屏工具。\n\n",
+            string: fullIntro,
             attributes: baseAttrs
         ))
-        credits.append(NSAttributedString(string: "Made by ", attributes: baseAttrs))
+        credits.append(NSAttributedString(string: "Made with ❤️ by ", attributes: baseAttrs))
         credits.append(NSAttributedString(
             string: "@muzi86754781",
             attributes: baseAttrs.merging([

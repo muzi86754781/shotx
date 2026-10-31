@@ -2,11 +2,11 @@ cask "shotx" do
   version "1.9.10"
   sha256 "b732071c33b48c7023573c191f7b9efe5f93419fcf24c97f3797f70b001432f2"
 
-  url "https://github.com/aimen08/shotx/releases/download/v#{version}/ShotX-#{version}.dmg",
-      verified: "github.com/aimen08/shotx/"
+  url "https://github.com/muzi86754781/shotx/releases/download/v#{version}/ShotX-#{version}.dmg",
+      verified: "github.com/muzi86754781/shotx/"
   name "ShotX"
   desc "Modern macOS screen capture for the menu bar"
-  homepage "https://github.com/aimen08/shotx"
+  homepage "https://github.com/muzi86754781/shotx"
 
   livecheck do
     url :url

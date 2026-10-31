@@ -51,6 +51,7 @@ final class HotKeyManager {
     @discardableResult
     func register(keyCode: UInt32, modifiers: UInt32, handler: @escaping () -> Void) -> Bool {
         unregister()
+        guard keyCode != 0 || modifiers != 0 else { return true }
         self.handler = handler
         let signature: OSType = 0x53485458
         let hotKeyID = EventHotKeyID(signature: signature, id: id)

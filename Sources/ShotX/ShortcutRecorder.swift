@@ -86,10 +86,22 @@ final class ShortcutRecorderView: NSView {
         path.lineWidth = 1
         path.stroke()
 
-        let text = isRecording ? "按下快捷键…" : ShortcutFormatter.describe(displayShortcut)
+        let text: String
+        let textColor: NSColor
+        if isRecording {
+            text = "按下快捷键…"
+            textColor = NSColor.controlAccentColor
+        } else if displayShortcut.isEmpty {
+            text = "未设置"
+            textColor = NSColor.placeholderTextColor
+        } else {
+            text = ShortcutFormatter.describe(displayShortcut)
+            textColor = NSColor.labelColor
+        }
+
         let attrs: [NSAttributedString.Key: Any] = [
             .font: NSFont.systemFont(ofSize: 13, weight: .medium),
-            .foregroundColor: isRecording ? NSColor.controlAccentColor : NSColor.labelColor
+            .foregroundColor: textColor
         ]
         let size = text.size(withAttributes: attrs)
         let origin = NSPoint(x: (bounds.width - size.width) / 2,
