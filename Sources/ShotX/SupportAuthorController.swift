@@ -22,7 +22,7 @@ final class SupportAuthorController {
         let w = NSWindow(contentViewController: hosting)
         w.title = "支持作者 · ShotX"
         w.styleMask = [.titled, .closable]
-        w.setContentSize(NSSize(width: 540, height: 450))
+        w.setContentSize(NSSize(width: 550, height: 490))
         w.isReleasedWhenClosed = false
         w.center()
         w.makeKeyAndOrderFront(nil)
@@ -68,9 +68,9 @@ struct SupportAuthorView: View {
             .padding(.horizontal, 20)
             .padding(.top, 16)
 
-            // Content Area: Left Story/Info + Right WeChat QR Code (No ScrollView, zero scrollbars!)
+            // Content Area: Left Story/Info + Right WeChat QR Code
             HStack(alignment: .top, spacing: 18) {
-                // Left Column: Developer Story & QQ
+                // Left Column: Developer Story (Doubled Height with Internal ScrollView if needed) & QQ
                 VStack(alignment: .leading, spacing: 12) {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack(spacing: 6) {
@@ -82,10 +82,14 @@ struct SupportAuthorView: View {
                                 .foregroundStyle(Color.accentColor)
                         }
 
-                        Text("ShotX 追求丝滑、小巧、纯净与高效。从全能截图、几何标注、滚动长截图实时拼接、离线 OCR，到划词/截图/输入多模态翻译、剪贴板历史与屏幕录制，无数个夜晚与周末都在代码调试和体验打磨中度过。\n\nShotX 坚持永久纯净、无任何广告。您的认可与赞赏，是作者持续迭代与维护的最大动力！如果 ShotX 为您的日常工作带来了哪怕一点点便利，欢迎请作者喝杯咖啡 ☕️！")
-                            .font(.system(size: 11.5))
-                            .lineSpacing(3.5)
-                            .foregroundStyle(.secondary)
+                        ScrollView(.vertical, showsIndicators: true) {
+                            Text("ShotX 追求丝滑、小巧、纯净与高效。从全能截图、几何标注、滚动长截图实时拼接、离线 OCR，到划词/截图/输入多模态翻译、剪贴板历史与屏幕录制，无数个夜晚与周末都在代码调试和体验打磨中度过。\n\nShotX 坚持永久纯净、无任何广告。您的认可与赞赏，是作者持续迭代与维护的最大动力！如果 ShotX 为您的日常工作带来了哪怕一点点便利，欢迎请作者喝杯咖啡 ☕️！")
+                                .font(.system(size: 12))
+                                .lineSpacing(4)
+                                .foregroundStyle(.secondary)
+                                .padding(.trailing, 4)
+                        }
+                        .frame(height: 230)
                     }
                     .padding(12)
                     .background(
@@ -137,7 +141,7 @@ struct SupportAuthorView: View {
                 .frame(maxWidth: .infinity)
 
                 // Right Column: WeChat QR Code
-                VStack(spacing: 10) {
+                VStack(spacing: 12) {
                     HStack(spacing: 6) {
                         Image(systemName: "qrcode")
                             .font(.system(size: 12))
@@ -169,7 +173,7 @@ struct SupportAuthorView: View {
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
                 }
-                .padding(12)
+                .padding(14)
                 .background(
                     RoundedRectangle(cornerRadius: 10)
                         .fill(Color(NSColor.controlBackgroundColor))
@@ -184,25 +188,16 @@ struct SupportAuthorView: View {
 
             Spacer(minLength: 4)
 
-            // Bottom Buttons
+            // Bottom Buttons (Removed "保存收款码到下载")
             HStack(spacing: 12) {
                 Spacer()
-
-                Button {
-                    saveQRCodeImage()
-                } label: {
-                    Label("保存收款码到下载", systemImage: "arrow.down.circle")
-                        .font(.system(size: 12))
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.regular)
 
                 Button {
                     onClose()
                 } label: {
                     Text("关闭")
                         .font(.system(size: 12))
-                        .frame(width: 60)
+                        .frame(width: 70)
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.regular)
@@ -210,7 +205,7 @@ struct SupportAuthorView: View {
             .padding(.horizontal, 20)
             .padding(.bottom, 16)
         }
-        .frame(width: 540, height: 450)
+        .frame(width: 550, height: 490)
         .background(Color(NSColor.windowBackgroundColor))
         .onAppear {
             loadQRCode()
@@ -235,27 +230,6 @@ struct SupportAuthorView: View {
                 qrImage = img
                 return
             }
-        }
-    }
-
-    private func saveQRCodeImage() {
-        guard let img = qrImage,
-              let tiff = img.tiffRepresentation,
-              let rep = NSBitmapImageRep(data: tiff),
-              let jpg = rep.representation(using: .jpeg, properties: [:]) else {
-            return
-        }
-
-        if let downloads = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask).first {
-            let dest = downloads.appendingPathComponent("ShotX_微信赞赏收款码.jpg")
-            try? jpg.write(to: dest)
-            NSWorkspace.shared.activateFileViewerSelecting([dest])
-            ToastController.shared.show(
-                message: "微信收款码已保存至下载文件夹",
-                icon: "checkmark.circle.fill",
-                tint: .systemGreen,
-                duration: 2.0
-            )
         }
     }
 }

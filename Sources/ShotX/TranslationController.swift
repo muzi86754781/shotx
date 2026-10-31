@@ -328,7 +328,7 @@ final class TranslationViewModel: ObservableObject {
 
 final class TranslationController {
     static let shared = TranslationController()
-    private var window: NSPanel?
+    private var window: FloatingKeyPanel?
     private var hosting: NSHostingController<TranslationWindowView>?
     let viewModel = TranslationViewModel()
 
@@ -362,7 +362,8 @@ final class TranslationController {
         let size = NSSize(width: 480, height: 420)
         h.view.frame = NSRect(origin: .zero, size: size)
 
-        let panel = NSPanel(
+        // Use FloatingKeyPanel so borderless panel can become key and accept keyboard input!
+        let panel = FloatingKeyPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .resizable],
             backing: .buffered,
@@ -380,10 +381,11 @@ final class TranslationController {
         panel.isOpaque = false
 
         let mouse = NSEvent.mouseLocation
-        if let screen = NSScreen.main {
+        let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main ?? NSScreen.screens.first
+        if let s = screen {
             var origin = NSPoint(x: mouse.x - size.width / 2, y: mouse.y - size.height / 2)
-            origin.x = max(screen.frame.minX + 20, min(screen.frame.maxX - size.width - 20, origin.x))
-            origin.y = max(screen.frame.minY + 20, min(screen.frame.maxY - size.height - 20, origin.y))
+            origin.x = max(s.frame.minX + 20, min(s.frame.maxX - size.width - 20, origin.x))
+            origin.y = max(s.frame.minY + 20, min(s.frame.maxY - size.height - 20, origin.y))
             panel.setFrame(NSRect(origin: origin, size: size), display: true)
         }
 

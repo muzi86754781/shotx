@@ -174,11 +174,33 @@ final class ClipboardStore: ObservableObject {
     }
 }
 
+// MARK: - Floating Key Panel (Allows borderless windows to become key and accept input)
+
+final class FloatingKeyPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 // MARK: - Clipboard History Floating Panel
 
 final class ClipboardHistoryController {
     static let shared = ClipboardHistoryController()
-    private var panel: NSPanel?
+    private var panel: FloatingKeyPanel?
+    private var previousApp: NSRunningApplication?
+    var isPinned: Bool = true {
+        didSet {
+            UserDefaults.standard.set(isPinned, forKey: "com.shotx.clipboard.isPinned")
+            if let p = panel {
+                updatePanelLevel(p)
+            }
+        }
+    }
+
+    init() {
+        if UserDefaults.standard.object(forKey: "com.shotx.clipboard.isPinned") != nil {
+            isPinned = UserDefaults.standard.bool(forKey: "com.shotx.clipboard.isPinned")
+        }
+    }
 
     func toggle() {
         if let p = panel, p.isVisible {
@@ -189,17 +211,27 @@ final class ClipboardHistoryController {
     }
 
     func show() {
+        // Record frontmost application before ShotX takes focus
+        let current = NSWorkspace.shared.frontmostApplication
+        if current?.bundleIdentifier != Bundle.main.bundleIdentifier {
+            previousApp = current
+        }
+
         dismiss()
 
         let view = ClipboardHistoryView(
             store: ClipboardStore.shared,
+            isPinned: isPinned,
+            onTogglePin: { [weak self] newPin in
+                self?.isPinned = newPin
+            },
             onClose: { [weak self] in self?.dismiss() }
         )
         let hosting = NSHostingController(rootView: view)
-        let size = NSSize(width: 420, height: 480)
+        let size = NSSize(width: 440, height: 490)
         hosting.view.frame = NSRect(origin: .zero, size: size)
 
-        let p = NSPanel(
+        let p = FloatingKeyPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .resizable],
             backing: .buffered,
@@ -209,7 +241,8 @@ final class ClipboardHistoryController {
         p.titleVisibility = .hidden
         p.isMovableByWindowBackground = true
         p.isFloatingPanel = true
-        p.level = .floating
+        p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+        updatePanelLevel(p)
         p.contentViewController = hosting
         p.isReleasedWhenClosed = false
         p.hasShadow = true
@@ -228,6 +261,17 @@ final class ClipboardHistoryController {
         self.panel = p
     }
 
+    private func updatePanelLevel(_ p: NSPanel) {
+        if isPinned {
+            p.level = .floating
+            p.hidesOnDeactivate = false
+            p.orderFrontRegardless()
+        } else {
+            p.level = .normal
+            p.hidesOnDeactivate = false
+        }
+    }
+
     func dismiss() {
         panel?.orderOut(nil)
         panel = nil
@@ -235,21 +279,42 @@ final class ClipboardHistoryController {
 
     static func pasteAtCursor(_ entry: ClipboardEntry) {
         ClipboardStore.shared.copyToClipboard(entry)
+
+        let targetApp = shared.previousApp
         shared.dismiss()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+
+        // 1. Reactivate the previous target application where cursor was
+        if let target = targetApp, !target.isTerminated {
+            target.activate(options: [.activateIgnoringOtherApps])
+        } else {
+            NSApp.hide(nil)
+        }
+
+        // 2. Synthesize Cmd+V keystroke to paste directly at cursor position
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
             let src = CGEventSource(stateID: .combinedSessionState)
-            let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true)
-            keyDown?.flags = .maskCommand
-            let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false)
-            keyUp?.flags = .maskCommand
-            keyDown?.post(tap: .cghidEventTap)
-            keyUp?.post(tap: .cghidEventTap)
+            if let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true),
+               let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false) {
+                keyDown.flags = .maskCommand
+                keyUp.flags = .maskCommand
+                keyDown.post(tap: .cghidEventTap)
+                keyUp.post(tap: .cghidEventTap)
+            }
+
+            // Fallback via AppleScript System Events keystroke
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+                let script = NSAppleScript(source: "tell application \"System Events\" to keystroke \"v\" using command down")
+                var err: NSDictionary?
+                script?.executeAndReturnError(&err)
+            }
         }
     }
 }
 
 struct ClipboardHistoryView: View {
     @ObservedObject var store: ClipboardStore
+    @State var isPinned: Bool
+    var onTogglePin: ((Bool) -> Void)? = nil
     let onClose: () -> Void
 
     @State private var searchText: String = ""
@@ -266,21 +331,38 @@ struct ClipboardHistoryView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Header (Borderless clean card header)
+            // Header (Borderless clean card header with Pin & Close buttons)
             HStack(spacing: 10) {
                 Image(systemName: "doc.on.clipboard.fill")
                     .foregroundStyle(.blue)
                     .font(.system(size: 15, weight: .semibold))
                 Text("剪贴板历史")
                     .font(.system(size: 14, weight: .semibold))
+
                 Spacer()
+
+                // Pin (置顶) Button
+                Button {
+                    isPinned.toggle()
+                    onTogglePin?(isPinned)
+                } label: {
+                    Image(systemName: isPinned ? "pin.fill" : "pin")
+                        .font(.system(size: 11, weight: .bold))
+                        .foregroundStyle(isPinned ? Color.blue : Color.secondary)
+                        .frame(width: 24, height: 24)
+                        .background(isPinned ? Color.blue.opacity(0.12) : Color.primary.opacity(0.06))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .help(isPinned ? "取消置顶" : "置顶窗口")
+
                 Button {
                     onClose()
                 } label: {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.secondary)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 24, height: 24)
                         .background(Color.primary.opacity(0.06))
                         .clipShape(Circle())
                 }
@@ -340,7 +422,13 @@ struct ClipboardHistoryView: View {
                                 entry: entry,
                                 onCopy: {
                                     store.copyToClipboard(entry)
-                                    onClose()
+                                    ToastController.shared.show(
+                                        message: "已复制到剪贴板",
+                                        icon: "checkmark.circle.fill",
+                                        tint: .systemGreen,
+                                        duration: 1.2,
+                                        position: .center
+                                    )
                                 },
                                 onPaste: {
                                     ClipboardHistoryController.pasteAtCursor(entry)
@@ -473,12 +561,18 @@ private struct ClipboardRowView: View {
                 .fill(isHovering ? Color.accentColor.opacity(0.08) : Color(NSColor.controlBackgroundColor).opacity(0.6))
         )
         .onHover { isHovering = $0 }
-        .onTapGesture(count: 2) {
-            onPaste()
-        }
-        .onTapGesture(count: 1) {
-            onCopy()
-        }
+        .gesture(
+            TapGesture(count: 2)
+                .onEnded {
+                    onPaste()
+                }
+                .exclusively(before:
+                    TapGesture(count: 1)
+                        .onEnded {
+                            onCopy()
+                        }
+                )
+        )
     }
 }
 

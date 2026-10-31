@@ -819,12 +819,16 @@ final class SelectionView: NSView {
         }
 
         let movement = detectScrollMovement(oldImage: last, newImage: fresh)
-        // 关键：截图区域内有滚动内容变化时才拼接长图，不是滑动就拼接长图
-        guard movement.hasMovement, movement.offsetY > 2 else {
+        // 关键：截图区域内经过全重叠区域误差验证有实际滚动时才拼接长图，无位移或未对齐则不拼接
+        guard movement.hasMovement, movement.offsetY >= 4 else {
             return
         }
 
         let appendHeight = CGFloat(movement.offsetY)
+        guard appendHeight < fresh.size.height * 0.85 else {
+            return
+        }
+
         let newTotalHeight = base.size.height + appendHeight
         let newSize = NSSize(width: base.size.width, height: newTotalHeight)
 
@@ -852,66 +856,103 @@ final class SelectionView: NSView {
             return (false, 0)
         }
 
-        let sampleW = 40
-        let sampleH = min(200, max(60, oldCG.height / 2))
+        let sampleW = 160
+        let sampleH = min(400, max(120, oldCG.height / 2))
         guard let oldBuf = grayscaleSample(cgImage: oldCG, width: sampleW, height: sampleH),
               let newBuf = grayscaleSample(cgImage: newCG, width: sampleW, height: sampleH) else {
             return (false, 0)
         }
 
-        // 1. Calculate overall mean difference between old and new frame
-        var totalDiff: Int = 0
-        let count = sampleW * sampleH
-        for i in 0..<count {
-            totalDiff += abs(Int(oldBuf[i]) - Int(newBuf[i]))
+        // 1. 检测两帧全局平均像素差
+        var totalDiff: Double = 0
+        let totalCount = sampleW * sampleH
+        for i in 0..<totalCount {
+            totalDiff += abs(Double(oldBuf[i]) - Double(newBuf[i]))
         }
-        let meanDiff = Double(totalDiff) / Double(count)
+        let meanDiff = totalDiff / Double(totalCount)
 
-        // If overall difference is under 2.2 (out of 255), content is virtually identical -> no scrolling!
-        if meanDiff < 2.2 {
+        // 整体差异极小（< 1.8 / 255）表示画面静止未滚动，直接退出
+        if meanDiff < 1.8 {
             return (false, 0)
         }
 
-        // 2. Find row shift dy where old[y + dy] matches new[y]
-        let maxDy = min(sampleH / 2, 70)
-        var bestDy: Int = 0
-        var bestError: Double = Double.greatestFiniteMagnitude
+        // 2. 全重叠区域（Overlap Slab）搜索真实位移 S
+        let minS = 4
+        let maxS = sampleH - 35
+        guard maxS > minS else { return (false, 0) }
 
-        for dy in 2...maxDy {
-            var diffSum: Int = 0
+        var bestS = 0
+        var bestError = Double.greatestFiniteMagnitude
+
+        for s in minS...maxS {
+            let overlapH = sampleH - s
+            var diffSum: Double = 0
             var sampleCount: Int = 0
-            for y in stride(from: 0, to: sampleH - dy, by: 2) {
-                let oldRowStart = (y + dy) * sampleW
+
+            for y in stride(from: 0, to: overlapH, by: 2) {
+                let oldRowStart = (y + s) * sampleW
                 let newRowStart = y * sampleW
-                for x in stride(from: 0, to: sampleW, by: 3) {
-                    diffSum += abs(Int(oldBuf[oldRowStart + x]) - Int(newBuf[newRowStart + x]))
+                for x in stride(from: 0, to: sampleW, by: 2) {
+                    diffSum += abs(Double(oldBuf[oldRowStart + x]) - Double(newBuf[newRowStart + x]))
                     sampleCount += 1
                 }
             }
+
             if sampleCount > 0 {
-                let err = Double(diffSum) / Double(sampleCount)
+                let err = diffSum / Double(sampleCount)
                 if err < bestError {
                     bestError = err
-                    bestDy = dy
+                    bestS = s
                 }
             }
         }
 
+        // 兼顾不同窗口/缓冲区坐标系的正反向测试
+        var bestReverseS = 0
+        var bestReverseError = Double.greatestFiniteMagnitude
+
+        for s in minS...maxS {
+            let overlapH = sampleH - s
+            var diffSum: Double = 0
+            var sampleCount: Int = 0
+
+            for y in stride(from: 0, to: overlapH, by: 2) {
+                let oldRowStart = y * sampleW
+                let newRowStart = (y + s) * sampleW
+                for x in stride(from: 0, to: sampleW, by: 2) {
+                    diffSum += abs(Double(oldBuf[oldRowStart + x]) - Double(newBuf[newRowStart + x]))
+                    sampleCount += 1
+                }
+            }
+
+            if sampleCount > 0 {
+                let err = diffSum / Double(sampleCount)
+                if err < bestReverseError {
+                    bestReverseError = err
+                    bestReverseS = s
+                }
+            }
+        }
+
+        let chosenS: Int
+        let chosenError: Double
+        if bestReverseError < bestError {
+            chosenS = bestReverseS
+            chosenError = bestReverseError
+        } else {
+            chosenS = bestS
+            chosenError = bestError
+        }
+
+        // 3. 严格验证：整块重叠区域平均像素误差必须低于 13.0，杜绝盲目拼接与文本重叠！
+        guard chosenError < 13.0, chosenS >= minS else {
+            return (false, 0)
+        }
+
         let scale = CGFloat(newImage.size.height) / CGFloat(sampleH)
+        let realS = Int(round(CGFloat(chosenS) * scale))
 
-        // If a clear matching row offset was found with low error
-        if bestError < 15.0 && bestDy >= 2 {
-            let realDy = Int(round(CGFloat(bestDy) * scale))
-            return (true, max(4, realDy))
-        }
-
-        // If image clearly changed (meanDiff >= 15.0) but row matching had higher error (e.g. fast swipe)
-        if meanDiff >= 15.0 {
-            let fallbackDy = Int(round(CGFloat(min(sampleH / 5, 25)) * scale))
-            return (true, max(10, fallbackDy))
-        }
-
-        return (false, 0)
+        return (true, max(4, realS))
     }
 
     private func grayscaleSample(cgImage: CGImage, width: Int, height: Int) -> [UInt8]? {

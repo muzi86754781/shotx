@@ -755,7 +755,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func translateSelection() {
-        // Accessibility API query for selected text
+        // 1. First attempt: Accessibility API query for selected text
         let systemWide = AXUIElementCreateSystemWide()
         var focusedElement: AnyObject?
         let axError = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
@@ -768,23 +768,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             }
         }
 
-        // Fallback: simulate Cmd+C keystroke, wait briefly, then read clipboard
-        let oldChangeCount = NSPasteboard.general.changeCount
-        let src = CGEventSource(stateID: .hidSystemState)
-        let keyDown = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: true)
-        keyDown?.flags = CGEventFlags.maskCommand
-        let keyUp = CGEvent(keyboardEventSource: src, virtualKey: CGKeyCode(kVK_ANSI_C), keyDown: false)
-        keyUp?.flags = CGEventFlags.maskCommand
-        keyDown?.post(tap: CGEventTapLocation.cghidEventTap)
-        keyUp?.post(tap: CGEventTapLocation.cghidEventTap)
+        // 2. Second attempt: simulate Cmd+C keystroke to copy selected text
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            let oldChangeCount = NSPasteboard.general.changeCount
+            let src = CGEventSource(stateID: .combinedSessionState)
+            let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 8, keyDown: true) // 8 = 'c'
+            keyDown?.flags = .maskCommand
+            let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 8, keyDown: false)
+            keyUp?.flags = .maskCommand
+            keyDown?.post(tap: .cghidEventTap)
+            keyUp?.post(tap: .cghidEventTap)
 
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) {
-            if NSPasteboard.general.changeCount != oldChangeCount,
-               let text = NSPasteboard.general.string(forType: .string),
-               !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                TranslationController.shared.show(text: text)
-            } else {
-                TranslationController.shared.show()
+            // AppleScript fallback
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
+                let script = NSAppleScript(source: "tell application \"System Events\" to keystroke \"c\" using command down")
+                var err: NSDictionary?
+                script?.executeAndReturnError(&err)
+            }
+
+            // Wait 0.16s for the target application to write to the pasteboard
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+                if NSPasteboard.general.changeCount != oldChangeCount,
+                   let text = NSPasteboard.general.string(forType: .string),
+                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    TranslationController.shared.show(text: text)
+                } else {
+                    TranslationController.shared.show()
+                }
             }
         }
     }
@@ -796,21 +806,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         overlayController = controller
         controller.begin(isOCR: true, onOCRResult: { [weak self] ocrImage in
             self?.overlayController = nil
-            guard let image = ocrImage else { return }
+            guard let image = ocrImage else {
+                TranslationController.shared.show()
+                return
+            }
             Task { @MainActor in
-                guard let cgImage = OCR.cgImage(from: image) else { return }
-                if let text = await OCR.recognize(in: cgImage) {
+                guard let cgImage = OCR.cgImage(from: image) else {
+                    TranslationController.shared.show()
+                    return
+                }
+                if let text = await OCR.recognize(in: cgImage), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     SoundEffect.shared.playShutter()
                     HistoryStore.shared.addOCR(text)
                     TranslationController.shared.show(text: text)
                 } else {
                     ToastController.shared.show(
-                        message: "未识别到文字内容",
-                        icon: "exclamationmark.triangle.fill",
+                        message: "选区未识别到清晰文字，已打开翻译窗口",
+                        icon: "character.book.closed",
                         tint: .systemOrange,
-                        duration: 2.5,
+                        duration: 2.0,
                         position: .center
                     )
+                    TranslationController.shared.show()
                 }
             }
         }, completion: { [weak self] in
