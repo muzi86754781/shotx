@@ -166,7 +166,7 @@ if [ "$SIGN_IDENTITY" = "-" ]; then
 else
     echo "→ Code signing with identity: $SIGN_IDENTITY"
 fi
-codesign --force --deep --sign "$SIGN_IDENTITY" -r="=designated => identifier \"com.shotx.ShotX\"" "$APP"
+codesign --force --deep --sign "$SIGN_IDENTITY" -r="designated => identifier \"com.shotx.ShotX\"" "$APP"
 
 echo
 echo "✓ Built $APP"
