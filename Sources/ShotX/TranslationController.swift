@@ -337,6 +337,10 @@ final class TranslationController {
         if !trimmed.isEmpty {
             viewModel.inputText = trimmed
             viewModel.performTranslation()
+        } else {
+            // When user opens translation window directly, clear previous text so it doesn't show old content
+            viewModel.inputText = ""
+            viewModel.translatedText = ""
         }
 
         if let w = window {

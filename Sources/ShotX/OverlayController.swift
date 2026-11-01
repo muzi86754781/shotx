@@ -44,8 +44,10 @@ final class OverlayController {
                 snapshot: snapshots[screen],
                 isOCR: isOCR,
                 onOCRResult: { [weak self] img in
-                    self?.finish()
-                    self?.onOCRResult?(img)
+                    guard let self = self else { return }
+                    let callback = self.onOCRResult
+                    self.finish()
+                    callback?(img)
                 },
                 onActive: { [weak self] activeWindow in
                     self?.dismissOtherWindows(except: activeWindow)

@@ -34,15 +34,33 @@ enum OCR {
     private static func recognizeAppleVision(in cgImage: CGImage) async -> String? {
         await Task.detached(priority: .userInitiated) {
             let request = VNRecognizeTextRequest()
+            if #available(macOS 13.0, *) {
+                request.revision = VNRecognizeTextRequestRevision3
+            } else if #available(macOS 11.0, *) {
+                request.revision = VNRecognizeTextRequestRevision2
+            }
             request.recognitionLevel = .accurate
             request.usesLanguageCorrection = true
-            request.recognitionLanguages = ["zh-Hans", "zh-Hant", "en-US", "fr-FR", "es-ES", "de-DE", "it-IT", "pt-BR"]
+
+            // Automatically check and set supported languages for this revision (including Chinese)
+            if let supported = try? request.supportedRecognitionLanguages(), !supported.isEmpty {
+                let preferred = ["zh-Hans", "zh-Hant", "en-US", "ja-JP", "ko-KR"]
+                let filtered = preferred.filter { supported.contains($0) }
+                request.recognitionLanguages = filtered.isEmpty ? Array(supported.prefix(4)) : filtered
+            }
 
             let handler = VNImageRequestHandler(cgImage: cgImage, options: [:])
             do {
                 try handler.perform([request])
             } catch {
-                return nil
+                // Fallback attempt: retry with fast recognition level
+                request.recognitionLevel = .fast
+                request.recognitionLanguages = []
+                do {
+                    try handler.perform([request])
+                } catch {
+                    return nil
+                }
             }
 
             guard let observations = request.results, !observations.isEmpty else {
