@@ -57,6 +57,18 @@ enum ScreenCapture {
         screen: NSScreen,
         requiresChromeExclusion: Bool = false
     ) -> NSImage? {
+        guard let cg = captureCGImage(rectInScreenCoords: rect, screen: screen, requiresChromeExclusion: requiresChromeExclusion) else {
+            return nil
+        }
+        return NSImage(cgImage: cg, size: rect.size)
+    }
+
+    /// Captures a region and returns raw CGImage at native device resolution
+    static func captureCGImage(
+        rectInScreenCoords rect: CGRect,
+        screen: NSScreen,
+        requiresChromeExclusion: Bool = false
+    ) -> CGImage? {
         guard let primary = NSScreen.screens.first else { return nil }
 
         // CGWindowListCreateImage expects top-left origin on the primary screen.
@@ -68,10 +80,7 @@ enum ScreenCapture {
             height: rect.height
         )
 
-        guard let cgImage = cgImage(of: captureRect, requiresChromeExclusion: requiresChromeExclusion) else {
-            return nil
-        }
-        return NSImage(cgImage: cgImage, size: rect.size)
+        return cgImage(of: captureRect, requiresChromeExclusion: requiresChromeExclusion)
     }
 
     /// Composites everything on screen except our own transient chrome.

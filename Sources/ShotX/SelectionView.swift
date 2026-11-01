@@ -68,12 +68,15 @@ final class SelectionView: NSView {
     // Scrolling screenshot state (333.jpg)
     private var isScrollingMode: Bool = false
     private var stitchedLongImage: NSImage?
-    private var lastCapturedFrame: NSImage?
+    private var lastStitchedCG: CGImage?
+    private var stitchedLongCG: CGImage?
     private var scrollingScrollMonitor: Any?
     private var scrollingMouseMonitor: Any?
     private var scrollingKeyMonitor: Any?
     private var scrollingTimer: Timer?
     private var lastScrollCaptureTime: TimeInterval = 0
+    private var cachedHUDImage: NSImage?
+    private var needsMouseUpdate: Bool = false
 
     private var currentToolbarItems: [ToolbarItem] {
         if isScrollingMode {
@@ -140,7 +143,16 @@ final class SelectionView: NSView {
         if mode == .annotating {
             updateToolbarHover(at: p)
         }
-        needsDisplay = true
+
+        // Coalesce high-frequency mouse move updates (gaming mice 500Hz-1000Hz) to display refresh
+        if !needsMouseUpdate {
+            needsMouseUpdate = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self = self else { return }
+                self.needsMouseUpdate = false
+                self.needsDisplay = true
+            }
+        }
     }
 
     override func mouseEntered(with event: NSEvent) {
@@ -701,6 +713,8 @@ final class SelectionView: NSView {
 
     private func cleanupScrollingMode() {
         isScrollingMode = false
+        lastStitchedCG = nil
+        stitchedLongCG = nil
         scrollingTimer?.invalidate()
         scrollingTimer = nil
         if let m = scrollingScrollMonitor {
@@ -804,9 +818,17 @@ final class SelectionView: NSView {
     private func handleScrollingCapture() {
         // Scrolling screenshot (长截图) mode (333.jpg)
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
-        if let initial = ScreenCapture.capture(rectInScreenCoords: globalRect, screen: targetScreen) ?? generateBaseCroppedImage() {
+        if let initialCG = ScreenCapture.captureCGImage(rectInScreenCoords: globalRect, screen: targetScreen) {
+            lastStitchedCG = initialCG
+            stitchedLongCG = initialCG
+            stitchedLongImage = NSImage(cgImage: initialCG, size: selectionRect.size)
+        } else if let initial = generateBaseCroppedImage() {
+            var r = NSRect(origin: .zero, size: initial.size)
+            if let cg = initial.cgImage(forProposedRect: &r, context: nil, hints: nil) {
+                lastStitchedCG = cg
+                stitchedLongCG = cg
+            }
             stitchedLongImage = initial
-            lastCapturedFrame = initial
         }
         setupScrollingMonitors()
         ToastController.shared.show(
@@ -821,127 +843,121 @@ final class SelectionView: NSView {
 
     private func captureAndStitchSlice(deltaY: CGFloat) {
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
-        guard let fresh = ScreenCapture.capture(rectInScreenCoords: globalRect, screen: targetScreen) else { return }
+        guard let freshCG = ScreenCapture.captureCGImage(rectInScreenCoords: globalRect, screen: targetScreen) else { return }
 
-        guard let base = stitchedLongImage else {
-            self.stitchedLongImage = fresh
-            self.lastCapturedFrame = fresh
+        guard let baseCG = lastStitchedCG, let currentLong = stitchedLongCG else {
+            self.lastStitchedCG = freshCG
+            self.stitchedLongCG = freshCG
+            self.stitchedLongImage = NSImage(cgImage: freshCG, size: selectionRect.size)
             needsDisplay = true
             return
         }
 
-        // Anchor matching: Always compare fresh against the BOTTOM-MOST edge of the cumulative long canvas!
-        // This ensures that scrolling backward or back-and-forth NEVER duplicates already captured content.
-        let movement = detectScrollMovementFromBase(baseImage: base, freshImage: fresh)
-        guard movement.hasMovement, movement.offsetY >= 4 else {
-            return
-        }
+        let (hasMovement, S) = detectScrollMovement(cgA: baseCG, cgB: freshCG)
+        guard hasMovement, S >= 3 else { return }
 
-        let appendHeight = CGFloat(movement.offsetY)
-        guard appendHeight < fresh.size.height * 0.85 else {
-            return
-        }
+        // The newly revealed bottom slice is rows (freshCG.height - S) to freshCG.height
+        let sliceRect = CGRect(x: 0, y: freshCG.height - S, width: freshCG.width, height: S)
+        guard let sliceCG = freshCG.cropping(to: sliceRect) else { return }
 
-        let newTotalHeight = base.size.height + appendHeight
-        let newSize = NSSize(width: base.size.width, height: newTotalHeight)
+        let newH = currentLong.height + S
+        let cs = CGColorSpaceCreateDeviceRGB()
+        guard let ctx = CGContext(
+            data: nil,
+            width: currentLong.width,
+            height: newH,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: cs,
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return }
 
-        let composite = NSImage(size: newSize)
-        composite.lockFocus()
+        // In CGContext (0,0 is bottom-left):
+        // Upper/earlier content at y = S, newest bottom slice at y = 0
+        ctx.draw(currentLong, in: CGRect(x: 0, y: S, width: currentLong.width, height: currentLong.height))
+        ctx.draw(sliceCG, in: CGRect(x: 0, y: 0, width: sliceCG.width, height: S))
+        guard let newCompositeCG = ctx.makeImage() else { return }
 
-        base.draw(in: NSRect(x: 0, y: appendHeight, width: base.size.width, height: base.size.height),
-                  from: NSRect(origin: .zero, size: base.size),
-                  operation: .copy, fraction: 1.0)
+        self.stitchedLongCG = newCompositeCG
+        self.lastStitchedCG = freshCG
 
-        let freshSliceRect = NSRect(x: 0, y: 0, width: fresh.size.width, height: appendHeight)
-        fresh.draw(in: NSRect(x: 0, y: 0, width: base.size.width, height: appendHeight),
-                   from: freshSliceRect,
-                   operation: .sourceOver, fraction: 1.0)
-
-        composite.unlockFocus()
-        self.stitchedLongImage = composite
-        self.lastCapturedFrame = fresh
+        let scale = CGFloat(newH) / CGFloat(freshCG.height)
+        let newPointSize = NSSize(width: selectionRect.width, height: selectionRect.height * scale)
+        self.stitchedLongImage = NSImage(cgImage: newCompositeCG, size: newPointSize)
         needsDisplay = true
     }
 
-    private func detectScrollMovementFromBase(baseImage: NSImage, freshImage: NSImage) -> (hasMovement: Bool, offsetY: Int) {
-        // Extract bottom anchor from base (representing the furthest content captured so far)
-        let anchorH = min(120, max(60, Int(freshImage.size.height * 0.25)))
-        let anchorRect = NSRect(x: 0, y: 0, width: baseImage.size.width, height: CGFloat(anchorH))
-        let anchorImg = NSImage(size: anchorRect.size)
-        anchorImg.lockFocus()
-        baseImage.draw(in: NSRect(origin: .zero, size: anchorRect.size), from: anchorRect, operation: .copy, fraction: 1.0)
-        anchorImg.unlockFocus()
+    private func detectScrollMovement(cgA: CGImage, cgB: CGImage) -> (hasMovement: Bool, deltaY: Int) {
+        let w = cgA.width
+        let h = cgA.height
+        guard w == cgB.width, h == cgB.height, h > 50 else { return (false, 0) }
 
-        var ar = NSRect(origin: .zero, size: anchorImg.size)
-        guard let anchorCG = anchorImg.cgImage(forProposedRect: &ar, context: nil, hints: nil) else { return (false, 0) }
-        var fr = NSRect(origin: .zero, size: freshImage.size)
-        guard let freshCG = freshImage.cgImage(forProposedRect: &fr, context: nil, hints: nil) else { return (false, 0) }
+        guard let bufA = getGrayscalePixelBuffer(cg: cgA),
+              let bufB = getGrayscalePixelBuffer(cg: cgB) else { return (false, 0) }
 
-        let sampleW = 160
-        let scale = 160.0 / CGFloat(freshImage.size.width)
-        let sampleAnchorH = max(30, Int(round(CGFloat(anchorH) * scale)))
-        let sampleFreshH = max(100, Int(round(CGFloat(freshImage.size.height) * scale)))
-
-        guard let anchorBuf = grayscaleSample(cgImage: anchorCG, width: sampleW, height: sampleAnchorH),
-              let freshBuf = grayscaleSample(cgImage: freshCG, width: sampleW, height: sampleFreshH) else {
+        // Fast zero-movement check
+        let sampleCols = [w / 8, w / 4, 3 * w / 8, w / 2, 5 * w / 8, 3 * w / 4, 7 * w / 8]
+        var zeroDiff = 0.0
+        var zeroCount = 0
+        for y in stride(from: 0, to: h, by: 4) {
+            let row = y * w
+            for x in sampleCols {
+                zeroDiff += abs(Double(bufA[row + x]) - Double(bufB[row + x]))
+                zeroCount += 1
+            }
+        }
+        if zeroDiff / Double(zeroCount) < 1.0 {
             return (false, 0)
         }
 
-        let maxScroll = Int(Double(sampleFreshH) * 0.85)
-        let minStart = max(0, (sampleFreshH - sampleAnchorH) - maxScroll)
-        let maxStart = (sampleFreshH - sampleAnchorH) - 2
-        guard maxStart > minStart else { return (false, 0) }
+        var bestS = 0
+        var bestErr = Double.greatestFiniteMagnitude
+        // Max scroll in 80ms: at most 40% of viewport height (minimum 60% overlap, strictly preventing false matches)
+        let maxS = min(160, Int(CGFloat(h) * 0.40))
 
-        var bestStart = -1
-        var bestError = Double.greatestFiniteMagnitude
-
-        for start in minStart...maxStart {
-            var diffSum: Double = 0
+        for S in 3...maxS {
+            let overlapH = h - S
+            var diff = 0.0
             var count = 0
-            for y in stride(from: 0, to: sampleAnchorH, by: 2) {
-                let aRow = y * sampleW
-                let fRow = (start + y) * sampleW
-                for x in stride(from: 0, to: sampleW, by: 2) {
-                    diffSum += abs(Double(anchorBuf[aRow + x]) - Double(freshBuf[fRow + x]))
+            for y in stride(from: 0, to: overlapH, by: 2) {
+                let aRow = (y + S) * w
+                let bRow = y * w
+                for x in sampleCols {
+                    diff += abs(Double(bufA[aRow + x]) - Double(bufB[bRow + x]))
                     count += 1
                 }
             }
             if count > 0 {
-                let err = diffSum / Double(count)
-                if err < bestError {
-                    bestError = err
-                    bestStart = start
+                let err = diff / Double(count)
+                if err < bestErr {
+                    bestErr = err
+                    bestS = S
                 }
             }
         }
 
-        // Strict verification: only accept if anchor matches with low error (< 20.0)
-        guard bestError < 20.0, bestStart <= maxStart, bestStart >= minStart else {
-            return (false, 0)
+        if bestErr < 7.0 && bestS >= 3 {
+            return (true, bestS)
         }
-
-        let sampleDelta = (sampleFreshH - sampleAnchorH) - bestStart
-        guard sampleDelta >= 2 else { return (false, 0) }
-        let realDelta = Int(round(CGFloat(sampleDelta) / scale))
-        return (true, max(4, realDelta))
+        return (false, 0)
     }
 
-    private func grayscaleSample(cgImage: CGImage, width: Int, height: Int) -> [UInt8]? {
-        var buffer = [UInt8](repeating: 0, count: width * height)
+    private func getGrayscalePixelBuffer(cg: CGImage) -> [UInt8]? {
+        let w = cg.width
+        let h = cg.height
+        var buffer = [UInt8](repeating: 0, count: w * h)
         let colorSpace = CGColorSpaceCreateDeviceGray()
         guard let ctx = CGContext(
             data: &buffer,
-            width: width,
-            height: height,
+            width: w,
+            height: h,
             bitsPerComponent: 8,
-            bytesPerRow: width,
+            bytesPerRow: w,
             space: colorSpace,
             bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else {
-            return nil
-        }
-        ctx.interpolationQuality = .low
-        ctx.draw(cgImage, in: CGRect(x: 0, y: 0, width: width, height: height))
+        ) else { return nil }
+        ctx.interpolationQuality = .none
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
         return buffer
     }
 
@@ -1214,10 +1230,9 @@ final class SelectionView: NSView {
 
         if let snapshot = screenSnapshot {
             let cropRect = CGRect(x: pixelX - 8, y: pixelY - 8, width: 17, height: 17)
-            if let patch = snapshot.cropping(to: cropRect) {
-                NSGraphicsContext.current?.imageInterpolation = .none
-                let patchImage = NSImage(cgImage: patch, size: NSSize(width: loupeSize, height: loupeSize))
-                patchImage.draw(in: loupeRect)
+            if let patch = snapshot.cropping(to: cropRect), let ctx = NSGraphicsContext.current?.cgContext {
+                ctx.interpolationQuality = .none
+                ctx.draw(patch, in: loupeRect)
             }
         }
 
@@ -1305,8 +1320,16 @@ final class SelectionView: NSView {
     private func drawHUDCard() {
         let hudRect = NSRect(x: 24, y: 24, width: 310, height: 200)
 
+        if let cached = cachedHUDImage {
+            cached.draw(in: hudRect)
+            return
+        }
+
+        let img = NSImage(size: hudRect.size)
+        img.lockFocus()
+
         NSColor(white: 0.08, alpha: 0.94).setFill()
-        let bg = NSBezierPath(roundedRect: hudRect, xRadius: 8, yRadius: 8)
+        let bg = NSBezierPath(roundedRect: NSRect(origin: .zero, size: hudRect.size), xRadius: 8, yRadius: 8)
         bg.fill()
 
         let lines: [String] = [
@@ -1328,13 +1351,17 @@ final class SelectionView: NSView {
             .foregroundColor: textColor
         ]
 
-        var y = hudRect.maxY - 20
+        var y = hudRect.height - 20
         for line in lines {
             if !line.isEmpty {
-                line.draw(at: NSPoint(x: hudRect.minX + 14, y: y), withAttributes: attrs)
+                line.draw(at: NSPoint(x: 14, y: y), withAttributes: attrs)
             }
             y -= 18
         }
+        img.unlockFocus()
+
+        self.cachedHUDImage = img
+        img.draw(in: hudRect)
     }
 
     // MARK: - Annotating State (222.jpg)
