@@ -68,14 +68,34 @@ end tell
 EOF
 
 sync
-sleep 1
-hdiutil detach "$DEVICE" -force >/dev/null 2>&1 || (sleep 2 && hdiutil detach "$DEVICE" -force >/dev/null 2>&1 || true)
+sleep 2
+for i in {1..5}; do
+    if hdiutil detach "$DEVICE" -force >/dev/null 2>&1; then
+        break
+    fi
+    sleep 2
+done
+sleep 3
 
 echo "→ Converting to compressed read-only DMG"
-hdiutil convert "$RW_DMG" \
-    -format UDZO \
-    -imagekey zlib-level=9 \
-    -o "$DMG_PATH" >/dev/null
+CONVERT_SUCCESS=false
+for i in {1..3}; do
+    if hdiutil convert "$RW_DMG" \
+        -format UDZO \
+        -imagekey zlib-level=9 \
+        -o "$DMG_PATH" >/dev/null 2>&1; then
+        CONVERT_SUCCESS=true
+        break
+    fi
+    sleep 3
+done
+
+if [ "$CONVERT_SUCCESS" = false ]; then
+    hdiutil convert "$RW_DMG" \
+        -format UDZO \
+        -imagekey zlib-level=9 \
+        -o "$DMG_PATH"
+fi
 
 rm -f "$RW_DMG"
 rm -rf "$STAGING"
