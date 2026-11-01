@@ -4,6 +4,8 @@ import UniformTypeIdentifiers
 import Carbon.HIToolbox
 
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
+    static var lastExternalApp: NSRunningApplication?
+
     private var statusItem: NSStatusItem!
     private var hotKeyManager: HotKeyManager!
     private var fullscreenHotKeyManager: HotKeyManager!
@@ -33,6 +35,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         setupStatusBar()
         setupHotKey()
+
+        // Cache currently active external application initially
+        if let current = NSWorkspace.shared.frontmostApplication,
+           current.bundleIdentifier != Bundle.main.bundleIdentifier {
+            AppDelegate.lastExternalApp = current
+            ClipboardHistoryController.shared.previousApp = current
+        }
+
+        // Keep lastExternalApp and ClipboardHistoryController.shared.previousApp updated whenever any app activates
+        NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didActivateApplicationNotification,
+            object: nil,
+            queue: .main
+        ) { note in
+            if let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
+               app.bundleIdentifier != Bundle.main.bundleIdentifier {
+                AppDelegate.lastExternalApp = app
+                ClipboardHistoryController.shared.previousApp = app
+            }
+        }
 
         // Boot Sparkle so periodic background update checks begin.
         MainActor.assumeIsolated { _ = UpdaterController.shared }
@@ -755,22 +777,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func translateSelection() {
-        // 1. First attempt: Accessibility API query for selected text
-        let systemWide = AXUIElementCreateSystemWide()
-        var focusedElement: AnyObject?
-        let axError = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
-        if axError == .success, let focused = focusedElement {
-            var selectedText: AnyObject?
-            let textError = AXUIElementCopyAttributeValue(focused as! AXUIElement, kAXSelectedTextAttribute as CFString, &selectedText)
-            if textError == .success, let str = selectedText as? String, !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                TranslationController.shared.show(text: str)
-                return
-            }
+        let isShotXActive = (NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Bundle.main.bundleIdentifier)
+        if isShotXActive, let ext = AppDelegate.lastExternalApp, !ext.isTerminated {
+            ext.activate(options: [.activateIgnoringOtherApps])
         }
 
-        // 2. Second attempt: simulate Cmd+C keystroke to copy selected text
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+        // Wait a short moment (0.08s) for target application to regain keyboard/selection focus
+        DispatchQueue.main.asyncAfter(deadline: .now() + (isShotXActive ? 0.08 : 0.01)) {
+            // 1. First attempt: Accessibility API query for selected text
+            let systemWide = AXUIElementCreateSystemWide()
+            var focusedElement: AnyObject?
+            let axError = AXUIElementCopyAttributeValue(systemWide, kAXFocusedUIElementAttribute as CFString, &focusedElement)
+            if axError == .success, let focused = focusedElement {
+                var selectedText: AnyObject?
+                let textError = AXUIElementCopyAttributeValue(focused as! AXUIElement, kAXSelectedTextAttribute as CFString, &selectedText)
+                if textError == .success, let str = selectedText as? String, !str.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    TranslationController.shared.show(text: str)
+                    return
+                }
+            }
+
+            // 2. Second attempt: simulate Cmd+C keystroke to copy selected text
             let oldChangeCount = NSPasteboard.general.changeCount
+            let oldString = NSPasteboard.general.string(forType: .string) ?? ""
             let src = CGEventSource(stateID: .combinedSessionState)
             let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 8, keyDown: true) // 8 = 'c'
             keyDown?.flags = .maskCommand
@@ -786,12 +815,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 script?.executeAndReturnError(&err)
             }
 
-            // Wait 0.16s for the target application to write to the pasteboard
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
-                if NSPasteboard.general.changeCount != oldChangeCount,
-                   let text = NSPasteboard.general.string(forType: .string),
-                   !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                    TranslationController.shared.show(text: text)
+            // Wait 0.15s for the target application to write to the pasteboard
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+                let currentStr = NSPasteboard.general.string(forType: .string) ?? ""
+                if (NSPasteboard.general.changeCount != oldChangeCount || currentStr != oldString),
+                   !currentStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                    TranslationController.shared.show(text: currentStr)
                 } else {
                     TranslationController.shared.show()
                 }
@@ -810,6 +839,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 TranslationController.shared.show()
                 return
             }
+            ToastController.shared.show(
+                message: "正在识别文字并翻译…",
+                icon: "character.book.closed",
+                tint: .systemBlue,
+                duration: 1.2,
+                position: .center
+            )
             Task { @MainActor in
                 guard let cgImage = OCR.cgImage(from: image) else {
                     TranslationController.shared.show()

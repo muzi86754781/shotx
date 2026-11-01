@@ -35,7 +35,7 @@ struct AboutView: View {
     let onClose: () -> Void
 
     var versionString: String {
-        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.7"
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.8"
     }
 
     var body: some View {

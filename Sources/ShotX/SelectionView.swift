@@ -907,50 +907,13 @@ final class SelectionView: NSView {
             }
         }
 
-        // 兼顾不同窗口/缓冲区坐标系的正反向测试
-        var bestReverseS = 0
-        var bestReverseError = Double.greatestFiniteMagnitude
-
-        for s in minS...maxS {
-            let overlapH = sampleH - s
-            var diffSum: Double = 0
-            var sampleCount: Int = 0
-
-            for y in stride(from: 0, to: overlapH, by: 2) {
-                let oldRowStart = y * sampleW
-                let newRowStart = (y + s) * sampleW
-                for x in stride(from: 0, to: sampleW, by: 2) {
-                    diffSum += abs(Double(oldBuf[oldRowStart + x]) - Double(newBuf[newRowStart + x]))
-                    sampleCount += 1
-                }
-            }
-
-            if sampleCount > 0 {
-                let err = diffSum / Double(sampleCount)
-                if err < bestReverseError {
-                    bestReverseError = err
-                    bestReverseS = s
-                }
-            }
-        }
-
-        let chosenS: Int
-        let chosenError: Double
-        if bestReverseError < bestError {
-            chosenS = bestReverseS
-            chosenError = bestReverseError
-        } else {
-            chosenS = bestS
-            chosenError = bestError
-        }
-
-        // 3. 严格验证：整块重叠区域平均像素误差必须低于 13.0，杜绝盲目拼接与文本重叠！
-        guard chosenError < 13.0, chosenS >= minS else {
+        // 3. 严格验证：整块重叠区域平均像素误差必须低于 12.0，且仅允许顺向向下位移拼接（杜绝反向滚动重叠）！
+        guard bestError < 12.0, bestS >= minS else {
             return (false, 0)
         }
 
         let scale = CGFloat(newImage.size.height) / CGFloat(sampleH)
-        let realS = Int(round(CGFloat(chosenS) * scale))
+        let realS = Int(round(CGFloat(bestS) * scale))
 
         return (true, max(4, realS))
     }

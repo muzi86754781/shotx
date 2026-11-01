@@ -179,6 +179,18 @@ final class ClipboardStore: ObservableObject {
 final class FloatingKeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+
+    override func cancelOperation(_ sender: Any?) {
+        orderOut(nil)
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.keyCode == 53 { // ESC
+            orderOut(nil)
+            return
+        }
+        super.keyDown(with: event)
+    }
 }
 
 // MARK: - Clipboard History Floating Panel
@@ -186,7 +198,7 @@ final class FloatingKeyPanel: NSPanel {
 final class ClipboardHistoryController {
     static let shared = ClipboardHistoryController()
     private var panel: FloatingKeyPanel?
-    private var previousApp: NSRunningApplication?
+    var previousApp: NSRunningApplication?
     var isPinned: Bool = true {
         didSet {
             UserDefaults.standard.set(isPinned, forKey: "com.shotx.clipboard.isPinned")
@@ -281,17 +293,14 @@ final class ClipboardHistoryController {
         ClipboardStore.shared.copyToClipboard(entry)
 
         let targetApp = shared.previousApp
-        shared.dismiss()
 
-        // 1. Reactivate the previous target application where cursor was
+        // 1. Reactivate the previous target application where cursor was (DO NOT dismiss our floating window so user can continuously paste!)
         if let target = targetApp, !target.isTerminated {
             target.activate(options: [.activateIgnoringOtherApps])
-        } else {
-            NSApp.hide(nil)
         }
 
-        // 2. Synthesize Cmd+V keystroke to paste directly at cursor position
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+        // 2. Synthesize Cmd+V keystroke to paste directly at cursor position in target application
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
             let src = CGEventSource(stateID: .combinedSessionState)
             if let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true),
                let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false) {
@@ -302,11 +311,19 @@ final class ClipboardHistoryController {
             }
 
             // Fallback via AppleScript System Events keystroke
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) {
                 let script = NSAppleScript(source: "tell application \"System Events\" to keystroke \"v\" using command down")
                 var err: NSDictionary?
                 script?.executeAndReturnError(&err)
             }
+
+            ToastController.shared.show(
+                message: "已粘贴至光标处",
+                icon: "checkmark.circle.fill",
+                tint: .systemGreen,
+                duration: 1.2,
+                position: .center
+            )
         }
     }
 }
@@ -447,7 +464,7 @@ struct ClipboardHistoryView: View {
 
             // Footer
             HStack {
-                Text("双击条目直接在光标处粘贴 · \(store.entries.count) 条记录")
+                Text("双击条目直接在光标处粘贴（窗口不关闭可连续操作） · \(store.entries.count) 条记录")
                     .font(.system(size: 10.5))
                     .foregroundStyle(.secondary)
                 Spacer()
@@ -513,20 +530,6 @@ private struct ClipboardRowView: View {
 
             if isHovering {
                 HStack(spacing: 6) {
-                    Button {
-                        onPaste()
-                    } label: {
-                        Text("粘贴")
-                            .font(.system(size: 10, weight: .semibold))
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(Color.accentColor.opacity(0.15))
-                            .foregroundStyle(Color.accentColor)
-                            .clipShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .help("直接在光标处粘贴 (或双击)")
-
                     Button {
                         onCopy()
                     } label: {

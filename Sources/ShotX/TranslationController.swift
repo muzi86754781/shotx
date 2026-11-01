@@ -340,7 +340,18 @@ final class TranslationController {
 
         if let w = window {
             updateWindowLevel(w)
+            if !w.isVisible {
+                let mouse = NSEvent.mouseLocation
+                let screen = NSScreen.screens.first(where: { $0.frame.contains(mouse) }) ?? NSScreen.main
+                if let s = screen {
+                    var origin = NSPoint(x: mouse.x - w.frame.width / 2, y: mouse.y - w.frame.height / 2)
+                    origin.x = max(s.frame.minX + 20, min(s.frame.maxX - w.frame.width - 20, origin.x))
+                    origin.y = max(s.frame.minY + 20, min(s.frame.maxY - w.frame.height - 20, origin.y))
+                    w.setFrameOrigin(origin)
+                }
+            }
             w.makeKeyAndOrderFront(nil)
+            w.orderFrontRegardless()
             NSApp.activate(ignoringOtherApps: true)
             return
         }
@@ -389,18 +400,15 @@ final class TranslationController {
             panel.setFrame(NSRect(origin: origin, size: size), display: true)
         }
 
+        panel.orderFrontRegardless()
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.window = panel
     }
 
     func updateWindowLevel(_ panel: NSPanel) {
-        if viewModel.isPinned {
-            panel.level = .floating
-            panel.orderFrontRegardless()
-        } else {
-            panel.level = .normal
-        }
+        panel.level = .floating
+        panel.orderFrontRegardless()
     }
 
     func dismiss() {
@@ -490,27 +498,12 @@ struct TranslationWindowView: View {
             .padding(.horizontal, 16)
             .padding(.top, 14)
 
-            // Source Text Card (Editable TextEditor)
+            // Source Text Card (Editable InterceptingTextEditor: Enter to Translate)
             VStack(alignment: .leading, spacing: 6) {
-                ZStack(alignment: .topLeading) {
-                    if viewModel.inputText.isEmpty {
-                        Text("请输入或粘贴需要翻译的文本…")
-                            .font(.system(size: 13.5))
-                            .foregroundStyle(Color.secondary.opacity(0.7))
-                            .padding(.top, 4)
-                            .padding(.leading, 4)
-                            .allowsHitTesting(false)
-                    }
-
-                    TextEditor(text: $viewModel.inputText)
-                        .font(.system(size: 14))
-                        .frame(minHeight: 80, maxHeight: 110)
-                        .scrollContentBackground(.hidden)
-                        .background(Color.clear)
-                        .onChange(of: viewModel.inputText) { _ in
-                            debounceTranslation()
-                        }
-                }
+                InterceptingTextEditor(text: $viewModel.inputText, isEditable: true, onEnter: {
+                    viewModel.performTranslation()
+                })
+                .frame(minHeight: 80, maxHeight: 110)
 
                 HStack(spacing: 14) {
                     Button {
@@ -630,23 +623,9 @@ struct TranslationWindowView: View {
                     }
                 }
 
-                // Translated Content (Editable TextEditor)
-                ZStack(alignment: .topLeading) {
-                    if viewModel.translatedText.isEmpty && !viewModel.isTranslating {
-                        Text("翻译结果将显示在此处（亦可直接点击输入或编辑）")
-                            .font(.system(size: 13.5))
-                            .foregroundStyle(Color.secondary.opacity(0.7))
-                            .padding(.top, 4)
-                            .padding(.leading, 4)
-                            .allowsHitTesting(false)
-                    }
-
-                    TextEditor(text: $viewModel.translatedText)
-                        .font(.system(size: 14))
-                        .frame(minHeight: 80, maxHeight: 110)
-                        .scrollContentBackground(.hidden)
-                        .background(Color.clear)
-                }
+                // Translated Content (Editable InterceptingTextEditor, no placeholder)
+                InterceptingTextEditor(text: $viewModel.translatedText, isEditable: true, onEnter: nil)
+                    .frame(minHeight: 80, maxHeight: 110)
 
                 // Actions: Speak & Copy
                 HStack(spacing: 14) {
@@ -721,5 +700,95 @@ private final class Debouncer: NSObject {
     var action: (() -> Void)?
     @objc func fire() {
         action?()
+    }
+}
+
+// MARK: - Intercepting Text Editor (Enter to translate, Shift/Option+Enter for newline)
+
+struct InterceptingTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    var isEditable: Bool = true
+    var onEnter: (() -> Void)? = nil
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+
+        let contentSize = scrollView.contentSize
+        let textView = KeyInterceptingTextView(frame: NSRect(origin: .zero, size: contentSize))
+        textView.minSize = NSSize(width: 0, height: contentSize.height)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.textContainer?.containerSize = NSSize(width: contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.widthTracksTextView = true
+        textView.font = NSFont.systemFont(ofSize: 14)
+        textView.textColor = NSColor.labelColor
+        textView.drawsBackground = false
+        textView.isEditable = isEditable
+        textView.isSelectable = true
+        textView.allowsUndo = true
+        textView.string = text
+        textView.delegate = context.coordinator
+        textView.onEnter = onEnter
+
+        scrollView.documentView = textView
+        return scrollView
+    }
+
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? KeyInterceptingTextView else { return }
+        if textView.string != text {
+            textView.string = text
+        }
+        textView.isEditable = isEditable
+        textView.onEnter = onEnter
+    }
+
+    class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: InterceptingTextEditor
+
+        init(_ parent: InterceptingTextEditor) {
+            self.parent = parent
+        }
+
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? NSTextView else { return }
+            self.parent.text = textView.string
+        }
+    }
+}
+
+final class KeyInterceptingTextView: NSTextView {
+    var onEnter: (() -> Void)?
+
+    override var acceptsFirstResponder: Bool { true }
+
+    override func keyDown(with event: NSEvent) {
+        // Key code 36 is Return, 76 is Enter (keypad)
+        if event.keyCode == 36 || event.keyCode == 76 {
+            let modifiers = event.modifierFlags.intersection([.shift, .option, .command, .control])
+            if modifiers.isEmpty {
+                // Return / Enter -> Execute translation action immediately
+                if let onEnter = onEnter {
+                    onEnter()
+                    return
+                }
+            } else if modifiers.contains(.shift) || modifiers.contains(.option) {
+                // Shift+Enter or Option+Enter -> Insert newline
+                insertNewlineIgnoringFieldEditor(nil)
+                return
+            }
+        }
+        super.keyDown(with: event)
     }
 }
