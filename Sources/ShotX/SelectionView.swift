@@ -78,6 +78,11 @@ final class SelectionView: NSView {
     private var cachedHUDImage: NSImage?
     private var needsMouseUpdate: Bool = false
 
+    // Buttery-smooth mouse tracking & Color Debounce (iShot-grade smoothness)
+    private var isMouseMovingFast: Bool = false
+    private var colorDebounceTimer: Timer?
+    private var cachedLoupeColor: (r: Int, g: Int, b: Int, hex: String, name: String)?
+
     private var currentToolbarItems: [ToolbarItem] {
         if isScrollingMode {
             return [.cancel, .save, .copy]
@@ -133,25 +138,63 @@ final class SelectionView: NSView {
 
     // MARK: - Mouse Tracking
 
+    private func loupeRect(for p: NSPoint) -> NSRect {
+        let loupeSize: CGFloat = 140
+        var lx = p.x + 18
+        var ly = p.y + 18
+        if lx + loupeSize > bounds.width - 15 {
+            lx = p.x - loupeSize - 18
+        }
+        if ly + loupeSize > bounds.height - 15 {
+            ly = p.y - loupeSize - 18
+        }
+        return NSRect(x: lx, y: ly, width: loupeSize, height: loupeSize)
+    }
+
+    private func invalidateSelectionCursor(oldPos: NSPoint?, newPos: NSPoint) {
+        if let old = oldPos {
+            setNeedsDisplay(loupeRect(for: old).insetBy(dx: -8, dy: -8))
+            setNeedsDisplay(NSRect(x: 0, y: old.y - 2, width: bounds.width, height: 4))
+            setNeedsDisplay(NSRect(x: old.x - 2, y: 0, width: 4, height: bounds.height))
+        }
+        setNeedsDisplay(loupeRect(for: newPos).insetBy(dx: -8, dy: -8))
+        setNeedsDisplay(NSRect(x: 0, y: newPos.y - 2, width: bounds.width, height: 4))
+        setNeedsDisplay(NSRect(x: newPos.x - 2, y: 0, width: 4, height: bounds.height))
+    }
+
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
-        if let prev = mousePosition, abs(prev.x - p.x) < 0.5 && abs(prev.y - p.y) < 0.5 {
+        let oldPos = mousePosition
+        if let prev = oldPos, abs(prev.x - p.x) < 0.5 && abs(prev.y - p.y) < 0.5 {
             return
         }
         mousePosition = p
 
         if mode == .annotating {
             updateToolbarHover(at: p)
+            needsDisplay = true
+            return
         }
 
-        // Coalesce high-frequency mouse move updates (gaming mice 500Hz-1000Hz) to display refresh
-        if !needsMouseUpdate {
-            needsMouseUpdate = true
-            DispatchQueue.main.async { [weak self] in
-                guard let self = self else { return }
-                self.needsMouseUpdate = false
-                self.needsDisplay = true
+        // Mode is .selecting
+        if currentRect.isEmpty {
+            // 鼠标高速移动状态：快速移动时不采集耗时颜色，只刷新十字线和放大镜基础外框
+            isMouseMovingFast = true
+            invalidateSelectionCursor(oldPos: oldPos, newPos: p)
+
+            // 停下来（25ms 防抖）立刻精准采色并局部渲染放大镜细节
+            colorDebounceTimer?.invalidate()
+            colorDebounceTimer = Timer.scheduledTimer(withTimeInterval: 0.025, repeats: false) { [weak self] _ in
+                guard let self = self, self.mode == .selecting, self.currentRect.isEmpty else { return }
+                self.isMouseMovingFast = false
+                if let pos = self.mousePosition {
+                    self.cachedLoupeColor = self.currentPixelColor()
+                    self.setNeedsDisplay(self.loupeRect(for: pos).insetBy(dx: -8, dy: -8))
+                }
             }
+        } else {
+            // 正在拖拽选框，直接刷新
+            needsDisplay = true
         }
     }
 
@@ -190,6 +233,18 @@ final class SelectionView: NSView {
         }
 
         // Mode is .annotating
+        // 0. Long screenshot control buttons
+        if isScrollingMode {
+            if scrollingCancelButtonRect().contains(p) {
+                handleCancel()
+                return
+            }
+            if scrollingDoneButtonRect().contains(p) {
+                handleCopy()
+                return
+            }
+        }
+
         // 1. Check Top Bar click (Corner Radius Slider & Shadow toggle)
         let topRect = topBarRect()
         if topRect.contains(p) {
@@ -758,10 +813,9 @@ final class SelectionView: NSView {
         cleanupScrollingMode()
         isScrollingMode = true
 
-        // 1. 每 80ms 检测鼠标位置并动态捕获拼接（支持滚轮、触控板、滚动条及键盘下翻）
-        scrollingTimer = Timer.scheduledTimer(withTimeInterval: 0.08, repeats: true) { [weak self] _ in
+        // 1. 定时器：以 100ms 周期检测鼠标位置以即时更新穿透状态
+        scrollingTimer = Timer.scheduledTimer(withTimeInterval: 0.10, repeats: true) { [weak self] _ in
             self?.updateMouseIgnoreState()
-            self?.captureAndStitchSlice(deltaY: 0)
         }
 
         // 2. 全局滚轮监听：当底层 App 原生滚动时触发捕获与比对拼接
@@ -770,27 +824,39 @@ final class SelectionView: NSView {
             self.handleExternalScroll(event: event)
         }
 
-        // 3. 全局鼠标移动监听：即时切换事件穿透状态
-        scrollingMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] _ in
-            self?.updateMouseIgnoreState()
+        // 3. 全局鼠标移动与点击监听：无论焦点在哪个 App，点击面板按钮均直接响应
+        scrollingMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .leftMouseDown]) { [weak self] event in
+            guard let self = self, self.isScrollingMode else { return }
+            self.updateMouseIgnoreState()
+            if event.type == .leftMouseDown {
+                let screenLoc = NSEvent.mouseLocation
+                let localP = NSPoint(x: screenLoc.x - self.targetScreen.frame.origin.x, y: screenLoc.y - self.targetScreen.frame.origin.y)
+                if self.scrollingCancelButtonRect().contains(localP) {
+                    DispatchQueue.main.async { self.handleCancel() }
+                } else if self.scrollingDoneButtonRect().contains(localP) {
+                    DispatchQueue.main.async { self.handleCopy() }
+                }
+            }
         }
 
-        // 4. 全局键盘监听：无论哪个 App 处于激活状态，按 ESC 键（keyCode 53）均直接退出长截图
+        // 4. 全局键盘监听：无论哪个 App 处于激活状态，按 ESC 键均退出，按 Enter 键均完成
         scrollingKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
             guard let self = self, self.isScrollingMode else { return }
-            if event.keyCode == 53 {
-                DispatchQueue.main.async {
-                    self.handleCancel()
-                }
+            if event.keyCode == 53 { // ESC
+                DispatchQueue.main.async { self.handleCancel() }
+            } else if event.keyCode == 36 || event.keyCode == 76 { // Return / Enter
+                DispatchQueue.main.async { self.handleCopy() }
             }
         }
     }
 
     private func handleExternalScroll(event: NSEvent) {
+        // 关键防护：如果用户反向回滚（Mac 触控板向下滑动 deltaY > 0.5），绝对不进行反向拼接
+        if event.scrollingDeltaY > 0.5 { return }
+
         let now = Date().timeIntervalSinceReferenceDate
-        // 节流采样：滚动期间约 12 FPS 比对拼接，停止后执行尾帧捕捉
-        guard now - lastScrollCaptureTime >= 0.08 else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+        guard now - lastScrollCaptureTime >= 0.07 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
                 self?.captureAndStitchSlice(deltaY: event.scrollingDeltaY)
             }
             return
@@ -803,6 +869,7 @@ final class SelectionView: NSView {
 
     override func scrollWheel(with event: NSEvent) {
         if isScrollingMode {
+            if event.scrollingDeltaY > 0.5 { return }
             let p = convert(event.locationInWindow, from: nil)
             if selectionRect.contains(p) {
                 updateMouseIgnoreState()
@@ -842,6 +909,7 @@ final class SelectionView: NSView {
     }
 
     private func captureAndStitchSlice(deltaY: CGFloat) {
+        if deltaY > 0.5 { return }
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         guard let freshCG = ScreenCapture.captureCGImage(rectInScreenCoords: globalRect, screen: targetScreen) else { return }
 
@@ -853,7 +921,7 @@ final class SelectionView: NSView {
             return
         }
 
-        let (hasMovement, S) = detectScrollMovement(cgA: baseCG, cgB: freshCG)
+        let (hasMovement, S) = detectScrollMovement(baseCG: baseCG, freshCG: freshCG)
         guard hasMovement, S >= 3 else { return }
 
         // The newly revealed bottom slice is rows (freshCG.height - S) to freshCG.height
@@ -887,43 +955,94 @@ final class SelectionView: NSView {
         needsDisplay = true
     }
 
-    private func detectScrollMovement(cgA: CGImage, cgB: CGImage) -> (hasMovement: Bool, deltaY: Int) {
-        let w = cgA.width
-        let h = cgA.height
-        guard w == cgB.width, h == cgB.height, h > 50 else { return (false, 0) }
+    private func detectScrollMovement(baseCG: CGImage, freshCG: CGImage) -> (hasMovement: Bool, deltaY: Int) {
+        let w = baseCG.width
+        let h = baseCG.height
+        guard w == freshCG.width, h == freshCG.height, h > 60, w > 40 else { return (false, 0) }
 
-        guard let bufA = getGrayscalePixelBuffer(cg: cgA),
-              let bufB = getGrayscalePixelBuffer(cg: cgB) else { return (false, 0) }
+        guard let bufA = getGrayscalePixelBuffer(cg: baseCG),
+              let bufB = getGrayscalePixelBuffer(cg: freshCG) else { return (false, 0) }
 
-        // Fast zero-movement check
-        let sampleCols = [w / 8, w / 4, 3 * w / 8, w / 2, 5 * w / 8, 3 * w / 4, 7 * w / 8]
+        // 1. 横向宽幅 32 列采样：避开左右边距（各保留 16px 边距，杜绝垂直滚动条干扰）
+        let marginX = min(20, w / 10)
+        let sampleWidth = w - 2 * marginX
+        guard sampleWidth > 32 else { return (false, 0) }
+        var sampleCols: [Int] = []
+        let colStep = sampleWidth / 32
+        for i in 0..<32 {
+            sampleCols.append(marginX + i * colStep)
+        }
+
+        // 2. 锚定带（Anchor）：选取 baseCG 底部上方一段具有明确特征的内容条带
+        let anchorH = min(56, h / 3)
+        let marginBottom = 8
+        var anchorTop = h - marginBottom - anchorH
+
+        // 寻找下半区对比度最强的文本行作为锚点
+        var bestVar = 0.0
+        var bestTop = anchorTop
+        let searchMinTop = max(10, h / 2)
+        for candTop in stride(from: anchorTop, through: searchMinTop, by: -10) {
+            var sum = 0.0
+            var sumSq = 0.0
+            var cnt = 0
+            for r in stride(from: 0, to: anchorH, by: 4) {
+                let row = (candTop + r) * w
+                for c in sampleCols {
+                    let val = Double(bufA[row + c])
+                    sum += val
+                    sumSq += val * val
+                    cnt += 1
+                }
+            }
+            if cnt > 0 {
+                let mean = sum / Double(cnt)
+                let variance = (sumSq / Double(cnt)) - (mean * mean)
+                if variance > bestVar {
+                    bestVar = variance
+                    bestTop = candTop
+                }
+            }
+        }
+
+        // 纯平坦区域（纯白或纯色背景）方差极小，不作盲目误匹配
+        if bestVar < 2.0 {
+            return (false, 0)
+        }
+        anchorTop = bestTop
+
+        // 3. 快速零位移检测（静止时直接返回，彻底消除静态重复行）
         var zeroDiff = 0.0
         var zeroCount = 0
-        for y in stride(from: 0, to: h, by: 4) {
-            let row = y * w
-            for x in sampleCols {
-                zeroDiff += abs(Double(bufA[row + x]) - Double(bufB[row + x]))
+        for r in stride(from: 0, to: anchorH, by: 2) {
+            let rowA = (anchorTop + r) * w
+            for c in sampleCols {
+                zeroDiff += abs(Double(bufA[rowA + c]) - Double(bufB[rowA + c]))
                 zeroCount += 1
             }
         }
-        if zeroDiff / Double(zeroCount) < 1.0 {
+        if zeroCount > 0 && (zeroDiff / Double(zeroCount)) < 1.2 {
             return (false, 0)
         }
 
+        // 4. 在 freshCG 中向上搜索该 Anchor 的匹配位置
+        let maxS = min(Int(CGFloat(h) * 0.45), anchorTop)
+        guard maxS >= 3 else { return (false, 0) }
+
         var bestS = 0
         var bestErr = Double.greatestFiniteMagnitude
-        // Max scroll in 80ms: at most 40% of viewport height (minimum 60% overlap, strictly preventing false matches)
-        let maxS = min(160, Int(CGFloat(h) * 0.40))
 
         for S in 3...maxS {
-            let overlapH = h - S
+            let y = anchorTop - S
+            guard y >= 0 else { break }
+
             var diff = 0.0
             var count = 0
-            for y in stride(from: 0, to: overlapH, by: 2) {
-                let aRow = (y + S) * w
-                let bRow = y * w
-                for x in sampleCols {
-                    diff += abs(Double(bufA[aRow + x]) - Double(bufB[bRow + x]))
+            for r in stride(from: 0, to: anchorH, by: 2) {
+                let rowA = (anchorTop + r) * w
+                let rowB = (y + r) * w
+                for c in sampleCols {
+                    diff += abs(Double(bufA[rowA + c]) - Double(bufB[rowB + c]))
                     count += 1
                 }
             }
@@ -936,7 +1055,8 @@ final class SelectionView: NSView {
             }
         }
 
-        if bestErr < 7.0 && bestS >= 3 {
+        // 5. 严格像素级吻合判定：平均误差小于 3.5 级灰度且位移 >= 3px
+        if bestErr < 3.5 && bestS >= 3 {
             return (true, bestS)
         }
         return (false, 0)
@@ -972,6 +1092,20 @@ final class SelectionView: NSView {
         return NSRect(x: x, y: y, width: previewWidth, height: previewHeight)
     }
 
+    private func scrollingCancelButtonRect() -> NSRect {
+        let r = scrollingPreviewPanelRect()
+        guard r.width > 0, r.height > 0 else { return .zero }
+        let btnW = (r.width - 18) / 2
+        return NSRect(x: r.minX + 6, y: r.minY + 6, width: btnW, height: 26)
+    }
+
+    private func scrollingDoneButtonRect() -> NSRect {
+        let r = scrollingPreviewPanelRect()
+        guard r.width > 0, r.height > 0 else { return .zero }
+        let btnW = (r.width - 18) / 2
+        return NSRect(x: r.minX + 12 + btnW, y: r.minY + 6, width: btnW, height: 26)
+    }
+
     private func drawScrollingPreviewPanel() {
         let r = scrollingPreviewPanelRect()
         guard r.width > 0, r.height > 0 else { return }
@@ -1003,7 +1137,7 @@ final class SelectionView: NSView {
             let imgSize = img.size
             if imgSize.width > 0 && imgSize.height > 0 {
                 let innerWidth = r.width - 12
-                let innerHeight = r.height - 38
+                let innerHeight = r.height - 68
                 let scale = min(innerWidth / imgSize.width, innerHeight / imgSize.height)
                 let drawWidth = imgSize.width * scale
                 let drawHeight = imgSize.height * scale
@@ -1018,20 +1152,52 @@ final class SelectionView: NSView {
             NSGraphicsContext.restoreGraphicsState()
 
             // Realtime preview badge showing height: "长图实时预览 • \(Int(img.size.height)) px"
-            let badgeRect = NSRect(x: r.minX + 6, y: r.minY + 6, width: r.width - 12, height: 22)
+            let badgeRect = NSRect(x: r.minX + 6, y: r.minY + 36, width: r.width - 12, height: 20)
             NSColor(white: 0.15, alpha: 0.82).setFill()
             let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 4, yRadius: 4)
             badgePath.fill()
 
-            let badgeText = "实时长图 • \(Int(img.size.height)) px"
+            let badgeText = "长图高度: \(Int(img.size.height)) px"
             let attrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 10, weight: .semibold),
+                .font: NSFont.systemFont(ofSize: 9.5, weight: .semibold),
                 .foregroundColor: NSColor.white
             ]
             let textSize = badgeText.size(withAttributes: attrs)
             badgeText.draw(
                 at: NSPoint(x: badgeRect.midX - textSize.width / 2, y: badgeRect.midY - textSize.height / 2),
                 withAttributes: attrs
+            )
+
+            // Cancel Button (Red/Dark)
+            let cancelRect = scrollingCancelButtonRect()
+            NSColor(srgbRed: 0.90, green: 0.28, blue: 0.28, alpha: 0.95).setFill()
+            let cancelPath = NSBezierPath(roundedRect: cancelRect, xRadius: 5, yRadius: 5)
+            cancelPath.fill()
+            let cancelText = "✖ 退出"
+            let cancelAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                .foregroundColor: NSColor.white
+            ]
+            let cSize = cancelText.size(withAttributes: cancelAttrs)
+            cancelText.draw(
+                at: NSPoint(x: cancelRect.midX - cSize.width / 2, y: cancelRect.midY - cSize.height / 2),
+                withAttributes: cancelAttrs
+            )
+
+            // Done Button (Blue)
+            let doneRect = scrollingDoneButtonRect()
+            NSColor(srgbRed: 0.12, green: 0.53, blue: 0.98, alpha: 1.0).setFill()
+            let donePath = NSBezierPath(roundedRect: doneRect, xRadius: 5, yRadius: 5)
+            donePath.fill()
+            let doneText = "✔ 完成"
+            let doneAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+                .foregroundColor: NSColor.white
+            ]
+            let dSize = doneText.size(withAttributes: doneAttrs)
+            doneText.draw(
+                at: NSPoint(x: doneRect.midX - dSize.width / 2, y: doneRect.midY - dSize.height / 2),
+                withAttributes: doneAttrs
             )
         }
     }
@@ -1156,7 +1322,7 @@ final class SelectionView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         let dimAlpha: CGFloat = (mode == .annotating) ? 0.45 : 0.28
         NSColor.black.withAlphaComponent(dimAlpha).setFill()
-        bounds.fill()
+        dirtyRect.fill()
 
         if mode == .selecting {
             drawSelectingState()
@@ -1276,7 +1442,13 @@ final class SelectionView: NSView {
         outer.lineWidth = 2.0
         outer.stroke()
 
-        let color = currentPixelColor()
+        let color: (r: Int, g: Int, b: Int, hex: String, name: String)
+        if isMouseMovingFast {
+            // 鼠标移动中：使用极速缓存颜色，跳过字典查找与耗时测量，保证 120 FPS 丝滑顺畅
+            color = cachedLoupeColor ?? (255, 255, 255, "FFFFFF", "白色")
+        } else {
+            color = cachedLoupeColor ?? currentPixelColor()
+        }
 
         let headerRect = NSRect(x: loupeRect.minX, y: loupeRect.maxY - 22, width: loupeSize, height: 22)
         NSColor.white.withAlphaComponent(0.92).setFill()

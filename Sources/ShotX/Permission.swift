@@ -53,7 +53,12 @@ final class PermissionPromptController: NSObject, NSWindowDelegate {
         }
 
         let view = PermissionPromptView(
-            onOpenSettings: { Permissions.openScreenRecordingSettings() },
+            onOpenSettings: { [weak self] in
+                Permissions.openScreenRecordingSettings()
+                // 关键修复：点击打开设置后将窗口退居后方并取消激活，确保系统设置窗口不被遮挡
+                self?.window?.orderBack(nil)
+                NSApp.deactivate()
+            },
             onCheckAgain: { [weak self] in
                 self?.handleCheckAgain()
             },
@@ -72,7 +77,8 @@ final class PermissionPromptController: NSObject, NSWindowDelegate {
         win.title = "ShotX 权限"
         win.contentView = hosting.view
         win.delegate = self
-        win.level = .floating
+        // 关键修复：采用普通窗口层级，绝不使用 .floating 遮挡 macOS 系统设置
+        win.level = .normal
         win.isReleasedWhenClosed = false
         win.center()
         win.makeKeyAndOrderFront(nil)
