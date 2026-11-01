@@ -37,8 +37,15 @@ enum Permissions {
 @MainActor
 final class PermissionPromptController: NSObject, NSWindowDelegate {
     private var window: NSWindow?
+    private var pollTimer: Timer?
+    private var activeObserver: Any?
 
     func show() {
+        if Permissions.screenRecordingGranted {
+            dismiss()
+            return
+        }
+
         if let window = window {
             window.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
@@ -47,10 +54,13 @@ final class PermissionPromptController: NSObject, NSWindowDelegate {
 
         let view = PermissionPromptView(
             onOpenSettings: { Permissions.openScreenRecordingSettings() },
+            onCheckAgain: { [weak self] in
+                self?.handleCheckAgain()
+            },
             onQuit: { NSApp.terminate(nil) }
         )
         let hosting = NSHostingController(rootView: view)
-        let size = NSSize(width: 420, height: 420)
+        let size = NSSize(width: 440, height: 440)
         hosting.view.frame = NSRect(origin: .zero, size: size)
 
         let win = NSWindow(
@@ -68,24 +78,91 @@ final class PermissionPromptController: NSObject, NSWindowDelegate {
         win.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         window = win
+
+        startMonitoring()
+    }
+
+    private func startMonitoring() {
+        stopMonitoring()
+        // 1. 每 0.8s 自动检测一次，用户在系统设置中一开启即自动关闭弹窗
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 0.8, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                if Permissions.screenRecordingGranted {
+                    self?.onPermissionGranted()
+                }
+            }
+        }
+
+        // 2. 软件从后台切回前台时立即检测
+        activeObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                if Permissions.screenRecordingGranted {
+                    self?.onPermissionGranted()
+                }
+            }
+        }
+    }
+
+    private func stopMonitoring() {
+        pollTimer?.invalidate()
+        pollTimer = nil
+        if let obs = activeObserver {
+            NotificationCenter.default.removeObserver(obs)
+            activeObserver = nil
+        }
+    }
+
+    private func onPermissionGranted() {
+        stopMonitoring()
+        dismiss()
+        ToastController.shared.show(
+            message: "屏幕录制权限已就绪，欢迎使用 ShotX！",
+            icon: "checkmark.shield.fill",
+            tint: .systemGreen,
+            duration: 3.0,
+            position: .center
+        )
+    }
+
+    private func handleCheckAgain() {
+        if Permissions.screenRecordingGranted {
+            onPermissionGranted()
+        } else {
+            ToastController.shared.show(
+                message: "尚未检测到权限：若已开启，请尝试在系统设置中【-】移除后重新添加",
+                icon: "exclamationmark.triangle.fill",
+                tint: .systemOrange,
+                duration: 3.5,
+                position: .center
+            )
+        }
     }
 
     func dismiss() {
+        stopMonitoring()
         window?.orderOut(nil)
         window = nil
     }
 
     nonisolated func windowWillClose(_ notification: Notification) {
-        Task { @MainActor in self.window = nil }
+        Task { @MainActor in
+            self.stopMonitoring()
+            self.window = nil
+        }
     }
 }
 
 private struct PermissionPromptView: View {
     let onOpenSettings: () -> Void
+    let onCheckAgain: () -> Void
     let onQuit: () -> Void
 
     var body: some View {
-        VStack(spacing: 18) {
+        VStack(spacing: 16) {
             iconBadge
 
             VStack(spacing: 6) {
@@ -102,7 +179,7 @@ private struct PermissionPromptView: View {
 
             steps
 
-            Text("如果已经开启仍无法使用？升级 ShotX 后，您可能需要在系统设置列表中**移除**旧项并**重新添加**它以信任新版本。")
+            Text("如果已经开启仍无法使用？升级 ShotX 后，您可能需要在系统设置列表中选中 ShotX，点击下方的减号【-】移除旧项，然后重新开启。")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
@@ -117,8 +194,13 @@ private struct PermissionPromptView: View {
                 }
                 .keyboardShortcut("q", modifiers: .command)
 
+                Button(action: onCheckAgain) {
+                    Label("重新检测", systemImage: "arrow.clockwise")
+                        .frame(maxWidth: .infinity)
+                }
+
                 Button(action: onOpenSettings) {
-                    Label("打开系统设置", systemImage: "gear")
+                    Label("打开设置", systemImage: "gear")
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
@@ -126,8 +208,8 @@ private struct PermissionPromptView: View {
             }
             .controlSize(.large)
         }
-        .padding(24)
-        .frame(width: 420, height: 420)
+        .padding(22)
+        .frame(width: 440, height: 440)
     }
 
     private var iconBadge: some View {

@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.10)'
+        description: 'Release version (e.g. 1.9.11)'
         required: false
-        default: '1.9.10'
+        default: '1.9.11'
 
 permissions:
   contents: write
@@ -39,7 +39,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.10"
+            VERSION="1.9.11"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -70,13 +70,14 @@ jobs:
             ### ShotX ${{ env.TAG }}
 
             #### 本次更新亮点与修复
-            1. **长截图滚动预览与方向位移算法全面修复**：
+            1. **彻底解决权限循环提示与应用打不开问题**：
+               - 移除了导致代码签名规则（Designated Requirement）与主包/内嵌 Framework 冲突的错误签名参数，恢复 100% 合法且完整的应用包签名；
+               - 权限弹窗新增后台与定时实时轮询（0.8s）检测，用户在系统设置开启权限后切回软件自动关闭提示并直接就绪；
+               - 权限窗口增加【重新检测】按钮，并优化升级后的操作指引（若系统残留旧项，点击减号【-】重新勾选即可）。
+            2. **长截图滚动预览与方向位移算法全面修复**：
                - 修正了位移匹配在坐标系上的反向偏移错误，实现了真正的累积底部锚点追踪；
                - 预览卡片自适应缩放展示整张长图，并在底部增加「实时长图 • {高度} px」动态徽章；
                - 定时采样与滚轮监听联动，不论是触控板手势、鼠标滚轮、滚动条拖拽还是键盘翻页均能丝滑拼接且绝不重叠。
-            2. **代码签名指定需求（DR）优化，免去重复授权烦恼**：
-               - 构建签名时显式指定稳定 Designated Requirement（`-r="=designated => identifier \"com.shotx.ShotX\""`）；
-               - 解决 macOS TCC 系统数据库每次因二进制哈希变动而撤销屏幕录制与辅助功能权限的问题。
             3. **截图 OCR 与截图翻译全链路修复**：
                - 升级 Apple Vision 离线识别请求为支持中文的最新规范（Revision 3 / Revision 2），内置智能降级与重试机制；
                - 修复 `OverlayController` 闭包提前被释放导致的截图翻译不弹窗问题；
