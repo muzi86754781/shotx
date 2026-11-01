@@ -326,6 +326,8 @@ final class SelectionView: NSView {
                 if isOCRMode {
                     if let image = generateBaseCroppedImage() {
                         onOCRSelected?(image)
+                    } else {
+                        onOCRSelected?(nil)
                     }
                     onFinish?()
                     return
@@ -811,15 +813,16 @@ final class SelectionView: NSView {
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         guard let fresh = ScreenCapture.capture(rectInScreenCoords: globalRect, screen: targetScreen) else { return }
 
-        guard let base = stitchedLongImage, let last = lastCapturedFrame else {
+        guard let base = stitchedLongImage else {
             self.stitchedLongImage = fresh
             self.lastCapturedFrame = fresh
             needsDisplay = true
             return
         }
 
-        let movement = detectScrollMovement(oldImage: last, newImage: fresh)
-        // 关键：截图区域内经过全重叠区域误差验证有实际滚动时才拼接长图，无位移或未对齐则不拼接
+        // Anchor matching: Always compare fresh against the BOTTOM-MOST edge of the cumulative long canvas!
+        // This ensures that scrolling backward or back-and-forth NEVER duplicates already captured content.
+        let movement = detectScrollMovementFromBase(baseImage: base, freshImage: fresh)
         guard movement.hasMovement, movement.offsetY >= 4 else {
             return
         }
@@ -850,56 +853,50 @@ final class SelectionView: NSView {
         needsDisplay = true
     }
 
-    private func detectScrollMovement(oldImage: NSImage, newImage: NSImage) -> (hasMovement: Bool, offsetY: Int) {
-        guard let oldCG = oldImage.cgImage(forProposedRect: nil, context: nil, hints: nil),
-              let newCG = newImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
+    private func detectScrollMovementFromBase(baseImage: NSImage, freshImage: NSImage) -> (hasMovement: Bool, offsetY: Int) {
+        // Extract bottom anchor from base (representing the furthest content captured so far)
+        let anchorH = min(160, max(80, Int(freshImage.size.height * 0.35)))
+        let anchorRect = NSRect(x: 0, y: 0, width: baseImage.size.width, height: CGFloat(anchorH))
+        let anchorImg = NSImage(size: anchorRect.size)
+        anchorImg.lockFocus()
+        baseImage.draw(in: NSRect(origin: .zero, size: anchorRect.size), from: anchorRect, operation: .copy, fraction: 1.0)
+        anchorImg.unlockFocus()
+
+        guard let anchorCG = anchorImg.cgImage(forProposedRect: nil, context: nil, hints: nil),
+              let freshCG = freshImage.cgImage(forProposedRect: nil, context: nil, hints: nil) else {
             return (false, 0)
         }
 
         let sampleW = 160
-        let sampleH = min(400, max(120, oldCG.height / 2))
-        guard let oldBuf = grayscaleSample(cgImage: oldCG, width: sampleW, height: sampleH),
-              let newBuf = grayscaleSample(cgImage: newCG, width: sampleW, height: sampleH) else {
+        let scale = 160.0 / CGFloat(freshImage.size.width)
+        let sampleAnchorH = max(40, Int(round(CGFloat(anchorH) * scale)))
+        let sampleFreshH = max(120, Int(round(CGFloat(freshImage.size.height) * scale)))
+
+        guard let anchorBuf = grayscaleSample(cgImage: anchorCG, width: sampleW, height: sampleAnchorH),
+              let freshBuf = grayscaleSample(cgImage: freshCG, width: sampleW, height: sampleFreshH) else {
             return (false, 0)
         }
 
-        // 1. 检测两帧全局平均像素差
-        var totalDiff: Double = 0
-        let totalCount = sampleW * sampleH
-        for i in 0..<totalCount {
-            totalDiff += abs(Double(oldBuf[i]) - Double(newBuf[i]))
-        }
-        let meanDiff = totalDiff / Double(totalCount)
-
-        // 整体差异极小（< 1.8 / 255）表示画面静止未滚动，直接退出
-        if meanDiff < 1.8 {
-            return (false, 0)
-        }
-
-        // 2. 全重叠区域（Overlap Slab）搜索真实位移 S
-        let minS = 4
-        let maxS = sampleH - 35
+        let minS = 3
+        let maxS = sampleFreshH - sampleAnchorH - 4
         guard maxS > minS else { return (false, 0) }
 
         var bestS = 0
         var bestError = Double.greatestFiniteMagnitude
 
         for s in minS...maxS {
-            let overlapH = sampleH - s
             var diffSum: Double = 0
-            var sampleCount: Int = 0
-
-            for y in stride(from: 0, to: overlapH, by: 2) {
-                let oldRowStart = (y + s) * sampleW
-                let newRowStart = y * sampleW
+            var count = 0
+            for y in stride(from: 0, to: sampleAnchorH, by: 2) {
+                let aRow = y * sampleW
+                let fRow = (y + s) * sampleW
                 for x in stride(from: 0, to: sampleW, by: 2) {
-                    diffSum += abs(Double(oldBuf[oldRowStart + x]) - Double(newBuf[newRowStart + x]))
-                    sampleCount += 1
+                    diffSum += abs(Double(anchorBuf[aRow + x]) - Double(freshBuf[fRow + x]))
+                    count += 1
                 }
             }
-
-            if sampleCount > 0 {
-                let err = diffSum / Double(sampleCount)
+            if count > 0 {
+                let err = diffSum / Double(count)
                 if err < bestError {
                     bestError = err
                     bestS = s
@@ -907,14 +904,12 @@ final class SelectionView: NSView {
             }
         }
 
-        // 3. 严格验证：整块重叠区域平均像素误差必须低于 12.0，且仅允许顺向向下位移拼接（杜绝反向滚动重叠）！
-        guard bestError < 12.0, bestS >= minS else {
+        // Strict verification: only accept if anchor matches upper part of fresh with low error (< 11.5)
+        guard bestError < 11.5, bestS >= minS else {
             return (false, 0)
         }
 
-        let scale = CGFloat(newImage.size.height) / CGFloat(sampleH)
-        let realS = Int(round(CGFloat(bestS) * scale))
-
+        let realS = Int(round(CGFloat(bestS) / scale))
         return (true, max(4, realS))
     }
 

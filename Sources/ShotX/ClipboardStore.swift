@@ -290,22 +290,45 @@ final class ClipboardHistoryController {
     }
 
     static func pasteAtCursor(_ entry: ClipboardEntry) {
+        // 1. Copy entry to NSPasteboard
         ClipboardStore.shared.copyToClipboard(entry)
+
+        // 2. Check accessibility permission (required for synthetic keystrokes in macOS, reference: CopyLess 2)
+        if !Permissions.accessibilityGranted {
+            Permissions.requestAccessibilityPermission()
+            ToastController.shared.show(
+                message: "请在「系统设置 - 辅助功能」中允许 ShotX，以实现直接粘贴",
+                icon: "exclamationmark.shield.fill",
+                tint: .systemOrange,
+                duration: 3.5,
+                position: .center
+            )
+            Permissions.openAccessibilitySettings()
+            return
+        }
 
         let targetApp = shared.previousApp
 
-        // 1. Reactivate the previous target application where cursor was (DO NOT dismiss our floating window so user can continuously paste!)
+        // 3. Reactivate target application so its input editor receives keyboard focus (CopyLess 2 pattern)
+        // Crucial: Deactivate ShotX so target app becomes key window, while our floating window stays visible
+        NSApp.deactivate()
         if let target = targetApp, !target.isTerminated {
             target.activate(options: [.activateIgnoringOtherApps])
         }
 
-        // 2. Synthesize Cmd+V keystroke to paste directly at cursor position in target application
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) {
+        // 4. Synthesize Cmd+V keystroke to paste directly at cursor position in target application
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.10) {
             let src = CGEventSource(stateID: .combinedSessionState)
-            if let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true),
+            if let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: true), // 9 = 'v'
                let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 9, keyDown: false) {
                 keyDown.flags = .maskCommand
                 keyUp.flags = .maskCommand
+                
+                // Post directly to target app's PID for highest reliability
+                if let pid = targetApp?.processIdentifier {
+                    keyDown.postToPid(pid)
+                    keyUp.postToPid(pid)
+                }
                 keyDown.post(tap: .cghidEventTap)
                 keyUp.post(tap: .cghidEventTap)
             }

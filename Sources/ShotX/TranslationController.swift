@@ -333,8 +333,9 @@ final class TranslationController {
     let viewModel = TranslationViewModel()
 
     func show(text: String = "") {
-        if !text.isEmpty {
-            viewModel.inputText = text
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if !trimmed.isEmpty {
+            viewModel.inputText = trimmed
             viewModel.performTranslation()
         }
 
@@ -722,14 +723,13 @@ struct InterceptingTextEditor: NSViewRepresentable {
         scrollView.hasHorizontalScroller = false
         scrollView.autohidesScrollers = true
 
-        let contentSize = scrollView.contentSize
-        let textView = KeyInterceptingTextView(frame: NSRect(origin: .zero, size: contentSize))
-        textView.minSize = NSSize(width: 0, height: contentSize.height)
+        let textView = KeyInterceptingTextView(frame: NSRect(x: 0, y: 0, width: 440, height: 80))
+        textView.minSize = NSSize(width: 0, height: 60)
         textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
         textView.autoresizingMask = [.width]
-        textView.textContainer?.containerSize = NSSize(width: contentSize.width, height: CGFloat.greatestFiniteMagnitude)
+        textView.textContainer?.containerSize = NSSize(width: 440, height: CGFloat.greatestFiniteMagnitude)
         textView.textContainer?.widthTracksTextView = true
         textView.font = NSFont.systemFont(ofSize: 14)
         textView.textColor = NSColor.labelColor
@@ -746,6 +746,7 @@ struct InterceptingTextEditor: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: NSScrollView, context: Context) {
+        context.coordinator.parent = self
         guard let textView = nsView.documentView as? KeyInterceptingTextView else { return }
         if textView.string != text {
             textView.string = text

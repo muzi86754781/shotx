@@ -116,6 +116,14 @@ enum OCR {
 
     @MainActor
     static func cgImage(from image: NSImage) -> CGImage? {
+        for rep in image.representations {
+            if let bitmapRep = rep as? NSBitmapImageRep, let cg = bitmapRep.cgImage {
+                return cg
+            }
+            if let cg = rep.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+                return cg
+            }
+        }
         if let cg = image.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             return cg
         }

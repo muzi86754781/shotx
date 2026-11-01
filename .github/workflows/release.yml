@@ -9,9 +9,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.8)'
+        description: 'Release version (e.g. 1.9.9)'
         required: false
-        default: '1.9.8'
+        default: '1.9.9'
 
 permissions:
   contents: write
@@ -39,7 +39,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.8"
+            VERSION="1.9.9"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV

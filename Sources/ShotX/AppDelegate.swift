@@ -777,8 +777,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func translateSelection() {
+        if !Permissions.accessibilityGranted {
+            Permissions.requestAccessibilityPermission()
+            ToastController.shared.show(
+                message: "请在「系统设置 - 辅助功能」中允许 ShotX，以支持划词翻译",
+                icon: "exclamationmark.shield.fill",
+                tint: .systemOrange,
+                duration: 3.5,
+                position: .center
+            )
+            Permissions.openAccessibilitySettings()
+            return
+        }
+
         let isShotXActive = (NSWorkspace.shared.frontmostApplication?.bundleIdentifier == Bundle.main.bundleIdentifier)
-        if isShotXActive, let ext = AppDelegate.lastExternalApp, !ext.isTerminated {
+        let targetApp = AppDelegate.lastExternalApp
+        if isShotXActive, let ext = targetApp, !ext.isTerminated {
             ext.activate(options: [.activateIgnoringOtherApps])
         }
 
@@ -797,16 +811,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 }
             }
 
-            // 2. Second attempt: simulate Cmd+C keystroke to copy selected text
+            // 2. Second attempt: simulate Cmd+C keystroke to copy selected text (Bob reference)
             let oldChangeCount = NSPasteboard.general.changeCount
             let oldString = NSPasteboard.general.string(forType: .string) ?? ""
             let src = CGEventSource(stateID: .combinedSessionState)
-            let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 8, keyDown: true) // 8 = 'c'
-            keyDown?.flags = .maskCommand
-            let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 8, keyDown: false)
-            keyUp?.flags = .maskCommand
-            keyDown?.post(tap: .cghidEventTap)
-            keyUp?.post(tap: .cghidEventTap)
+            if let keyDown = CGEvent(keyboardEventSource: src, virtualKey: 8, keyDown: true), // 8 = 'c'
+               let keyUp = CGEvent(keyboardEventSource: src, virtualKey: 8, keyDown: false) {
+                keyDown.flags = .maskCommand
+                keyUp.flags = .maskCommand
+                if let pid = (isShotXActive ? targetApp?.processIdentifier : NSWorkspace.shared.frontmostApplication?.processIdentifier) {
+                    keyDown.postToPid(pid)
+                    keyUp.postToPid(pid)
+                }
+                keyDown.post(tap: .cghidEventTap)
+                keyUp.post(tap: .cghidEventTap)
+            }
 
             // AppleScript fallback
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.02) {
@@ -815,8 +834,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 script?.executeAndReturnError(&err)
             }
 
-            // Wait 0.15s for the target application to write to the pasteboard
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) {
+            // Wait 0.14s for the target application to write to the pasteboard
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) {
                 let currentStr = NSPasteboard.general.string(forType: .string) ?? ""
                 if (NSPasteboard.general.changeCount != oldChangeCount || currentStr != oldString),
                    !currentStr.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
@@ -851,10 +870,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                     TranslationController.shared.show()
                     return
                 }
-                if let text = await OCR.recognize(in: cgImage), !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                let recognized = await OCR.recognize(in: cgImage)
+                let trimmed = recognized?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+                if !trimmed.isEmpty {
                     SoundEffect.shared.playShutter()
-                    HistoryStore.shared.addOCR(text)
-                    TranslationController.shared.show(text: text)
+                    HistoryStore.shared.addOCR(trimmed)
+                    TranslationController.shared.show(text: trimmed)
                 } else {
                     ToastController.shared.show(
                         message: "选区未识别到清晰文字，已打开翻译窗口",

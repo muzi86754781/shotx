@@ -17,6 +17,21 @@ enum Permissions {
         guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") else { return }
         NSWorkspace.shared.open(url)
     }
+
+    static var accessibilityGranted: Bool {
+        AXIsProcessTrusted()
+    }
+
+    static func requestAccessibilityPermission() {
+        let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
+        _ = AXIsProcessTrustedWithOptions(options)
+    }
+
+    static func openAccessibilitySettings() {
+        requestAccessibilityPermission()
+        guard let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility") else { return }
+        NSWorkspace.shared.open(url)
+    }
 }
 
 @MainActor
