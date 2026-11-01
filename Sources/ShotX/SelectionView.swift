@@ -39,7 +39,7 @@ final class SelectionView: NSView {
     var targetScreen: NSScreen
 
     var isOCRMode: Bool = false
-    var onOCRSelected: ((NSImage) -> Void)?
+    var onOCRSelected: ((NSImage?) -> Void)?
 
     var onActive: (() -> Void)?
     var onFinish: (() -> Void)?
@@ -324,11 +324,8 @@ final class SelectionView: NSView {
 
                 // If in OCR-only mode, directly finish without entering annotating
                 if isOCRMode {
-                    if let image = generateBaseCroppedImage() {
-                        onOCRSelected?(image)
-                    } else {
-                        onOCRSelected?(nil)
-                    }
+                    let image = generateBaseCroppedImage()
+                    onOCRSelected?(image)
                     onFinish?()
                     return
                 }

@@ -8,7 +8,7 @@ final class OverlayWindow: NSWindow {
         screen: NSScreen,
         snapshot: CGImage?,
         isOCR: Bool = false,
-        onOCRResult: ((NSImage) -> Void)? = nil,
+        onOCRResult: ((NSImage?) -> Void)? = nil,
         onActive: @escaping (OverlayWindow) -> Void,
         onFinish: @escaping () -> Void,
         onCancel: @escaping () -> Void
