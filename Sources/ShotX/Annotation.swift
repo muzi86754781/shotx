@@ -52,6 +52,7 @@ struct Annotation: Identifiable {
     var isHighlighter: Bool = false
     var isMosaicBlur: Bool = false
     var textStyle: Int = 1 // 0: none, 1: outline, 2: background
+    var secondaryColor: NSColor = .white
     var stepIsFilled: Bool = true
     var opacity: CGFloat = 1.0
 
@@ -84,7 +85,12 @@ struct Annotation: Identifiable {
 }
 
 enum AnnotationRenderer {
-    static func draw(_ ann: Annotation, baseImage: NSImage? = nil) {
+    static func draw(
+        _ ann: Annotation,
+        snapshotImage: CGImage? = nil,
+        viewBounds: CGRect = .zero,
+        baseImage: NSImage? = nil
+    ) {
         let drawColor = ann.color.withAlphaComponent(ann.color.alphaComponent * ann.opacity)
         switch ann.shape {
         case .arrow(let from, let to):
@@ -98,9 +104,9 @@ enum AnnotationRenderer {
         case .pen(let points):
             drawPen(points: points, thickness: ann.thickness, color: drawColor, isHighlighter: ann.isHighlighter)
         case .mosaic(let r):
-            drawMosaic(r, baseImage: baseImage, isBlur: ann.isMosaicBlur)
+            drawMosaic(r, snapshotImage: snapshotImage, viewBounds: viewBounds, baseImage: baseImage, isBlur: ann.isMosaicBlur)
         case .text(let origin, let string, let fontSize):
-            drawText(string, at: origin, fontSize: fontSize, color: drawColor, style: ann.textStyle)
+            drawText(string, at: origin, fontSize: fontSize, color: drawColor, style: ann.textStyle, secondaryColor: ann.secondaryColor)
         case .step(let center, let number):
             drawStep(at: center, number: number, color: drawColor, isFilled: ann.stepIsFilled)
         }
@@ -205,7 +211,7 @@ enum AnnotationRenderer {
             color.setFill()
             path.fill()
         } else {
-            path.lineWidth = max(2.5, thickness)
+            path.lineWidth = max(1.0, thickness)
             path.lineJoinStyle = .round
             color.setStroke()
             path.stroke()
@@ -226,7 +232,7 @@ enum AnnotationRenderer {
             color.setFill()
             path.fill()
         } else {
-            path.lineWidth = max(2.5, thickness)
+            path.lineWidth = max(1.0, thickness)
             color.setStroke()
             path.stroke()
         }
@@ -237,7 +243,7 @@ enum AnnotationRenderer {
         let path = NSBezierPath()
         path.move(to: from)
         path.line(to: to)
-        path.lineWidth = max(2.5, thickness)
+        path.lineWidth = max(1.0, thickness)
         path.lineCapStyle = .round
 
         NSGraphicsContext.saveGraphicsState()
@@ -256,7 +262,7 @@ enum AnnotationRenderer {
             if let first = points.first {
                 let actualColor = isHighlighter ? color.withAlphaComponent(0.4) : color
                 actualColor.setFill()
-                let sz = isHighlighter ? max(16, thickness * 2.5) : thickness
+                let sz = isHighlighter ? max(16, thickness * 2.5) : max(1.0, thickness)
                 NSBezierPath(ovalIn: CGRect(x: first.x - sz / 2, y: first.y - sz / 2, width: sz, height: sz)).fill()
             }
             return
@@ -266,7 +272,7 @@ enum AnnotationRenderer {
         for pt in points.dropFirst() {
             path.line(to: pt)
         }
-        path.lineWidth = isHighlighter ? max(16, thickness * 2.5) : max(2.5, thickness)
+        path.lineWidth = isHighlighter ? max(16, thickness * 2.5) : max(1.0, thickness)
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
 
@@ -284,54 +290,124 @@ enum AnnotationRenderer {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func drawMosaic(_ rect: CGRect, baseImage: NSImage? = nil, isBlur: Bool = false) {
+    private static func drawMosaic(
+        _ rect: CGRect,
+        snapshotImage: CGImage? = nil,
+        viewBounds: CGRect = .zero,
+        baseImage: NSImage? = nil,
+        isBlur: Bool = false
+    ) {
         guard rect.width > 2, rect.height > 2 else { return }
+
+        // 获取底层原始图像切片
+        var sliceCG: CGImage? = nil
+        var scaleFactor: CGFloat = 2.0
+
+        if let snap = snapshotImage, viewBounds.width > 0, viewBounds.height > 0 {
+            let scaleX = CGFloat(snap.width) / viewBounds.width
+            let scaleY = CGFloat(snap.height) / viewBounds.height
+            scaleFactor = scaleX
+            let pixelX = rect.minX * scaleX
+            let pixelY = (viewBounds.height - rect.maxY) * scaleY
+            let pixelW = rect.width * scaleX
+            let pixelH = rect.height * scaleY
+            let cropRect = CGRect(x: pixelX, y: pixelY, width: pixelW, height: pixelH).intersection(CGRect(x: 0, y: 0, width: snap.width, height: snap.height))
+            if cropRect.width > 0 && cropRect.height > 0 {
+                sliceCG = snap.cropping(to: cropRect)
+            }
+        } else if let base = baseImage, let fullCG = base.cgImage(forProposedRect: nil, context: nil, hints: nil) {
+            let scaleX = CGFloat(fullCG.width) / base.size.width
+            let scaleY = CGFloat(fullCG.height) / base.size.height
+            scaleFactor = scaleX
+            let pixelX = rect.minX * scaleX
+            let pixelY = (base.size.height - rect.maxY) * scaleY
+            let pixelW = rect.width * scaleX
+            let pixelH = rect.height * scaleY
+            let cropRect = CGRect(x: pixelX, y: pixelY, width: pixelW, height: pixelH).intersection(CGRect(x: 0, y: 0, width: fullCG.width, height: fullCG.height))
+            if cropRect.width > 0 && cropRect.height > 0 {
+                sliceCG = fullCG.cropping(to: cropRect)
+            }
+        }
+
         NSGraphicsContext.saveGraphicsState()
         let clipPath = NSBezierPath(rect: rect)
         clipPath.addClip()
 
-        if let baseImage = baseImage,
-           let cgImage = baseImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
-            let ciImage = CIImage(cgImage: cgImage)
-            let filterName = isBlur ? "CIGaussianBlur" : "CIPixellate"
-            let filter = CIFilter(name: filterName)
-            filter?.setValue(ciImage, forKey: kCIInputImageKey)
+        if let slice = sliceCG {
+            let ciImage = CIImage(cgImage: slice)
             if isBlur {
-                filter?.setValue(12.0, forKey: kCIInputRadiusKey)
+                // 毛玻璃模式：精致高斯模糊 + 柔和磨砂质感
+                let clamped = ciImage.clampedToExtent()
+                if let blurFilter = CIFilter(name: "CIGaussianBlur") {
+                    blurFilter.setValue(clamped, forKey: kCIInputImageKey)
+                    blurFilter.setValue(16.0 * scaleFactor, forKey: kCIInputRadiusKey)
+                    if let output = blurFilter.outputImage?.cropped(to: CGRect(x: 0, y: 0, width: slice.width, height: slice.height)) {
+                        let rep = NSCIImageRep(ciImage: output)
+                        let resultImg = NSImage(size: rect.size)
+                        resultImg.addRepresentation(rep)
+                        resultImg.draw(in: rect, from: NSRect(origin: .zero, size: rect.size), operation: .sourceOver, fraction: 1.0)
+
+                        // 叠加微弱磨砂高光层
+                        NSColor(white: 1.0, alpha: 0.14).setFill()
+                        clipPath.fill()
+
+                        NSGraphicsContext.restoreGraphicsState()
+                        return
+                    }
+                }
             } else {
-                filter?.setValue(16.0, forKey: kCIInputScaleKey)
-            }
-            if let output = filter?.outputImage {
-                let rep = NSCIImageRep(ciImage: output)
-                let pixImage = NSImage(size: baseImage.size)
-                pixImage.addRepresentation(rep)
-                pixImage.draw(in: rect, from: rect, operation: .sourceOver, fraction: 1.0)
-                NSGraphicsContext.restoreGraphicsState()
-                return
+                // 马赛克模式 (参考 iShot 经典方块像素化)
+                if let pixFilter = CIFilter(name: "CIPixellate") {
+                    pixFilter.setValue(ciImage, forKey: kCIInputImageKey)
+                    let blockScale = max(8.0, 13.0 * scaleFactor)
+                    pixFilter.setValue(blockScale, forKey: kCIInputScaleKey)
+                    pixFilter.setValue(CIVector(x: 0, y: 0), forKey: kCIInputCenterKey)
+                    if let output = pixFilter.outputImage {
+                        let rep = NSCIImageRep(ciImage: output)
+                        let resultImg = NSImage(size: rect.size)
+                        resultImg.addRepresentation(rep)
+                        resultImg.draw(in: rect, from: NSRect(origin: .zero, size: rect.size), operation: .sourceOver, fraction: 1.0)
+                        NSGraphicsContext.restoreGraphicsState()
+                        return
+                    }
+                }
             }
         }
 
-        let blockSize: CGFloat = 12
-        var isDark = false
-        var y = rect.minY
-        while y < rect.maxY {
-            var x = rect.minX
-            var rowDark = isDark
-            while x < rect.maxX {
-                let blockRect = CGRect(x: x, y: y, width: blockSize, height: blockSize).intersection(rect)
-                let color = rowDark ? NSColor(white: 0.45, alpha: 0.85) : NSColor(white: 0.75, alpha: 0.85)
-                color.setFill()
-                blockRect.fill()
-                rowDark.toggle()
-                x += blockSize
+        // 备用兜底
+        if isBlur {
+            NSColor(white: 0.9, alpha: 0.85).setFill()
+            clipPath.fill()
+        } else {
+            let blockSize: CGFloat = 12
+            var isDark = false
+            var y = rect.minY
+            while y < rect.maxY {
+                var x = rect.minX
+                var rowDark = isDark
+                while x < rect.maxX {
+                    let blockRect = CGRect(x: x, y: y, width: blockSize, height: blockSize).intersection(rect)
+                    let color = rowDark ? NSColor(white: 0.45, alpha: 0.85) : NSColor(white: 0.75, alpha: 0.85)
+                    color.setFill()
+                    blockRect.fill()
+                    rowDark.toggle()
+                    x += blockSize
+                }
+                isDark.toggle()
+                y += blockSize
             }
-            isDark.toggle()
-            y += blockSize
         }
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func drawText(_ string: String, at origin: CGPoint, fontSize: CGFloat, color: NSColor, style: Int = 1) {
+    private static func drawText(
+        _ string: String,
+        at origin: CGPoint,
+        fontSize: CGFloat,
+        color: NSColor,
+        style: Int = 1,
+        secondaryColor: NSColor = .white
+    ) {
         let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
         var attrs: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -339,7 +415,7 @@ enum AnnotationRenderer {
         ]
 
         if style == 1 { // 描边
-            attrs[.strokeColor] = NSColor.white
+            attrs[.strokeColor] = secondaryColor
             attrs[.strokeWidth] = -3
         }
 
@@ -348,7 +424,7 @@ enum AnnotationRenderer {
 
         if style == 2 { // 背景框
             NSGraphicsContext.saveGraphicsState()
-            NSColor.white.withAlphaComponent(0.92).setFill()
+            secondaryColor.withAlphaComponent(0.92).setFill()
             let bgPath = NSBezierPath(roundedRect: textRect.insetBy(dx: -6, dy: -3), xRadius: 4, yRadius: 4)
             bgPath.fill()
             NSGraphicsContext.restoreGraphicsState()
@@ -443,157 +519,81 @@ final class InlineTextEditor: NSView, NSTextFieldDelegate {
     var onCancel: (() -> Void)?
 
     private let textField = NSTextField()
-    private let dragBar = NSView()
-    private let resizeHandle = NSView()
-
-    private let handleHeight: CGFloat = 10
-    private let padding: CGFloat = 6
-    private let cornerSize: CGFloat = 12
+    private let padding: CGFloat = 4
 
     private var currentFontSize: CGFloat
     private let fontSizeMin: CGFloat = 10
     private let fontSizeMax: CGFloat = 120
 
-    private var dragMode: DragMode = .none
-    private var dragStart: NSPoint = .zero
-    private var initialFrame: NSRect = .zero
-    private var initialFontSize: CGFloat = 0
-
     private var committed = false
 
-    enum DragMode { case none, move, resize }
-
-    init(origin: NSPoint, color: NSColor, fontSize: CGFloat) {
+    init(origin: NSPoint, color: NSColor, fontSize: CGFloat, initialText: String? = nil) {
         self.currentFontSize = fontSize
-        let initialSize = NSSize(width: 140, height: 50)
+        let initialSize = NSSize(width: 140, height: 36)
         super.init(frame: NSRect(
             x: origin.x - padding,
-            y: origin.y - padding,
+            y: origin.y - 2,
             width: initialSize.width,
             height: initialSize.height
         ))
         wantsLayer = true
         layer?.cornerRadius = 4
-        layer?.borderColor = NSColor.controlAccentColor.cgColor
-        layer?.borderWidth = 1.5
-        layer?.backgroundColor = NSColor.black.withAlphaComponent(0.05).cgColor
-
-        dragBar.wantsLayer = true
-        dragBar.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.85).cgColor
-        dragBar.layer?.cornerRadius = 2
-        addSubview(dragBar)
+        layer?.borderColor = NSColor.controlAccentColor.withAlphaComponent(0.8).cgColor
+        layer?.borderWidth = 1.0
+        layer?.backgroundColor = NSColor.white.withAlphaComponent(0.12).cgColor
 
         textField.isBezeled = false
         textField.drawsBackground = false
         textField.focusRingType = .none
         textField.font = NSFont.systemFont(ofSize: currentFontSize, weight: .bold)
         textField.textColor = color
-        textField.placeholderString = "Text"
+        textField.placeholderString = "输入文本..."
         textField.delegate = self
         textField.cell?.wraps = false
         textField.cell?.isScrollable = true
+
+        if let txt = initialText, !txt.isEmpty {
+            textField.stringValue = txt
+        }
+
         addSubview(textField)
-
-        resizeHandle.wantsLayer = true
-        resizeHandle.layer?.backgroundColor = NSColor.controlAccentColor.cgColor
-        resizeHandle.layer?.cornerRadius = cornerSize / 2
-        resizeHandle.layer?.borderColor = NSColor.white.cgColor
-        resizeHandle.layer?.borderWidth = 1.5
-        addSubview(resizeHandle)
-
-        layoutSubviews()
+        autoSize()
     }
 
     required init?(coder: NSCoder) { fatalError() }
 
     override func layout() {
         super.layout()
-        layoutSubviews()
-    }
-
-    private func layoutSubviews() {
-        let barY = bounds.height - handleHeight
-        dragBar.frame = NSRect(x: padding, y: barY + 2, width: bounds.width - padding * 2, height: 4)
-        textField.frame = NSRect(
-            x: padding,
-            y: padding,
-            width: bounds.width - padding * 2,
-            height: bounds.height - handleHeight - padding
-        )
-        resizeHandle.frame = NSRect(
-            x: bounds.width - cornerSize - 2,
-            y: 2,
-            width: cornerSize,
-            height: cornerSize
-        )
+        textField.frame = bounds.insetBy(dx: padding, dy: 2)
     }
 
     override var isFlipped: Bool { false }
     override var acceptsFirstResponder: Bool { false }
 
-    override func resetCursorRects() {
-        discardCursorRects()
-        addCursorRect(dragBar.frame, cursor: .openHand)
-        addCursorRect(resizeHandle.frame, cursor: .crosshair)
-    }
-
     func beginEditing() {
         DispatchQueue.main.async { [weak self] in
             guard let self = self, let window = self.window else { return }
             window.makeFirstResponder(self.textField)
+            if !self.textField.stringValue.isEmpty {
+                self.textField.selectText(nil)
+            }
         }
     }
 
     override func mouseDown(with event: NSEvent) {
-        let local = convert(event.locationInWindow, from: nil)
-        dragStart = superview?.convert(event.locationInWindow, from: nil) ?? .zero
-        initialFrame = frame
-        initialFontSize = currentFontSize
-
-        if resizeHandle.frame.insetBy(dx: -4, dy: -4).contains(local) {
-            dragMode = .resize
-        } else if dragBar.frame.insetBy(dx: -2, dy: -6).contains(local) {
-            dragMode = .move
-            NSCursor.closedHand.push()
-        } else {
-            dragMode = .none
-            window?.makeFirstResponder(textField)
-        }
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let superview = superview else { return }
-        let current = superview.convert(event.locationInWindow, from: nil)
-        let dx = current.x - dragStart.x
-        let dy = current.y - dragStart.y
-
-        switch dragMode {
-        case .move:
-            frame.origin.x = initialFrame.origin.x + dx
-            frame.origin.y = initialFrame.origin.y + dy
-        case .resize:
-            let delta = (dx + dy) * 0.3
-            currentFontSize = max(fontSizeMin, min(fontSizeMax, initialFontSize + delta))
-            textField.font = NSFont.systemFont(ofSize: currentFontSize, weight: .bold)
-            autoSize(preserveOrigin: true)
-        case .none:
-            break
-        }
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        if dragMode == .move { NSCursor.pop() }
-        dragMode = .none
+        window?.makeFirstResponder(textField)
     }
 
     private func autoSize(preserveOrigin: Bool = true) {
-        let text = textField.stringValue.isEmpty ? "Text" : textField.stringValue
-        let attrs: [NSAttributedString.Key: Any] = [.font: textField.font as Any]
-        let size = text.size(withAttributes: attrs)
-        let newW = max(size.width + padding * 2 + 16, 80)
-        let newH = max(size.height + handleHeight + padding + 4, 40)
+        let text = textField.stringValue.isEmpty ? (textField.placeholderString ?? "输入文本...") : textField.stringValue
+        let font = NSFont.systemFont(ofSize: currentFontSize, weight: .bold)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font]
+        let size = (text as NSString).size(withAttributes: attrs)
+        let newW = max(size.width + padding * 2 + 14, 80)
+        let newH = max(size.height + 6, 28)
         let originalOrigin = frame.origin
         frame = NSRect(x: originalOrigin.x, y: originalOrigin.y, width: newW, height: newH)
+        textField.frame = bounds.insetBy(dx: padding, dy: 2)
     }
 
     // MARK: - NSTextFieldDelegate
@@ -617,14 +617,13 @@ final class InlineTextEditor: NSView, NSTextFieldDelegate {
     func commit() {
         guard !committed else { return }
         committed = true
-        let text = textField.stringValue
+        let text = textField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if text.isEmpty {
             onCancel?()
         } else {
-            // Bottom-left of the text area (matches where we render the annotation).
             let origin = NSPoint(
-                x: frame.origin.x + padding + 2,
-                y: frame.origin.y + padding
+                x: frame.origin.x + padding,
+                y: frame.origin.y + 2
             )
             onCommit?(text, origin, currentFontSize)
         }
