@@ -46,6 +46,14 @@ struct Annotation: Identifiable {
     var shape: Shape
     var color: NSColor
     var thickness: CGFloat
+    var isFilled: Bool = false
+    var isRounded: Bool = true
+    var isCurved: Bool = false
+    var isHighlighter: Bool = false
+    var isMosaicBlur: Bool = false
+    var textStyle: Int = 1 // 0: none, 1: outline, 2: background
+    var stepIsFilled: Bool = true
+    var opacity: CGFloat = 1.0
 
     func translatedBy(dx: CGFloat, dy: CGFloat) -> Annotation {
         var copy = self
@@ -77,31 +85,75 @@ struct Annotation: Identifiable {
 
 enum AnnotationRenderer {
     static func draw(_ ann: Annotation, baseImage: NSImage? = nil) {
+        let drawColor = ann.color.withAlphaComponent(ann.color.alphaComponent * ann.opacity)
         switch ann.shape {
         case .arrow(let from, let to):
-            drawArrow(from: from, to: to, thickness: ann.thickness, color: ann.color)
+            drawArrow(from: from, to: to, thickness: ann.thickness, color: drawColor, isCurved: ann.isCurved)
         case .rectangle(let r):
-            drawRectangle(r, thickness: ann.thickness, color: ann.color)
+            drawRectangle(r, thickness: ann.thickness, color: drawColor, isFilled: ann.isFilled, isRounded: ann.isRounded)
         case .oval(let r):
-            drawOval(r, thickness: ann.thickness, color: ann.color)
+            drawOval(r, thickness: ann.thickness, color: drawColor, isFilled: ann.isFilled)
         case .line(let from, let to):
-            drawLine(from: from, to: to, thickness: ann.thickness, color: ann.color)
+            drawLine(from: from, to: to, thickness: ann.thickness, color: drawColor)
         case .pen(let points):
-            drawPen(points: points, thickness: ann.thickness, color: ann.color)
+            drawPen(points: points, thickness: ann.thickness, color: drawColor, isHighlighter: ann.isHighlighter)
         case .mosaic(let r):
-            drawMosaic(r, baseImage: baseImage)
+            drawMosaic(r, baseImage: baseImage, isBlur: ann.isMosaicBlur)
         case .text(let origin, let string, let fontSize):
-            drawText(string, at: origin, fontSize: fontSize, color: ann.color)
+            drawText(string, at: origin, fontSize: fontSize, color: drawColor, style: ann.textStyle)
         case .step(let center, let number):
-            drawStep(at: center, number: number, color: ann.color)
+            drawStep(at: center, number: number, color: drawColor, isFilled: ann.stepIsFilled)
         }
     }
 
-    private static func drawArrow(from: CGPoint, to: CGPoint, thickness: CGFloat, color: NSColor) {
+    private static func drawArrow(from: CGPoint, to: CGPoint, thickness: CGFloat, color: NSColor, isCurved: Bool = false) {
         let dx = to.x - from.x
         let dy = to.y - from.y
         let length = hypot(dx, dy)
         guard length > 4 else { return }
+
+        if isCurved {
+            // Draw a curved Bezier arrow
+            let midX = (from.x + to.x) / 2
+            let midY = (from.y + to.y) / 2
+            let normX = -dy / length
+            let normY = dx / length
+            let curveOffset = min(40, max(-40, length * 0.25))
+            let ctrlPt = CGPoint(x: midX + normX * curveOffset, y: midY + normY * curveOffset)
+
+            let path = NSBezierPath()
+            path.move(to: from)
+            path.curve(to: to, controlPoint1: ctrlPt, controlPoint2: ctrlPt)
+            path.lineWidth = max(3, thickness)
+            path.lineCapStyle = .round
+
+            // Arrow head
+            let headAngle = atan2(to.y - ctrlPt.y, to.x - ctrlPt.x)
+            let headLen = max(14, thickness * 4)
+            let a1 = headAngle + .pi * 0.82
+            let a2 = headAngle - .pi * 0.82
+            let p1 = CGPoint(x: to.x + cos(a1) * headLen, y: to.y + sin(a1) * headLen)
+            let p2 = CGPoint(x: to.x + cos(a2) * headLen, y: to.y + sin(a2) * headLen)
+
+            let headPath = NSBezierPath()
+            headPath.move(to: p1)
+            headPath.line(to: to)
+            headPath.line(to: p2)
+            headPath.close()
+
+            NSGraphicsContext.saveGraphicsState()
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.3)
+            shadow.shadowBlurRadius = 3
+            shadow.shadowOffset = NSSize(width: 0, height: -1)
+            shadow.set()
+            color.setStroke()
+            color.setFill()
+            path.stroke()
+            headPath.fill()
+            NSGraphicsContext.restoreGraphicsState()
+            return
+        }
 
         let angle = atan2(dy, dx)
         let shaftWidth = max(4, thickness * 1.6)
@@ -140,10 +192,8 @@ enum AnnotationRenderer {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func drawRectangle(_ rect: CGRect, thickness: CGFloat, color: NSColor) {
-        let path = NSBezierPath(roundedRect: rect, xRadius: 3, yRadius: 3)
-        path.lineWidth = max(3, thickness)
-        path.lineJoinStyle = .round
+    private static func drawRectangle(_ rect: CGRect, thickness: CGFloat, color: NSColor, isFilled: Bool = false, isRounded: Bool = true) {
+        let path = isRounded ? NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6) : NSBezierPath(rect: rect)
 
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
@@ -151,14 +201,20 @@ enum AnnotationRenderer {
         shadow.shadowBlurRadius = 3
         shadow.shadowOffset = NSSize(width: 0, height: -1)
         shadow.set()
-        color.setStroke()
-        path.stroke()
+        if isFilled {
+            color.setFill()
+            path.fill()
+        } else {
+            path.lineWidth = max(2.5, thickness)
+            path.lineJoinStyle = .round
+            color.setStroke()
+            path.stroke()
+        }
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func drawOval(_ rect: CGRect, thickness: CGFloat, color: NSColor) {
+    private static func drawOval(_ rect: CGRect, thickness: CGFloat, color: NSColor, isFilled: Bool = false) {
         let path = NSBezierPath(ovalIn: rect)
-        path.lineWidth = max(3, thickness)
 
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
@@ -166,8 +222,14 @@ enum AnnotationRenderer {
         shadow.shadowBlurRadius = 3
         shadow.shadowOffset = NSSize(width: 0, height: -1)
         shadow.set()
-        color.setStroke()
-        path.stroke()
+        if isFilled {
+            color.setFill()
+            path.fill()
+        } else {
+            path.lineWidth = max(2.5, thickness)
+            color.setStroke()
+            path.stroke()
+        }
         NSGraphicsContext.restoreGraphicsState()
     }
 
@@ -175,7 +237,7 @@ enum AnnotationRenderer {
         let path = NSBezierPath()
         path.move(to: from)
         path.line(to: to)
-        path.lineWidth = max(3, thickness)
+        path.lineWidth = max(2.5, thickness)
         path.lineCapStyle = .round
 
         NSGraphicsContext.saveGraphicsState()
@@ -189,11 +251,13 @@ enum AnnotationRenderer {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func drawPen(points: [CGPoint], thickness: CGFloat, color: NSColor) {
+    private static func drawPen(points: [CGPoint], thickness: CGFloat, color: NSColor, isHighlighter: Bool = false) {
         guard points.count > 1 else {
             if let first = points.first {
-                color.setFill()
-                NSBezierPath(ovalIn: CGRect(x: first.x - thickness / 2, y: first.y - thickness / 2, width: thickness, height: thickness)).fill()
+                let actualColor = isHighlighter ? color.withAlphaComponent(0.4) : color
+                actualColor.setFill()
+                let sz = isHighlighter ? max(16, thickness * 2.5) : thickness
+                NSBezierPath(ovalIn: CGRect(x: first.x - sz / 2, y: first.y - sz / 2, width: sz, height: sz)).fill()
             }
             return
         }
@@ -202,22 +266,25 @@ enum AnnotationRenderer {
         for pt in points.dropFirst() {
             path.line(to: pt)
         }
-        path.lineWidth = max(3, thickness)
+        path.lineWidth = isHighlighter ? max(16, thickness * 2.5) : max(2.5, thickness)
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
 
         NSGraphicsContext.saveGraphicsState()
-        let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
-        shadow.shadowBlurRadius = 3
-        shadow.shadowOffset = NSSize(width: 0, height: -1)
-        shadow.set()
-        color.setStroke()
+        if !isHighlighter {
+            let shadow = NSShadow()
+            shadow.shadowColor = NSColor.black.withAlphaComponent(0.25)
+            shadow.shadowBlurRadius = 3
+            shadow.shadowOffset = NSSize(width: 0, height: -1)
+            shadow.set()
+        }
+        let actualColor = isHighlighter ? color.withAlphaComponent(0.4) : color
+        actualColor.setStroke()
         path.stroke()
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func drawMosaic(_ rect: CGRect, baseImage: NSImage? = nil) {
+    private static func drawMosaic(_ rect: CGRect, baseImage: NSImage? = nil, isBlur: Bool = false) {
         guard rect.width > 2, rect.height > 2 else { return }
         NSGraphicsContext.saveGraphicsState()
         let clipPath = NSBezierPath(rect: rect)
@@ -226,9 +293,14 @@ enum AnnotationRenderer {
         if let baseImage = baseImage,
            let cgImage = baseImage.cgImage(forProposedRect: nil, context: nil, hints: nil) {
             let ciImage = CIImage(cgImage: cgImage)
-            let filter = CIFilter(name: "CIPixellate")
+            let filterName = isBlur ? "CIGaussianBlur" : "CIPixellate"
+            let filter = CIFilter(name: filterName)
             filter?.setValue(ciImage, forKey: kCIInputImageKey)
-            filter?.setValue(16.0, forKey: kCIInputScaleKey)
+            if isBlur {
+                filter?.setValue(12.0, forKey: kCIInputRadiusKey)
+            } else {
+                filter?.setValue(16.0, forKey: kCIInputScaleKey)
+            }
             if let output = filter?.outputImage {
                 let rep = NSCIImageRep(ciImage: output)
                 let pixImage = NSImage(size: baseImage.size)
@@ -259,14 +331,28 @@ enum AnnotationRenderer {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func drawText(_ string: String, at origin: CGPoint, fontSize: CGFloat, color: NSColor) {
+    private static func drawText(_ string: String, at origin: CGPoint, fontSize: CGFloat, color: NSColor, style: Int = 1) {
         let font = NSFont.systemFont(ofSize: fontSize, weight: .bold)
-        let attrs: [NSAttributedString.Key: Any] = [
+        var attrs: [NSAttributedString.Key: Any] = [
             .font: font,
-            .foregroundColor: color,
-            .strokeColor: NSColor.white,
-            .strokeWidth: -3
+            .foregroundColor: color
         ]
+
+        if style == 1 { // 描边
+            attrs[.strokeColor] = NSColor.white
+            attrs[.strokeWidth] = -3
+        }
+
+        let sz = (string as NSString).size(withAttributes: attrs)
+        let textRect = CGRect(origin: origin, size: sz)
+
+        if style == 2 { // 背景框
+            NSGraphicsContext.saveGraphicsState()
+            NSColor.white.withAlphaComponent(0.92).setFill()
+            let bgPath = NSBezierPath(roundedRect: textRect.insetBy(dx: -6, dy: -3), xRadius: 4, yRadius: 4)
+            bgPath.fill()
+            NSGraphicsContext.restoreGraphicsState()
+        }
 
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
@@ -278,7 +364,7 @@ enum AnnotationRenderer {
         NSGraphicsContext.restoreGraphicsState()
     }
 
-    private static func drawStep(at center: CGPoint, number: Int, color: NSColor) {
+    private static func drawStep(at center: CGPoint, number: Int, color: NSColor, isFilled: Bool = true) {
         let radius: CGFloat = 18
         let rect = NSRect(
             x: center.x - radius, y: center.y - radius,
@@ -291,25 +377,49 @@ enum AnnotationRenderer {
         shadow.shadowBlurRadius = 4
         shadow.shadowOffset = NSSize(width: 0, height: -2)
         shadow.set()
-        color.setFill()
-        NSBezierPath(ovalIn: rect).fill()
-        NSGraphicsContext.restoreGraphicsState()
 
-        NSColor.white.setStroke()
-        let outline = NSBezierPath(ovalIn: rect.insetBy(dx: 2, dy: 2))
-        outline.lineWidth = 2
-        outline.stroke()
+        if isFilled {
+            color.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            NSGraphicsContext.restoreGraphicsState()
 
-        let text = "\(number)"
-        let attrs: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 16, weight: .heavy),
-            .foregroundColor: NSColor.white
-        ]
-        let size = text.size(withAttributes: attrs)
-        text.draw(
-            at: NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2),
-            withAttributes: attrs
-        )
+            NSColor.white.setStroke()
+            let outline = NSBezierPath(ovalIn: rect.insetBy(dx: 2, dy: 2))
+            outline.lineWidth = 2
+            outline.stroke()
+
+            let text = "\(number)"
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 16, weight: .heavy),
+                .foregroundColor: NSColor.white
+            ]
+            let size = text.size(withAttributes: attrs)
+            text.draw(
+                at: NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2),
+                withAttributes: attrs
+            )
+        } else {
+            // 描边模式 (白底 + 彩色描边 + 彩色数字)
+            NSColor.white.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            NSGraphicsContext.restoreGraphicsState()
+
+            color.setStroke()
+            let outline = NSBezierPath(ovalIn: rect.insetBy(dx: 1.5, dy: 1.5))
+            outline.lineWidth = 2.5
+            outline.stroke()
+
+            let text = "\(number)"
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 16, weight: .heavy),
+                .foregroundColor: color
+            ]
+            let size = text.size(withAttributes: attrs)
+            text.draw(
+                at: NSPoint(x: center.x - size.width / 2, y: center.y - size.height / 2),
+                withAttributes: attrs
+            )
+        }
     }
 }
 

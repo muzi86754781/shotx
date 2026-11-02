@@ -329,7 +329,7 @@ final class TranslationViewModel: ObservableObject {
 final class TranslationController {
     static let shared = TranslationController()
     private var window: FloatingKeyPanel?
-    private var hosting: FirstMouseHostingController<TranslationWindowView>?
+    private var hosting: FirstMouseHostingView<TranslationWindowView>?
     private var outsideClickMonitor: Any?
     let viewModel = TranslationViewModel()
 
@@ -373,12 +373,12 @@ final class TranslationController {
                 }
             }
         )
-        // 关键优化：使用 FirstMouseHostingController，解决窗口失焦后必须点击 2 次才触发按钮的问题（支持第 1 次点击直接响应）
-        let h = FirstMouseHostingController(rootView: view)
+        // 关键优化：使用 FirstMouseHostingView，解决窗口失焦后必须点击 2 次才触发按钮的问题（支持第 1 次点击直接响应）
+        let h = FirstMouseHostingView(rootView: view)
         self.hosting = h
 
         let size = NSSize(width: 480, height: 420)
-        h.view.frame = NSRect(origin: .zero, size: size)
+        h.frame = NSRect(origin: .zero, size: size)
 
         // Use FloatingKeyPanel so borderless panel can become key and accept keyboard input!
         let panel = FloatingKeyPanel(
@@ -391,7 +391,7 @@ final class TranslationController {
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        panel.contentViewController = h
+        panel.contentView = h
         panel.isReleasedWhenClosed = false
         panel.hasShadow = true
         panel.backgroundColor = .clear

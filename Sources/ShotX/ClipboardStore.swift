@@ -180,6 +180,17 @@ final class FloatingKeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown && !isKeyWindow {
+            makeKey()
+        }
+        super.sendEvent(event)
+    }
+
     override func cancelOperation(_ sender: Any?) {
         orderOut(nil)
     }
@@ -240,9 +251,9 @@ final class ClipboardHistoryController {
             },
             onClose: { [weak self] in self?.dismiss() }
         )
-        let hosting = FirstMouseHostingController(rootView: view)
+        let hostingView = FirstMouseHostingView(rootView: view)
         let size = NSSize(width: 440, height: 490)
-        hosting.view.frame = NSRect(origin: .zero, size: size)
+        hostingView.frame = NSRect(origin: .zero, size: size)
 
         let p = FloatingKeyPanel(
             contentRect: NSRect(origin: .zero, size: size),
@@ -256,7 +267,7 @@ final class ClipboardHistoryController {
         p.isFloatingPanel = true
         p.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         updatePanelLevel(p)
-        p.contentViewController = hosting
+        p.contentView = hostingView
         p.isReleasedWhenClosed = false
         p.hasShadow = true
         p.backgroundColor = .clear
