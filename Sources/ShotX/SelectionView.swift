@@ -2164,26 +2164,15 @@ final class SelectionView: NSView {
 
     // MARK: - Sub-Toolbar (Child Tools)
 
-    static let subToolbarColors: [NSColor] = [
-        NSColor(srgbRed: 1.0, green: 0.23, blue: 0.19, alpha: 1.0), // #FF3B30 红色
-        NSColor(srgbRed: 1.0, green: 0.80, blue: 0.0, alpha: 1.0),  // #FFCC00 黄色
-        NSColor(srgbRed: 0.20, green: 0.78, blue: 0.35, alpha: 1.0), // #34C759 绿色
-        NSColor(srgbRed: 1.0, green: 0.18, blue: 0.33, alpha: 1.0), // #FF2D55 粉色
-        NSColor(srgbRed: 0.0, green: 0.48, blue: 1.0, alpha: 1.0),  // #007AFF 蓝色
-        NSColor(white: 1.0, alpha: 1.0)                              // #FFFFFF 白色
-    ]
-
-    static let textPaletteColors: [NSColor] = [
-        NSColor.white,
-        NSColor.black,
-        NSColor(srgbRed: 1.0, green: 0.23, blue: 0.19, alpha: 1.0), // 红色 #FF3B30
-        NSColor(srgbRed: 1.0, green: 0.58, blue: 0.0, alpha: 1.0),  // 橙色 #FF9500
-        NSColor(srgbRed: 1.0, green: 0.80, blue: 0.0, alpha: 1.0),  // 黄色 #FFCC00
-        NSColor(srgbRed: 0.20, green: 0.78, blue: 0.35, alpha: 1.0), // 绿色 #34C759
-        NSColor(srgbRed: 0.19, green: 0.69, blue: 0.78, alpha: 1.0), // 青色 #30B0C7
-        NSColor(srgbRed: 0.0, green: 0.48, blue: 1.0, alpha: 1.0),   // 蓝色 #007AFF
-        NSColor(srgbRed: 0.69, green: 0.32, blue: 0.87, alpha: 1.0), // 紫色 #AF52DE
-        NSColor(srgbRed: 0.56, green: 0.56, blue: 0.58, alpha: 1.0)  // 灰色 #8E8E93
+    static let subToolbarPaletteColors: [NSColor] = [
+        NSColor(white: 1.0, alpha: 1.0),                               // 白色
+        NSColor(srgbRed: 0.12, green: 0.12, blue: 0.13, alpha: 1.0), // 黑色
+        NSColor(srgbRed: 1.0, green: 0.23, blue: 0.19, alpha: 1.0),  // 红色 #FF3B30
+        NSColor(srgbRed: 1.0, green: 0.58, blue: 0.0, alpha: 1.0),   // 橙色 #FF9500
+        NSColor(srgbRed: 1.0, green: 0.80, blue: 0.0, alpha: 1.0),   // 黄色 #FFCC00
+        NSColor(srgbRed: 0.20, green: 0.78, blue: 0.35, alpha: 1.0),  // 绿色 #34C759
+        NSColor(srgbRed: 0.0, green: 0.48, blue: 1.0, alpha: 1.0),    // 蓝色 #007AFF
+        NSColor(srgbRed: 0.69, green: 0.32, blue: 0.87, alpha: 1.0)   // 紫色 #AF52DE
     ]
 
     private func closeColorPickerIfNeeded() {
@@ -2198,19 +2187,7 @@ final class SelectionView: NSView {
     private func subToolbarRect() -> NSRect {
         guard isSubToolbarVisible && !isScrollingMode, let tool = subToolbarTool else { return .zero }
         let tb = bottomToolbarRect()
-        let w: CGFloat
-        switch tool {
-        case .mosaic:
-            w = 140
-        case .step:
-            w = 330
-        case .text:
-            w = (textStyle == 0) ? 550 : 640
-        case .line:
-            w = 460
-        default:
-            w = 540
-        }
+        let w: CGFloat = (tool == .mosaic) ? 180 : 520
         let h: CGFloat = 38
         let x = max(10, min(bounds.width - w - 10, tb.midX - w / 2))
         var y = tb.minY - h - 8
@@ -2227,7 +2204,7 @@ final class SelectionView: NSView {
         // Drop shadow
         NSGraphicsContext.saveGraphicsState()
         let shadow = NSShadow()
-        shadow.shadowColor = NSColor.black.withAlphaComponent(0.20)
+        shadow.shadowColor = NSColor.black.withAlphaComponent(0.18)
         shadow.shadowBlurRadius = 8
         shadow.shadowOffset = NSSize(width: 0, height: -2)
         shadow.set()
@@ -2244,102 +2221,56 @@ final class SelectionView: NSView {
 
         let midY = r.midY
 
-        // 1. Left zone: Tool-specific controls
+        // 1. 马赛克工具：独立精简居中展示
+        if tool == .mosaic {
+            drawSegmented(items: ["毛玻璃", "马赛克"], selectedIndex: mosaicIsBlur ? 0 : 1, in: NSRect(x: r.minX + 20, y: midY - 11, width: 140, height: 22))
+            return
+        }
+
+        // 2. 左侧工具专属选项区（Left Zone: X = minX + 10 ~ minX + 128）
         switch tool {
         case .rectangle:
-            drawCheckbox(in: NSRect(x: r.minX + 12, y: midY - 9, width: 56, height: 18), isChecked: isRectFilled, title: "实心")
-            drawCheckbox(in: NSRect(x: r.minX + 74, y: midY - 9, width: 56, height: 18), isChecked: isRectRounded, title: "圆角")
+            drawCheckbox(in: NSRect(x: r.minX + 12, y: midY - 9, width: 52, height: 18), isChecked: isRectFilled, title: "实心")
+            drawCheckbox(in: NSRect(x: r.minX + 68, y: midY - 9, width: 52, height: 18), isChecked: isRectRounded, title: "圆角")
         case .oval:
-            drawCheckbox(in: NSRect(x: r.minX + 12, y: midY - 9, width: 56, height: 18), isChecked: isOvalFilled, title: "实心")
+            drawCheckbox(in: NSRect(x: r.minX + 12, y: midY - 9, width: 52, height: 18), isChecked: isOvalFilled, title: "实心")
         case .line:
-            break // 去掉“直线模式”4个字
+            break // 干净对齐，无多余字样
         case .arrow:
-            drawCheckbox(in: NSRect(x: r.minX + 12, y: midY - 9, width: 84, height: 18), isChecked: isArrowCurved, title: "曲线箭头")
+            drawCheckbox(in: NSRect(x: r.minX + 12, y: midY - 9, width: 80, height: 18), isChecked: isArrowCurved, title: "曲线箭头")
         case .pen:
-            drawSegmented(items: ["单一颜色", "荧光笔"], selectedIndex: penIsHighlighter ? 1 : 0, in: NSRect(x: r.minX + 10, y: midY - 11, width: 130, height: 22))
-        case .mosaic:
-            drawSegmented(items: ["毛玻璃", "马赛克"], selectedIndex: mosaicIsBlur ? 0 : 1, in: NSRect(x: r.minX + 10, y: midY - 11, width: 120, height: 22))
-            return // 马赛克工具去掉颜色点、大小和透明度滑块
+            drawSegmented(items: ["单一颜色", "荧光笔"], selectedIndex: penIsHighlighter ? 1 : 0, in: NSRect(x: r.minX + 10, y: midY - 11, width: 116, height: 22))
         case .step:
-            // 去掉“系统默认”4个字
             drawSegmented(items: ["描边", "实心"], selectedIndex: stepIsFilled ? 1 : 0, in: NSRect(x: r.minX + 12, y: midY - 11, width: 80, height: 22))
         case .text:
-            // 去掉“系统默认”4个字
-            drawSegmented(items: ["无", "描边", "背景"], selectedIndex: textStyle, in: NSRect(x: r.minX + 10, y: midY - 11, width: 92, height: 22))
+            drawSegmented(items: ["无", "描边", "背景"], selectedIndex: textStyle, in: NSRect(x: r.minX + 10, y: midY - 11, width: 94, height: 22))
+            if textStyle != 0 {
+                let tagRect = NSRect(x: r.minX + 108, y: midY - 10, width: 22, height: 20)
+                let tagTitle = textIsSelectingSecondary ? ((textStyle == 1) ? "边" : "底") : "字"
+                let tagColor = textIsSelectingSecondary ? textSecondaryColor : currentDrawColor
+                drawMiniColorTag(title: tagTitle, color: tagColor, in: tagRect)
+            }
+        case .mosaic:
+            break
         }
 
-        // 2. Middle zone: Color dots
-        if tool == .text {
-            let dotStartX: CGFloat
-            if textStyle == 0 {
-                dotStartX = r.minX + 112
-            } else {
-                let tag1Rect = NSRect(x: r.minX + 108, y: midY - 11, width: 44, height: 22)
-                let tag2Rect = NSRect(x: r.minX + 155, y: midY - 11, width: 44, height: 22)
-                drawTextModeColorTab(title: "字色", color: currentDrawColor, isSelected: !textIsSelectingSecondary, in: tag1Rect)
-                let secTitle = (textStyle == 1) ? "描边" : "背景"
-                drawTextModeColorTab(title: secTitle, color: textSecondaryColor, isSelected: textIsSelectingSecondary, in: tag2Rect)
-                dotStartX = r.minX + 206
-            }
+        // 3. 中间统一调色板（Middle Zone: X = minX + 136，宽约 175px）
+        let dotStartX = r.minX + 136
+        let colors = Self.subToolbarPaletteColors
+        let activeColor = (tool == .text && textIsSelectingSecondary) ? textSecondaryColor : currentDrawColor
 
-            let colors = Self.textPaletteColors
-            let activeColor = textIsSelectingSecondary ? textSecondaryColor : currentDrawColor
-            for (i, c) in colors.enumerated() {
-                let dotRect = NSRect(x: dotStartX + CGFloat(i) * 19, y: midY - 7.5, width: 15, height: 15)
-                let isSelected = c.isEqual(activeColor)
-                drawColorDot(color: c, in: dotRect, isSelected: isSelected)
-            }
-            let rainbowRect = NSRect(x: dotStartX + CGFloat(colors.count) * 19, y: midY - 7.5, width: 15, height: 15)
-            drawRainbowDot(in: rainbowRect)
-
-        } else if tool == .step {
-            let dotStartX = r.minX + 104
-            let colors = Self.subToolbarColors
-            for (i, c) in colors.enumerated() {
-                let dotRect = NSRect(x: dotStartX + CGFloat(i) * 20, y: midY - 7.5, width: 15, height: 15)
-                let isSelected = c.isEqual(currentDrawColor)
-                drawColorDot(color: c, in: dotRect, isSelected: isSelected)
-            }
-            let rainbowRect = NSRect(x: dotStartX + CGFloat(colors.count) * 20, y: midY - 7.5, width: 15, height: 15)
-            drawRainbowDot(in: rainbowRect)
-
-        } else if tool == .line {
-            let dotStartX = r.minX + 16
-            let colors = Self.subToolbarColors
-            for (i, c) in colors.enumerated() {
-                let dotRect = NSRect(x: dotStartX + CGFloat(i) * 20, y: midY - 7.5, width: 15, height: 15)
-                let isSelected = c.isEqual(currentDrawColor)
-                drawColorDot(color: c, in: dotRect, isSelected: isSelected)
-            }
-            let rainbowRect = NSRect(x: dotStartX + CGFloat(colors.count) * 20, y: midY - 7.5, width: 15, height: 15)
-            drawRainbowDot(in: rainbowRect)
-
-        } else {
-            let dotStartX = r.minX + 148
-            let colors = Self.subToolbarColors
-            for (i, c) in colors.enumerated() {
-                let dotRect = NSRect(x: dotStartX + CGFloat(i) * 20, y: midY - 7.5, width: 15, height: 15)
-                let isSelected = c.isEqual(currentDrawColor)
-                drawColorDot(color: c, in: dotRect, isSelected: isSelected)
-            }
-            let rainbowRect = NSRect(x: dotStartX + CGFloat(colors.count) * 20, y: midY - 7.5, width: 15, height: 15)
-            drawRainbowDot(in: rainbowRect)
+        for (i, c) in colors.enumerated() {
+            let dotRect = NSRect(x: dotStartX + CGFloat(i) * 18.5, y: midY - 7.5, width: 15, height: 15)
+            let isSelected = c.isEqual(activeColor)
+            drawColorDot(color: c, in: dotRect, isSelected: isSelected)
         }
+        let rainbowRect = NSRect(x: dotStartX + CGFloat(colors.count) * 18.5, y: midY - 7.5, width: 15, height: 15)
+        drawRainbowDot(in: rainbowRect)
 
-        // 3. Right zone: Sliders
-        if tool == .step {
-            // 去掉大小滑块，只保留不透明度滑块
-            let opacityRatio = max(0, min(1, (currentOpacity - 0.1) / 0.9))
-            drawSlider(
-                label: "不透明度",
-                valueStr: "\(Int(round(currentOpacity * 100)))",
-                ratio: opacityRatio,
-                in: NSRect(x: r.maxX - 105, y: midY - 10, width: 95, height: 20)
-            )
-        } else {
-            let sizeSliderX = r.maxX - 208
-            let opacitySliderX = r.maxX - 102
-
+        // 4. 右侧统一滑块调节区（Right Zone: X = minX + 316 ~ maxX - 10）
+        // 4.1 粗细 / 字号滑块（X = minX + 316, 宽 96）
+        if tool != .step {
+            let sizeSliderX = r.minX + 316
             let sizeLabel: String
             let sizeRatio: CGFloat
             let sizeValStr: String
@@ -2351,7 +2282,7 @@ final class SelectionView: NSView {
             } else if tool == .rectangle {
                 sizeLabel = isRectFilled ? "实心" : "粗细"
                 sizeRatio = max(0, min(1, (currentSize - 1) / 29.0))
-                sizeValStr = "\(Int(currentSize))"
+                sizeValStr = isRectFilled ? "--" : "\(Int(currentSize))"
             } else {
                 sizeLabel = "粗细"
                 sizeRatio = max(0, min(1, (currentSize - 1) / 29.0))
@@ -2362,48 +2293,34 @@ final class SelectionView: NSView {
                 label: sizeLabel,
                 valueStr: sizeValStr,
                 ratio: sizeRatio,
-                in: NSRect(x: sizeSliderX, y: midY - 10, width: 98, height: 20)
-            )
-
-            let opacityRatio = max(0, min(1, (currentOpacity - 0.1) / 0.9))
-            drawSlider(
-                label: "不透明度",
-                valueStr: "\(Int(round(currentOpacity * 100)))",
-                ratio: opacityRatio,
-                in: NSRect(x: opacitySliderX, y: midY - 10, width: 95, height: 20)
+                in: NSRect(x: sizeSliderX, y: midY - 10, width: 96, height: 20)
             )
         }
+
+        // 4.2 不透明度滑块（X = minX + 416, 宽 94）
+        let opacityRatio = max(0, min(1, (currentOpacity - 0.1) / 0.9))
+        drawSlider(
+            label: "不透明度",
+            valueStr: "\(Int(round(currentOpacity * 100)))",
+            ratio: opacityRatio,
+            in: NSRect(x: r.minX + 416, y: midY - 10, width: 94, height: 20)
+        )
     }
 
-    private func drawTextModeColorTab(title: String, color: NSColor, isSelected: Bool, in rect: NSRect) {
-        if isSelected {
-            NSColor(srgbRed: 0.12, green: 0.53, blue: 0.98, alpha: 0.16).setFill()
-            let bg = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
-            bg.fill()
-            NSColor(srgbRed: 0.12, green: 0.53, blue: 0.98, alpha: 1.0).setStroke()
-            bg.lineWidth = 1.0
-            bg.stroke()
-        } else {
-            NSColor(white: 0.94, alpha: 1.0).setFill()
-            let bg = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
-            bg.fill()
-        }
+    private func drawMiniColorTag(title: String, color: NSColor, in rect: NSRect) {
+        NSColor(srgbRed: 0.12, green: 0.53, blue: 0.98, alpha: 0.15).setFill()
+        let bg = NSBezierPath(roundedRect: rect, xRadius: 4, yRadius: 4)
+        bg.fill()
+        NSColor(srgbRed: 0.12, green: 0.53, blue: 0.98, alpha: 0.8).setStroke()
+        bg.lineWidth = 1.0
+        bg.stroke()
 
-        let dotRect = NSRect(x: rect.minX + 4, y: rect.midY - 4, width: 8, height: 8)
-        color.setFill()
-        NSBezierPath(ovalIn: dotRect).fill()
-        if color == .white || color.isEqual(NSColor.white) {
-            NSColor(white: 0.8, alpha: 1.0).setStroke()
-            let d = NSBezierPath(ovalIn: dotRect)
-            d.lineWidth = 0.8
-            d.stroke()
-        }
-
-        let font = NSFont.systemFont(ofSize: 10, weight: isSelected ? .bold : .medium)
-        let textColor = isSelected ? NSColor(srgbRed: 0.12, green: 0.53, blue: 0.98, alpha: 1.0) : NSColor(white: 0.35, alpha: 1.0)
-        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: textColor]
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 10, weight: .bold),
+            .foregroundColor: NSColor(srgbRed: 0.12, green: 0.53, blue: 0.98, alpha: 1.0)
+        ]
         let sz = (title as NSString).size(withAttributes: attrs)
-        (title as NSString).draw(at: NSPoint(x: rect.minX + 15, y: rect.midY - sz.height / 2), withAttributes: attrs)
+        (title as NSString).draw(at: NSPoint(x: rect.midX - sz.width / 2, y: rect.midY - sz.height / 2), withAttributes: attrs)
     }
 
     private func drawCheckbox(in rect: NSRect, isChecked: Bool, title: String) {
@@ -2435,7 +2352,7 @@ final class SelectionView: NSView {
             .foregroundColor: NSColor(white: 0.25, alpha: 1.0)
         ]
         let sz = (title as NSString).size(withAttributes: attrs)
-        (title as NSString).draw(at: NSPoint(x: boxRect.maxX + 5, y: rect.midY - sz.height / 2), withAttributes: attrs)
+        (title as NSString).draw(at: NSPoint(x: boxRect.maxX + 4, y: rect.midY - sz.height / 2), withAttributes: attrs)
     }
 
     private func drawSegmented(items: [String], selectedIndex: Int, in rect: NSRect) {
@@ -2543,7 +2460,7 @@ final class SelectionView: NSView {
         (label as NSString).draw(at: NSPoint(x: rect.minX, y: rect.midY - lSize.height / 2), withAttributes: labelAttrs)
 
         let trackX = rect.minX + lSize.width + 5
-        let trackW: CGFloat = 38
+        let trackW: CGFloat = 36
         let trackRect = NSRect(x: trackX, y: rect.midY - 1.5, width: trackW, height: 3)
 
         NSColor(white: 0.88, alpha: 1.0).setFill()
@@ -2576,7 +2493,7 @@ final class SelectionView: NSView {
             .foregroundColor: NSColor(white: 0.35, alpha: 1.0)
         ]
         let vSize = (valueStr as NSString).size(withAttributes: valAttrs)
-        (valueStr as NSString).draw(at: NSPoint(x: trackX + trackW + 4, y: rect.midY - vSize.height / 2), withAttributes: valAttrs)
+        (valueStr as NSString).draw(at: NSPoint(x: trackX + trackW + 3, y: rect.midY - vSize.height / 2), withAttributes: valAttrs)
     }
 
     private func handleSubToolbarClick(at p: NSPoint) {
@@ -2585,50 +2502,34 @@ final class SelectionView: NSView {
 
         let midY = r.midY
 
-        // 1. Tool-specific options
-        switch tool {
-        case .rectangle:
-            let r1 = NSRect(x: r.minX + 12, y: midY - 9, width: 56, height: 18)
-            let r2 = NSRect(x: r.minX + 74, y: midY - 9, width: 56, height: 18)
-            if r1.contains(p) { isRectFilled.toggle(); return }
-            if r2.contains(p) { isRectRounded.toggle(); return }
-        case .oval:
-            let r1 = NSRect(x: r.minX + 12, y: midY - 9, width: 56, height: 18)
-            if r1.contains(p) { isOvalFilled.toggle(); return }
-        case .arrow:
-            let r1 = NSRect(x: r.minX + 12, y: midY - 9, width: 84, height: 18)
-            if r1.contains(p) { isArrowCurved.toggle(); return }
-        case .pen:
-            let segRect = NSRect(x: r.minX + 10, y: midY - 11, width: 130, height: 22)
-            if segRect.contains(p) {
-                penIsHighlighter = (p.x > segRect.midX)
-                return
-            }
-        case .mosaic:
-            let segRect = NSRect(x: r.minX + 10, y: midY - 11, width: 120, height: 22)
+        // 1. 马赛克工具
+        if tool == .mosaic {
+            let segRect = NSRect(x: r.minX + 20, y: midY - 11, width: 140, height: 22)
             if segRect.contains(p) {
                 mosaicIsBlur = (p.x < segRect.midX)
                 return
             }
             return
-        case .text:
-            let segRect = NSRect(x: r.minX + 10, y: midY - 11, width: 92, height: 22)
+        }
+
+        // 2. 左侧专有选项点击
+        switch tool {
+        case .rectangle:
+            let r1 = NSRect(x: r.minX + 12, y: midY - 9, width: 52, height: 18)
+            let r2 = NSRect(x: r.minX + 68, y: midY - 9, width: 52, height: 18)
+            if r1.contains(p) { isRectFilled.toggle(); return }
+            if r2.contains(p) { isRectRounded.toggle(); return }
+        case .oval:
+            let r1 = NSRect(x: r.minX + 12, y: midY - 9, width: 52, height: 18)
+            if r1.contains(p) { isOvalFilled.toggle(); return }
+        case .arrow:
+            let r1 = NSRect(x: r.minX + 12, y: midY - 9, width: 80, height: 18)
+            if r1.contains(p) { isArrowCurved.toggle(); return }
+        case .pen:
+            let segRect = NSRect(x: r.minX + 10, y: midY - 11, width: 116, height: 22)
             if segRect.contains(p) {
-                let idx = Int((p.x - segRect.minX) / (segRect.width / 3))
-                textStyle = max(0, min(2, idx))
+                penIsHighlighter = (p.x > segRect.midX)
                 return
-            }
-            if textStyle != 0 {
-                let tag1Rect = NSRect(x: r.minX + 108, y: midY - 11, width: 44, height: 22)
-                let tag2Rect = NSRect(x: r.minX + 155, y: midY - 11, width: 44, height: 22)
-                if tag1Rect.contains(p) {
-                    textIsSelectingSecondary = false
-                    return
-                }
-                if tag2Rect.contains(p) {
-                    textIsSelectingSecondary = true
-                    return
-                }
             }
         case .step:
             let segRect = NSRect(x: r.minX + 12, y: midY - 11, width: 80, height: 22)
@@ -2636,85 +2537,67 @@ final class SelectionView: NSView {
                 stepIsFilled = (p.x > segRect.midX)
                 return
             }
-        case .line:
+        case .text:
+            let segRect = NSRect(x: r.minX + 10, y: midY - 11, width: 94, height: 22)
+            if segRect.contains(p) {
+                let idx = Int((p.x - segRect.minX) / (segRect.width / 3))
+                textStyle = max(0, min(2, idx))
+                return
+            }
+            if textStyle != 0 {
+                let tagRect = NSRect(x: r.minX + 108, y: midY - 10, width: 22, height: 20)
+                if tagRect.contains(p) {
+                    textIsSelectingSecondary.toggle()
+                    return
+                }
+            }
+        case .line, .mosaic:
             break
         }
 
-        // 2. Middle zone: Color dots
-        if tool == .text {
-            let dotStartX = (textStyle == 0) ? (r.minX + 112) : (r.minX + 206)
-            let colors = Self.textPaletteColors
-            for (i, c) in colors.enumerated() {
-                let dotRect = NSRect(x: dotStartX + CGFloat(i) * 19, y: midY - 8, width: 17, height: 17)
-                if dotRect.contains(p) {
-                    if textIsSelectingSecondary {
-                        textSecondaryColor = c
-                    } else {
-                        currentDrawColor = c
-                    }
-                    return
-                }
-            }
-            let rainbowRect = NSRect(x: dotStartX + CGFloat(colors.count) * 19, y: midY - 8, width: 17, height: 17)
-            if rainbowRect.contains(p) {
-                openColorPicker()
-                return
-            }
-        } else if tool != .mosaic {
-            let dotStartX: CGFloat
-            if tool == .step {
-                dotStartX = r.minX + 104
-            } else if tool == .line {
-                dotStartX = r.minX + 16
-            } else {
-                dotStartX = r.minX + 148
-            }
-            let colors = Self.subToolbarColors
-            for (i, c) in colors.enumerated() {
-                let dotRect = NSRect(x: dotStartX + CGFloat(i) * 20, y: midY - 8, width: 17, height: 17)
-                if dotRect.contains(p) {
+        // 3. 中间统一调色板点击 (X = minX + 136)
+        let dotStartX = r.minX + 136
+        let colors = Self.subToolbarPaletteColors
+        for (i, c) in colors.enumerated() {
+            let dotRect = NSRect(x: dotStartX + CGFloat(i) * 18.5, y: midY - 8, width: 16, height: 16)
+            if dotRect.contains(p) {
+                if tool == .text && textIsSelectingSecondary {
+                    textSecondaryColor = c
+                } else {
                     currentDrawColor = c
-                    return
                 }
-            }
-            let rainbowRect = NSRect(x: dotStartX + CGFloat(colors.count) * 20, y: midY - 8, width: 17, height: 17)
-            if rainbowRect.contains(p) {
-                openColorPicker()
                 return
             }
         }
+        let rainbowRect = NSRect(x: dotStartX + CGFloat(colors.count) * 18.5, y: midY - 8, width: 16, height: 16)
+        if rainbowRect.contains(p) {
+            openColorPicker()
+            return
+        }
 
-        // 3. Right zone: Sliders
-        if tool == .step {
-            let opacitySliderRect = NSRect(x: r.maxX - 105, y: midY - 10, width: 95, height: 20)
-            if opacitySliderRect.contains(p) {
-                isDraggingOpacitySlider = true
-                updateSubToolbarOpacity(at: p.x)
-                return
-            }
-        } else if tool != .mosaic {
-            let sizeSliderRect = NSRect(x: r.maxX - 208, y: midY - 10, width: 98, height: 20)
+        // 4. 右侧双滑块点击
+        if tool != .step {
+            let sizeSliderRect = NSRect(x: r.minX + 316, y: midY - 10, width: 96, height: 20)
             if sizeSliderRect.contains(p) {
                 isDraggingSizeSlider = true
                 updateSubToolbarSize(at: p.x)
                 return
             }
+        }
 
-            let opacitySliderRect = NSRect(x: r.maxX - 102, y: midY - 10, width: 95, height: 20)
-            if opacitySliderRect.contains(p) {
-                isDraggingOpacitySlider = true
-                updateSubToolbarOpacity(at: p.x)
-                return
-            }
+        let opacitySliderRect = NSRect(x: r.minX + 416, y: midY - 10, width: 94, height: 20)
+        if opacitySliderRect.contains(p) {
+            isDraggingOpacitySlider = true
+            updateSubToolbarOpacity(at: p.x)
+            return
         }
     }
 
     private func updateSubToolbarSize(at x: CGFloat) {
         guard let tool = subToolbarTool, tool != .mosaic, tool != .step else { return }
         let r = subToolbarRect()
-        let sliderX = r.maxX - 208
-        let trackMinX = sliderX + 28
-        let trackW: CGFloat = 38
+        let trackMinX = r.minX + 316 + 28
+        let trackW: CGFloat = 36
         let ratio = max(0, min(1, (x - trackMinX) / trackW))
         if tool == .text {
             currentSize = round(12 + ratio * 60)
@@ -2727,11 +2610,28 @@ final class SelectionView: NSView {
     private func updateSubToolbarOpacity(at x: CGFloat) {
         guard let tool = subToolbarTool, tool != .mosaic else { return }
         let r = subToolbarRect()
-        let sliderX = (tool == .step) ? (r.maxX - 105) : (r.maxX - 102)
-        let trackMinX = sliderX + 42
-        let trackW: CGFloat = 38
+        let trackMinX = r.minX + 416 + 40
+        let trackW: CGFloat = 36
         let ratio = max(0, min(1, (x - trackMinX) / trackW))
         currentOpacity = max(0.1, min(1.0, 0.1 + ratio * 0.9))
+        needsDisplay = true
+    }
+
+    private func openColorPicker() {
+        let cp = NSColorPanel.shared
+        let targetCol = (subToolbarTool == .text && textIsSelectingSecondary) ? textSecondaryColor : currentDrawColor
+        cp.color = targetCol
+        cp.setTarget(self)
+        cp.setAction(#selector(colorPanelChanged(_:)))
+        cp.orderFront(nil)
+    }
+
+    @objc private func colorPanelChanged(_ sender: NSColorPanel) {
+        if subToolbarTool == .text && textIsSelectingSecondary {
+            textSecondaryColor = sender.color
+        } else {
+            currentDrawColor = sender.color
+        }
         needsDisplay = true
     }
 

@@ -85,6 +85,11 @@ struct Annotation: Identifiable {
 }
 
 enum AnnotationRenderer {
+    private static let ciContext = CIContext(options: [
+        .workingColorSpace: CGColorSpaceCreateDeviceRGB(),
+        .useSoftwareRenderer: false
+    ])
+
     static func draw(
         _ ann: Annotation,
         snapshotImage: CGImage? = nil,
@@ -299,7 +304,7 @@ enum AnnotationRenderer {
     ) {
         guard rect.width > 2, rect.height > 2 else { return }
 
-        // 获取底层原始图像切片
+        // 获取底层真实图像切片
         var sliceCG: CGImage? = nil
         var scaleFactor: CGFloat = 2.0
 
@@ -312,7 +317,7 @@ enum AnnotationRenderer {
             let pixelW = rect.width * scaleX
             let pixelH = rect.height * scaleY
             let cropRect = CGRect(x: pixelX, y: pixelY, width: pixelW, height: pixelH).intersection(CGRect(x: 0, y: 0, width: snap.width, height: snap.height))
-            if cropRect.width > 0 && cropRect.height > 0 {
+            if cropRect.width > 1 && cropRect.height > 1 {
                 sliceCG = snap.cropping(to: cropRect)
             }
         } else if let base = baseImage, let fullCG = base.cgImage(forProposedRect: nil, context: nil, hints: nil) {
@@ -324,49 +329,62 @@ enum AnnotationRenderer {
             let pixelW = rect.width * scaleX
             let pixelH = rect.height * scaleY
             let cropRect = CGRect(x: pixelX, y: pixelY, width: pixelW, height: pixelH).intersection(CGRect(x: 0, y: 0, width: fullCG.width, height: fullCG.height))
-            if cropRect.width > 0 && cropRect.height > 0 {
+            if cropRect.width > 1 && cropRect.height > 1 {
                 sliceCG = fullCG.cropping(to: cropRect)
             }
         }
 
         NSGraphicsContext.saveGraphicsState()
+        guard let ctx = NSGraphicsContext.current?.cgContext else {
+            NSGraphicsContext.restoreGraphicsState()
+            return
+        }
+
         let clipPath = NSBezierPath(rect: rect)
         clipPath.addClip()
 
         if let slice = sliceCG {
             let ciImage = CIImage(cgImage: slice)
             if isBlur {
-                // 毛玻璃模式：精致高斯模糊 + 柔和磨砂质感
+                // 毛玻璃模式：精致物理磨砂玻璃质感
                 let clamped = ciImage.clampedToExtent()
                 if let blurFilter = CIFilter(name: "CIGaussianBlur") {
                     blurFilter.setValue(clamped, forKey: kCIInputImageKey)
-                    blurFilter.setValue(16.0 * scaleFactor, forKey: kCIInputRadiusKey)
-                    if let output = blurFilter.outputImage?.cropped(to: CGRect(x: 0, y: 0, width: slice.width, height: slice.height)) {
-                        let rep = NSCIImageRep(ciImage: output)
-                        let resultImg = NSImage(size: rect.size)
-                        resultImg.addRepresentation(rep)
-                        resultImg.draw(in: rect, from: NSRect(origin: .zero, size: rect.size), operation: .sourceOver, fraction: 1.0)
+                    let blurRadius = max(16.0, 20.0 * scaleFactor)
+                    blurFilter.setValue(blurRadius, forKey: kCIInputRadiusKey)
+                    let extent = CGRect(x: 0, y: 0, width: slice.width, height: slice.height)
+                    if let outputCI = blurFilter.outputImage?.cropped(to: extent),
+                       let blurredCG = ciContext.createCGImage(outputCI, from: extent) {
 
-                        // 叠加微弱磨砂高光层
-                        NSColor(white: 1.0, alpha: 0.14).setFill()
+                        // 绘制硬件加速高斯模糊位图
+                        ctx.draw(blurredCG, in: rect)
+
+                        // 叠加高透亮磨砂白反光层
+                        NSColor.white.withAlphaComponent(0.18).setFill()
                         clipPath.fill()
+
+                        // 绘制玻璃立体晶莹微边框
+                        NSColor.white.withAlphaComponent(0.45).setStroke()
+                        let borderPath = NSBezierPath(rect: rect.insetBy(dx: 0.5, dy: 0.5))
+                        borderPath.lineWidth = 1.0
+                        borderPath.stroke()
 
                         NSGraphicsContext.restoreGraphicsState()
                         return
                     }
                 }
             } else {
-                // 马赛克模式 (参考 iShot 经典方块像素化)
+                // 马赛克模式 (iShot 经典清晰像素方块)
                 if let pixFilter = CIFilter(name: "CIPixellate") {
                     pixFilter.setValue(ciImage, forKey: kCIInputImageKey)
-                    let blockScale = max(8.0, 13.0 * scaleFactor)
+                    let blockScale = max(8.0, 12.0 * scaleFactor)
                     pixFilter.setValue(blockScale, forKey: kCIInputScaleKey)
                     pixFilter.setValue(CIVector(x: 0, y: 0), forKey: kCIInputCenterKey)
-                    if let output = pixFilter.outputImage {
-                        let rep = NSCIImageRep(ciImage: output)
-                        let resultImg = NSImage(size: rect.size)
-                        resultImg.addRepresentation(rep)
-                        resultImg.draw(in: rect, from: NSRect(origin: .zero, size: rect.size), operation: .sourceOver, fraction: 1.0)
+                    let extent = CGRect(x: 0, y: 0, width: slice.width, height: slice.height)
+                    if let outputCI = pixFilter.outputImage?.cropped(to: extent),
+                       let pixellatedCG = ciContext.createCGImage(outputCI, from: extent) {
+
+                        ctx.draw(pixellatedCG, in: rect)
                         NSGraphicsContext.restoreGraphicsState()
                         return
                     }
@@ -374,10 +392,14 @@ enum AnnotationRenderer {
             }
         }
 
-        // 备用兜底
+        // 备用兜底（精致磨砂白）
         if isBlur {
-            NSColor(white: 0.9, alpha: 0.85).setFill()
+            NSColor(white: 1.0, alpha: 0.55).setFill()
             clipPath.fill()
+            NSColor.white.withAlphaComponent(0.6).setStroke()
+            let border = NSBezierPath(rect: rect.insetBy(dx: 0.5, dy: 0.5))
+            border.lineWidth = 1.0
+            border.stroke()
         } else {
             let blockSize: CGFloat = 12
             var isDark = false
@@ -387,7 +409,7 @@ enum AnnotationRenderer {
                 var rowDark = isDark
                 while x < rect.maxX {
                     let blockRect = CGRect(x: x, y: y, width: blockSize, height: blockSize).intersection(rect)
-                    let color = rowDark ? NSColor(white: 0.45, alpha: 0.85) : NSColor(white: 0.75, alpha: 0.85)
+                    let color = rowDark ? NSColor(white: 0.55, alpha: 0.85) : NSColor(white: 0.80, alpha: 0.85)
                     color.setFill()
                     blockRect.fill()
                     rowDark.toggle()
