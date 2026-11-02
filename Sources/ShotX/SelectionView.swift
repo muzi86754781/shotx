@@ -2635,24 +2635,6 @@ final class SelectionView: NSView {
         needsDisplay = true
     }
 
-    private func openColorPicker() {
-        let cp = NSColorPanel.shared
-        let targetCol = (subToolbarTool == .text && textIsSelectingSecondary) ? textSecondaryColor : currentDrawColor
-        cp.color = targetCol
-        cp.setTarget(self)
-        cp.setAction(#selector(colorPanelChanged(_:)))
-        cp.orderFront(nil)
-    }
-
-    @objc private func colorPanelChanged(_ sender: NSColorPanel) {
-        if subToolbarTool == .text && textIsSelectingSecondary {
-            textSecondaryColor = sender.color
-        } else {
-            currentDrawColor = sender.color
-        }
-        needsDisplay = true
-    }
-
     // MARK: - Color Calculation
 
     private func currentPixelColor() -> (r: Int, g: Int, b: Int, hex: String, name: String) {
