@@ -2279,7 +2279,7 @@ final class SelectionView: NSView {
             let color = isSelected ? NSColor(srgbRed: 0.12, green: 0.53, blue: 0.98, alpha: 1.0) : NSColor(white: 0.45, alpha: 1.0)
             let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: color]
             let sz = (title as NSString).size(withAttributes: attrs)
-            (title as NSString).draw(at: NSPoint(itemRect.midX - sz.width / 2, y: itemRect.midY - sz.height / 2), withAttributes: attrs)
+            (title as NSString).draw(at: NSPoint(x: itemRect.midX - sz.width / 2, y: itemRect.midY - sz.height / 2), withAttributes: attrs)
         }
     }
 

@@ -180,10 +180,6 @@ final class FloatingKeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
 
-    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
-        return true
-    }
-
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown && !isKeyWindow {
             makeKey()
