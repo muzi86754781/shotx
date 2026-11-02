@@ -3,14 +3,16 @@ import SwiftUI
 
 final class MainWindowState: ObservableObject {
     @Published var tab: MainView.Tab = .history
+    @Published var historyCategory: HistoryCategory = .all
 }
 
 final class MainWindowController {
     private var window: NSWindow?
     let state = MainWindowState()
 
-    func show(tab: MainView.Tab? = nil) {
+    func show(tab: MainView.Tab? = nil, historyCategory: HistoryCategory? = nil) {
         if let tab = tab { state.tab = tab }
+        if let cat = historyCategory { state.historyCategory = cat }
 
         if let window = window {
             window.makeKeyAndOrderFront(nil)
@@ -29,7 +31,9 @@ final class MainWindowController {
         let window = NSWindow(contentViewController: hosting)
         window.title = "ShotX"
         window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-        window.setContentSize(NSSize(width: 720, height: 520))
+        // 放大主设置窗口尺寸，并设置最小尺寸限制
+        window.setContentSize(NSSize(width: 880, height: 640))
+        window.minSize = NSSize(width: 800, height: 560)
         window.isReleasedWhenClosed = false
         window.center()
         window.makeKeyAndOrderFront(nil)
@@ -62,7 +66,7 @@ struct MainView: View {
 
             Group {
                 switch state.tab {
-                case .history: HistoryView()
+                case .history: HistoryView(state: state)
                 case .settings: SettingsView()
                 }
             }
@@ -96,12 +100,12 @@ enum HistoryCategory: String, CaseIterable, Identifiable {
 }
 
 struct HistoryView: View {
+    @ObservedObject var state: MainWindowState
     @EnvironmentObject var history: HistoryStore
     @EnvironmentObject var translationStore: TranslationStore
     @EnvironmentObject var clipboardStore: ClipboardStore
     @EnvironmentObject var shortcuts: ShortcutStore
 
-    @State private var selectedCategory: HistoryCategory = .all
     @State private var searchText: String = ""
 
     private let cols = [GridItem(.adaptive(minimum: 210, maximum: 260), spacing: 16)]
@@ -122,21 +126,21 @@ struct HistoryView: View {
                     HStack(spacing: 6) {
                         ForEach(HistoryCategory.allCases) { cat in
                             Button {
-                                selectedCategory = cat
+                                state.historyCategory = cat
                             } label: {
                                 HStack(spacing: 4) {
                                     Image(systemName: cat.icon)
                                         .font(.system(size: 11))
                                     Text(cat.rawValue)
-                                        .font(.system(size: 12, weight: selectedCategory == cat ? .semibold : .regular))
+                                        .font(.system(size: 12, weight: state.historyCategory == cat ? .semibold : .regular))
                                 }
                                 .padding(.horizontal, 10)
                                 .padding(.vertical, 5)
                                 .background(
                                     Capsule()
-                                        .fill(selectedCategory == cat ? Color.accentColor : Color.primary.opacity(0.06))
+                                        .fill(state.historyCategory == cat ? Color.accentColor : Color.primary.opacity(0.06))
                                 )
-                                .foregroundStyle(selectedCategory == cat ? .white : .primary)
+                                .foregroundStyle(state.historyCategory == cat ? .white : .primary)
                             }
                             .buttonStyle(.plain)
                         }
@@ -185,7 +189,7 @@ struct HistoryView: View {
     }
 
     private var currentCount: Int {
-        switch selectedCategory {
+        switch state.historyCategory {
         case .all:
             return history.entries.count + history.audioEntries.count + history.ocrEntries.count + translationStore.entries.count + clipboardStore.entries.count
         case .screenshot:
@@ -205,7 +209,7 @@ struct HistoryView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text("\(selectedCategory.rawValue) · \(currentCount) 条记录")
+            Text("\(state.historyCategory.rawValue) · \(currentCount) 条记录")
                 .font(.system(size: 11.5, weight: .medium))
                 .foregroundStyle(.secondary)
             Spacer()
@@ -225,7 +229,7 @@ struct HistoryView: View {
     }
 
     private func clearCurrentCategory() {
-        switch selectedCategory {
+        switch state.historyCategory {
         case .all:
             history.clear()
             history.clearAudio()
@@ -254,7 +258,7 @@ struct HistoryView: View {
             } else {
                 ScrollView {
                     VStack(spacing: 14) {
-                        switch selectedCategory {
+                        switch state.historyCategory {
                         case .all:
                             allContent
                         case .screenshot:
@@ -374,11 +378,11 @@ struct HistoryView: View {
                 RoundedRectangle(cornerRadius: 20)
                     .fill(Color.accentColor.opacity(0.1))
                     .frame(width: 80, height: 80)
-                Image(systemName: selectedCategory.icon)
+                Image(systemName: state.historyCategory.icon)
                     .font(.system(size: 34, weight: .light))
                     .foregroundStyle(.tint)
             }
-            Text("暂无\(selectedCategory.rawValue)记录")
+            Text("暂无\(state.historyCategory.rawValue)记录")
                 .font(.system(size: 15, weight: .semibold))
             Text("使用 ShotX 的各项功能后，历史记录将自动汇总于此")
                 .font(.system(size: 12))
@@ -961,7 +965,7 @@ struct SettingsView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 16) {
+            VStack(spacing: 20) {
                 // 1. 截图设置
                 SettingsCard(
                     icon: "camera.viewfinder",
@@ -1450,7 +1454,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("ShotX  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.13")")
+                                Text("ShotX  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.14")")
                                     .font(.system(size: 14, weight: .bold))
                                 HStack(spacing: 8) {
                                     Text("开发者:")
@@ -1521,7 +1525,8 @@ struct SettingsView: View {
                     }
                 }
             }
-            .padding(20)
+            .padding(.horizontal, 28)
+            .padding(.vertical, 24)
         }
         .background(Color(NSColor.windowBackgroundColor))
     }
@@ -1538,23 +1543,23 @@ struct SettingsView: View {
         binding: Binding<Shortcut>,
         defaultVal: Shortcut
     ) -> some View {
-        HStack(alignment: .center, spacing: 12) {
-            VStack(alignment: .leading, spacing: 2) {
+        HStack(alignment: .center, spacing: 14) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(title)
-                    .font(.system(size: 13, weight: .medium))
+                    .font(.system(size: 14.5, weight: .medium))
                 Text(desc)
-                    .font(.system(size: 11))
+                    .font(.system(size: 12.5))
                     .foregroundStyle(.secondary)
             }
-            Spacer(minLength: 8)
+            Spacer(minLength: 12)
             ShortcutRecorder(shortcut: binding)
-                .frame(width: 140, height: 26)
+                .frame(width: 156, height: 28)
             Button("清除") {
                 binding.wrappedValue = .none
             }
             .buttonStyle(.borderless)
             .foregroundStyle(.secondary)
-            .font(.system(size: 11))
+            .font(.system(size: 12.5))
         }
     }
 }
@@ -1567,21 +1572,21 @@ struct SettingsCard<Content: View>: View {
     @ViewBuilder var content: () -> Content
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(spacing: 11) {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 13) {
                 Image(systemName: icon)
-                    .font(.system(size: 15, weight: .semibold))
+                    .font(.system(size: 17, weight: .semibold))
                     .foregroundStyle(tint)
-                    .frame(width: 34, height: 34)
+                    .frame(width: 38, height: 38)
                     .background(
-                        RoundedRectangle(cornerRadius: 9)
+                        RoundedRectangle(cornerRadius: 10)
                             .fill(tint.opacity(0.14))
                     )
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(.system(size: 16, weight: .semibold))
                     Text(subtitle)
-                        .font(.system(size: 11.5))
+                        .font(.system(size: 12.5))
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -1591,13 +1596,13 @@ struct SettingsCard<Content: View>: View {
 
             content()
         }
-        .padding(16)
+        .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 14)
                 .fill(Color(NSColor.controlBackgroundColor))
         )
         .overlay(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 14)
                 .strokeBorder(Color.primary.opacity(0.08), lineWidth: 1)
         )
     }

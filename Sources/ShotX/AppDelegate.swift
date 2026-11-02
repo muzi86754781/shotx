@@ -369,13 +369,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             action: #selector(showSupportAuthor)
         ))
 
-        // 21. 偏好设置
+        // 21. 偏好设置（取消快捷键）
         menu.addItem(menuItem(
             title: "偏好设置",
             symbol: "gearshape",
             action: #selector(showSettings),
-            keyEquivalent: ",",
-            keyEquivalentModifiers: .command
+            keyEquivalent: "",
+            keyEquivalentModifiers: []
         ))
 
         // 22. 检查更新
@@ -401,13 +401,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             ))
         }
 
-        // 24. 退出 ShotX
+        // 24. 退出 ShotX（取消快捷键）
         menu.addItem(menuItem(
             title: "退出 ShotX",
             symbol: "power",
             action: #selector(quit),
-            keyEquivalent: "q",
-            keyEquivalentModifiers: .command
+            keyEquivalent: "",
+            keyEquivalentModifiers: []
         ))
     }
 
@@ -901,7 +901,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc private func pinToScreen() {
-        captureNow()
+        let pb = NSPasteboard.general
+        // 1. 优先从剪贴板读取位图对象
+        if let image = NSImage(pasteboard: pb) {
+            PinnedImageController.shared.pin(image)
+            return
+        }
+        // 2. 尝试从剪贴板读取图片文件 URL
+        if let urls = pb.readObjects(forClasses: [NSURL.self], options: nil) as? [URL] {
+            for url in urls {
+                if let img = NSImage(contentsOf: url) {
+                    PinnedImageController.shared.pin(img)
+                    return
+                }
+            }
+        }
+        // 3. 剪贴板无图片时提示
+        ToastController.shared.show(
+            message: "剪贴板中没有图片",
+            icon: "exclamationmark.triangle.fill",
+            tint: .systemOrange,
+            duration: 2.0,
+            position: .center
+        )
     }
 
     @objc private func toggleDesktopIcons() {
@@ -1023,10 +1045,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Windows
 
     @objc func showHistory() {
+        showHistory(category: .all)
+    }
+
+    func showHistory(category: HistoryCategory) {
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
         }
-        mainWindowController?.show(tab: .history)
+        mainWindowController?.show(tab: .history, historyCategory: category)
     }
 
     @objc func showSettings() {

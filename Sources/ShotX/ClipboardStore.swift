@@ -198,6 +198,7 @@ final class FloatingKeyPanel: NSPanel {
 final class ClipboardHistoryController {
     static let shared = ClipboardHistoryController()
     private var panel: FloatingKeyPanel?
+    private var outsideClickMonitor: Any?
     var previousApp: NSRunningApplication?
     var isPinned: Bool = true {
         didSet {
@@ -239,7 +240,7 @@ final class ClipboardHistoryController {
             },
             onClose: { [weak self] in self?.dismiss() }
         )
-        let hosting = NSHostingController(rootView: view)
+        let hosting = FirstMouseHostingController(rootView: view)
         let size = NSSize(width: 440, height: 490)
         hosting.view.frame = NSRect(origin: .zero, size: size)
 
@@ -271,6 +272,7 @@ final class ClipboardHistoryController {
         p.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.panel = p
+        updatePanelLevel(p)
     }
 
     private func updatePanelLevel(_ p: NSPanel) {
@@ -278,13 +280,37 @@ final class ClipboardHistoryController {
             p.level = .floating
             p.hidesOnDeactivate = false
             p.orderFrontRegardless()
+            teardownOutsideClickMonitor()
         } else {
             p.level = .normal
             p.hidesOnDeactivate = false
+            setupOutsideClickMonitor()
+        }
+    }
+
+    private func setupOutsideClickMonitor() {
+        teardownOutsideClickMonitor()
+        guard !isPinned else { return }
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self = self, let p = self.panel, !self.isPinned else { return }
+            let loc = NSEvent.mouseLocation
+            if !p.frame.contains(loc) {
+                DispatchQueue.main.async {
+                    self.dismiss()
+                }
+            }
+        }
+    }
+
+    private func teardownOutsideClickMonitor() {
+        if let m = outsideClickMonitor {
+            NSEvent.removeMonitor(m)
+            outsideClickMonitor = nil
         }
     }
 
     func dismiss() {
+        teardownOutsideClickMonitor()
         panel?.orderOut(nil)
         panel = nil
     }

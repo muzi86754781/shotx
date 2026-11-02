@@ -329,7 +329,8 @@ final class TranslationViewModel: ObservableObject {
 final class TranslationController {
     static let shared = TranslationController()
     private var window: FloatingKeyPanel?
-    private var hosting: NSHostingController<TranslationWindowView>?
+    private var hosting: FirstMouseHostingController<TranslationWindowView>?
+    private var outsideClickMonitor: Any?
     let viewModel = TranslationViewModel()
 
     func show(text: String = "") {
@@ -372,7 +373,8 @@ final class TranslationController {
                 }
             }
         )
-        let h = NSHostingController(rootView: view)
+        // 关键优化：使用 FirstMouseHostingController，解决窗口失焦后必须点击 2 次才触发按钮的问题（支持第 1 次点击直接响应）
+        let h = FirstMouseHostingController(rootView: view)
         self.hosting = h
 
         let size = NSSize(width: 480, height: 420)
@@ -389,7 +391,6 @@ final class TranslationController {
         panel.isFloatingPanel = true
         panel.hidesOnDeactivate = false
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
-        updateWindowLevel(panel)
         panel.contentViewController = h
         panel.isReleasedWhenClosed = false
         panel.hasShadow = true
@@ -409,14 +410,45 @@ final class TranslationController {
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
         self.window = panel
+
+        updateWindowLevel(panel)
     }
 
     func updateWindowLevel(_ panel: NSPanel) {
-        panel.level = .floating
+        if viewModel.isPinned {
+            panel.level = .floating
+            teardownOutsideClickMonitor()
+        } else {
+            panel.level = .normal
+            setupOutsideClickMonitor()
+        }
         panel.orderFrontRegardless()
     }
 
+    private func setupOutsideClickMonitor() {
+        teardownOutsideClickMonitor()
+        guard !viewModel.isPinned else { return }
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            guard let self = self, let win = self.window, !self.viewModel.isPinned else { return }
+            let loc = NSEvent.mouseLocation
+            // 点击翻译窗口外部区域直接关闭窗口
+            if !win.frame.contains(loc) {
+                DispatchQueue.main.async {
+                    self.dismiss()
+                }
+            }
+        }
+    }
+
+    private func teardownOutsideClickMonitor() {
+        if let m = outsideClickMonitor {
+            NSEvent.removeMonitor(m)
+            outsideClickMonitor = nil
+        }
+    }
+
     func dismiss() {
+        teardownOutsideClickMonitor()
         window?.orderOut(nil)
         window = nil
         hosting = nil
@@ -452,7 +484,7 @@ struct TranslationWindowView: View {
                     // 历史记录按钮
                     Button {
                         if let appDelegate = NSApp.delegate as? AppDelegate {
-                            appDelegate.showHistory()
+                            appDelegate.showHistory(category: .translation)
                         }
                     } label: {
                         ZStack {

@@ -2,6 +2,18 @@ import Carbon.HIToolbox
 import Cocoa
 import SwiftUI
 
+final class FirstMouseHostingView<Content: View>: NSHostingView<Content> {
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        return true
+    }
+}
+
+final class FirstMouseHostingController<Content: View>: NSHostingController<Content> {
+    override func loadView() {
+        self.view = FirstMouseHostingView(rootView: rootView)
+    }
+}
+
 /// Tears a transient panel down for real.
 ///
 /// `orderOut` only takes a window off screen — AppKit keeps it in the
