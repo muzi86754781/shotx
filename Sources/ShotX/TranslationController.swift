@@ -484,7 +484,7 @@ struct TranslationWindowView: View {
                     // 历史记录按钮
                     Button {
                         if let appDelegate = NSApp.delegate as? AppDelegate {
-                            appDelegate.showHistory(category: .translation)
+                            appDelegate.showHistoryCategory(.translation)
                         }
                     } label: {
                         ZStack {

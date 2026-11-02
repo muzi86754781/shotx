@@ -1045,10 +1045,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     // MARK: - Windows
 
     @objc func showHistory() {
-        showHistory(category: .all)
+        showHistoryCategory(.all)
     }
 
-    func showHistory(category: HistoryCategory) {
+    func showHistoryCategory(_ category: HistoryCategory) {
         if mainWindowController == nil {
             mainWindowController = MainWindowController()
         }
