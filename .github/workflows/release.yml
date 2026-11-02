@@ -2,8 +2,6 @@ name: Build and Release
 
 on:
   push:
-    branches:
-      - main
     tags:
       - 'v*'
   workflow_dispatch:
@@ -12,6 +10,10 @@ on:
         description: 'Release version (e.g. 1.9.18)'
         required: false
         default: '1.9.18'
+
+concurrency:
+  group: release
+  cancel-in-progress: false
 
 permissions:
   contents: write
