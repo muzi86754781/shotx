@@ -1110,8 +1110,8 @@ final class SelectionView: NSView {
 
     private func handleExternalScroll(event: NSEvent) {
         let now = Date().timeIntervalSinceReferenceDate
-        guard now - lastScrollCaptureTime >= 0.04 else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+        guard now - lastScrollCaptureTime >= 0.035 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.035) { [weak self] in
                 self?.captureAndStitchSlice()
             }
             return
@@ -1127,7 +1127,7 @@ final class SelectionView: NSView {
             let p = convert(event.locationInWindow, from: nil)
             if selectionRect.contains(p) {
                 updateMouseIgnoreState()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.035) { [weak self] in
                     self?.captureAndStitchSlice()
                 }
                 return
