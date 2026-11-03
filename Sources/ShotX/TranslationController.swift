@@ -328,7 +328,7 @@ final class TranslationViewModel: ObservableObject {
 
 final class TranslationController {
     static let shared = TranslationController()
-    private var window: FloatingKeyPanel?
+    private(set) var window: FloatingKeyPanel?
     private var hosting: FirstMouseHostingView<TranslationWindowView>?
     private var outsideClickMonitor: Any?
     let viewModel = TranslationViewModel()
@@ -406,6 +406,9 @@ final class TranslationController {
             panel.setFrame(NSRect(origin: origin, size: size), display: true)
         }
 
+        panel.onDismiss = { [weak self] in
+            self?.dismiss()
+        }
         panel.orderFrontRegardless()
         panel.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
@@ -415,11 +418,10 @@ final class TranslationController {
     }
 
     func updateWindowLevel(_ panel: NSPanel) {
+        panel.level = .floating
         if viewModel.isPinned {
-            panel.level = .floating
             teardownOutsideClickMonitor()
         } else {
-            panel.level = .normal
             setupOutsideClickMonitor()
         }
         panel.orderFrontRegardless()
@@ -452,6 +454,10 @@ final class TranslationController {
         window?.orderOut(nil)
         window = nil
         hosting = nil
+        // 关键：关闭翻译窗口后让出焦点，恢复先前激活的宿主应用，确保下一次按快捷键立即响应
+        if let prev = AppDelegate.lastExternalApp, !prev.isTerminated {
+            prev.activate(options: [.activateIgnoringOtherApps])
+        }
     }
 }
 
@@ -588,15 +594,12 @@ struct TranslationWindowView: View {
                         }
                     }
                 } label: {
-                    HStack(spacing: 4) {
-                        Text(viewModel.sourceLanguage.displayName)
-                            .font(.system(size: 13, weight: .medium))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9))
-                    }
-                    .foregroundStyle(.primary)
+                    Text(viewModel.sourceLanguage.displayName)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
                 }
                 .menuStyle(.borderlessButton)
+                .buttonStyle(.plain)
 
                 Button {
                     viewModel.swapLanguages()
@@ -617,15 +620,12 @@ struct TranslationWindowView: View {
                         }
                     }
                 } label: {
-                    HStack(spacing: 4) {
-                        Text(viewModel.targetLanguage == .auto ? "自动选择" : viewModel.targetLanguage.displayName)
-                            .font(.system(size: 13, weight: .medium))
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 9))
-                    }
-                    .foregroundStyle(.primary)
+                    Text(viewModel.targetLanguage == .auto ? "自动选择" : viewModel.targetLanguage.displayName)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(.primary)
                 }
                 .menuStyle(.borderlessButton)
+                .buttonStyle(.plain)
 
                 Spacer()
             }

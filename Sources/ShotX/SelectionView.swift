@@ -68,6 +68,16 @@ final class SelectionView: NSView {
     private var hoveredButtonIndex: Int? = nil
     private var isDraggingCornerSlider: Bool = false
 
+    // Corner resizing state (拖动选框4个角)
+    private enum SelectionCorner {
+        case topLeft
+        case topRight
+        case bottomLeft
+        case bottomRight
+    }
+    private var activeCorner: SelectionCorner? = nil
+    private var cornerAnchorPoint: NSPoint = .zero
+
     // Sub-toolbar state (Child tools for first 8 tools)
     private var isSubToolbarVisible: Bool = false
     private var subToolbarTool: AnnotationTool? = nil
@@ -92,6 +102,7 @@ final class SelectionView: NSView {
     private var stitchedLongImage: NSImage?
     private var lastStitchedCG: CGImage?
     private var stitchedLongCG: CGImage?
+    private var isStitchingSlice: Bool = false
     private var scrollingScrollMonitor: Any?
     private var scrollingMouseMonitor: Any?
     private var scrollingKeyMonitor: Any?
@@ -190,6 +201,25 @@ final class SelectionView: NSView {
         setNeedsDisplay(NSRect(x: newPos.x - 2, y: 0, width: 4, height: bounds.height))
     }
 
+    private func hitTestCorner(at p: NSPoint) -> SelectionCorner? {
+        guard mode == .annotating, selectionRect.width > 0, selectionRect.height > 0 else { return nil }
+        let threshold: CGFloat = 16.0
+        let r = selectionRect
+        if abs(p.x - r.minX) <= threshold && abs(p.y - r.maxY) <= threshold {
+            return .topLeft
+        }
+        if abs(p.x - r.maxX) <= threshold && abs(p.y - r.maxY) <= threshold {
+            return .topRight
+        }
+        if abs(p.x - r.minX) <= threshold && abs(p.y - r.minY) <= threshold {
+            return .bottomLeft
+        }
+        if abs(p.x - r.maxX) <= threshold && abs(p.y - r.minY) <= threshold {
+            return .bottomRight
+        }
+        return nil
+    }
+
     override func mouseMoved(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         let oldPos = mousePosition
@@ -200,6 +230,11 @@ final class SelectionView: NSView {
 
         if mode == .annotating {
             updateToolbarHover(at: p)
+            if hitTestCorner(at: p) != nil {
+                NSCursor.crosshair.set()
+            } else {
+                NSCursor.arrow.set()
+            }
             needsDisplay = true
             return
         }
@@ -323,6 +358,22 @@ final class SelectionView: NSView {
             return
         }
 
+        // 3.5 Check Corner dragging to resize selection (拖动选框4个角)
+        if let corner = hitTestCorner(at: p) {
+            activeCorner = corner
+            switch corner {
+            case .topLeft:
+                cornerAnchorPoint = NSPoint(x: selectionRect.maxX, y: selectionRect.minY)
+            case .topRight:
+                cornerAnchorPoint = NSPoint(x: selectionRect.minX, y: selectionRect.minY)
+            case .bottomLeft:
+                cornerAnchorPoint = NSPoint(x: selectionRect.maxX, y: selectionRect.maxY)
+            case .bottomRight:
+                cornerAnchorPoint = NSPoint(x: selectionRect.minX, y: selectionRect.maxY)
+            }
+            return
+        }
+
         // 4. Double-click inside selection commits and finishes!
         if event.clickCount == 2 && selectionRect.contains(p) {
             handleCopy()
@@ -440,6 +491,22 @@ final class SelectionView: NSView {
         }
 
         // Mode is .annotating
+        if let corner = activeCorner {
+            let clampedP = NSPoint(
+                x: max(0, min(bounds.width, p.x)),
+                y: max(0, min(bounds.height, p.y))
+            )
+            let minX = min(cornerAnchorPoint.x, clampedP.x)
+            let maxX = max(cornerAnchorPoint.x, clampedP.x)
+            let minY = min(cornerAnchorPoint.y, clampedP.y)
+            let maxY = max(cornerAnchorPoint.y, clampedP.y)
+            if maxX - minX >= 10 && maxY - minY >= 10 {
+                selectionRect = NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+                needsDisplay = true
+            }
+            return
+        }
+
         if isDraggingCornerSlider {
             let topRect = topBarRect()
             let sliderMinX = topRect.minX + 85
@@ -496,6 +563,12 @@ final class SelectionView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        if activeCorner != nil {
+            activeCorner = nil
+            needsDisplay = true
+            return
+        }
+
         if isDraggingCornerSlider {
             isDraggingCornerSlider = false
             return
@@ -961,6 +1034,7 @@ final class SelectionView: NSView {
 
     private func cleanupScrollingMode() {
         isScrollingMode = false
+        isStitchingSlice = false
         lastStitchedCG = nil
         stitchedLongCG = nil
         scrollingTimer?.invalidate()
@@ -1102,6 +1176,10 @@ final class SelectionView: NSView {
     }
 
     private func captureAndStitchSlice(deltaY: CGFloat) {
+        if isStitchingSlice { return }
+        isStitchingSlice = true
+        defer { isStitchingSlice = false }
+
         if deltaY > 0.5 { return }
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         guard let freshCG = ScreenCapture.captureCGImage(rectInScreenCoords: globalRect, screen: targetScreen) else { return }
@@ -1111,6 +1189,11 @@ final class SelectionView: NSView {
             self.stitchedLongCG = freshCG
             self.stitchedLongImage = NSImage(cgImage: freshCG, size: selectionRect.size)
             needsDisplay = true
+            return
+        }
+
+        if currentLong.height >= 32000 {
+            ToastController.shared.show(message: "已达长截图最大高度限制 (32000px)", icon: "exclamationmark.triangle", tint: .systemOrange, duration: 2.0)
             return
         }
 
@@ -1832,6 +1915,24 @@ final class SelectionView: NSView {
         path.line(to: NSPoint(x: r.maxX, y: r.minY + len))
 
         path.stroke()
+
+        // 绘制4个角的微型拖动手柄圆点
+        let dotR: CGFloat = 3.5
+        let corners = [
+            NSPoint(x: r.minX, y: r.maxY),
+            NSPoint(x: r.maxX, y: r.maxY),
+            NSPoint(x: r.minX, y: r.minY),
+            NSPoint(x: r.maxX, y: r.minY)
+        ]
+        NSColor.white.setFill()
+        color.setStroke()
+        for c in corners {
+            let dotRect = NSRect(x: c.x - dotR, y: c.y - dotR, width: dotR * 2, height: dotR * 2)
+            let dotPath = NSBezierPath(ovalIn: dotRect)
+            dotPath.fill()
+            dotPath.lineWidth = 1.5
+            dotPath.stroke()
+        }
     }
 
     private func topBarRect() -> NSRect {

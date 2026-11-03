@@ -966,7 +966,28 @@ struct SettingsView: View {
     var body: some View {
         ScrollView {
             VStack(spacing: 20) {
-                // 1. 截图设置
+                // 1. 通用设置
+                SettingsCard(
+                    icon: "gearshape.fill",
+                    tint: .gray,
+                    title: "通用设置",
+                    subtitle: "系统登录自启与基础配置"
+                ) {
+                    HStack {
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("开机自动启动")
+                                .font(.system(size: 13, weight: .medium))
+                            Text("Mac 开机或登录系统后自动在后台运行 ShotX，随时使用快捷键截图与工具")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Toggle("", isOn: $preferences.launchAtLogin)
+                            .toggleStyle(.switch)
+                    }
+                }
+
+                // 2. 截图设置
                 SettingsCard(
                     icon: "camera.viewfinder",
                     tint: .blue,
@@ -1390,6 +1411,13 @@ struct SettingsView: View {
                         )
                         dividerLine
                         shortcutRow(
+                            title: "改图-从剪贴板打开",
+                            desc: "从剪贴板直接载入图片并打开标注窗口，支持画笔、文字、马赛克等就地编辑",
+                            binding: $shortcuts.editFromClipboardShortcut,
+                            defaultVal: .defaultEditFromClipboard
+                        )
+                        dividerLine
+                        shortcutRow(
                             title: "隐藏桌面图标",
                             desc: "💡功能说明：一键隐藏或恢复桌面上所有文件与快捷方式，录屏或截图时桌面整洁干净",
                             binding: $shortcuts.desktopIconsShortcut,
@@ -1418,6 +1446,7 @@ struct SettingsView: View {
                                 shortcuts.selectionTranslationShortcut = .none
                                 shortcuts.screenshotTranslationShortcut = .none
                                 shortcuts.clipboardHistoryShortcut = .none
+                                shortcuts.editFromClipboardShortcut = .none
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -1437,6 +1466,7 @@ struct SettingsView: View {
                                 shortcuts.selectionTranslationShortcut = .defaultSelectionTranslation
                                 shortcuts.screenshotTranslationShortcut = .defaultScreenshotTranslation
                                 shortcuts.clipboardHistoryShortcut = .defaultClipboardHistory
+                                shortcuts.editFromClipboardShortcut = .defaultEditFromClipboard
                             }
                             .buttonStyle(.bordered)
                             .controlSize(.small)
@@ -1454,7 +1484,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("ShotX  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.18")")
+                                Text("ShotX  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.19")")
                                     .font(.system(size: 14, weight: .bold))
                                 HStack(spacing: 8) {
                                     Text("开发者:")

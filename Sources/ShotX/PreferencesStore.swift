@@ -1,5 +1,6 @@
 import Cocoa
 import SwiftUI
+import ServiceManagement
 
 enum ScreenshotFormat: String, CaseIterable, Identifiable {
     case png = "PNG"
@@ -110,6 +111,12 @@ final class PreferencesStore: ObservableObject {
 
     @Published var cornerRadius: CGFloat {
         didSet { UserDefaults.standard.set(Double(cornerRadius), forKey: cornerRadiusKey) }
+    }
+
+    @Published var launchAtLogin: Bool {
+        didSet {
+            setLaunchAtLogin(launchAtLogin)
+        }
     }
 
     // OCR Published
@@ -227,6 +234,32 @@ final class PreferencesStore: ObservableObject {
         youdaoTranslateAppSecret = UserDefaults.standard.string(forKey: youdaoTranslateAppSecretKey) ?? ""
         tencentTranslateSecretId = UserDefaults.standard.string(forKey: tencentTranslateSecretIdKey) ?? ""
         tencentTranslateSecretKey = UserDefaults.standard.string(forKey: tencentTranslateSecretKeyKey) ?? ""
+
+        if #available(macOS 13.0, *) {
+            launchAtLogin = (SMAppService.mainApp.status == .enabled)
+        } else {
+            launchAtLogin = false
+        }
+    }
+
+    private func setLaunchAtLogin(_ enabled: Bool) {
+        if #available(macOS 13.0, *) {
+            do {
+                if enabled {
+                    if SMAppService.mainApp.status == .requiresApproval {
+                        SMAppService.openSystemSettingsLoginItems()
+                    } else if SMAppService.mainApp.status != .enabled {
+                        try SMAppService.mainApp.register()
+                    }
+                } else {
+                    if SMAppService.mainApp.status == .enabled {
+                        try SMAppService.mainApp.unregister()
+                    }
+                }
+            } catch {
+                NSLog("Failed to update launch at login status: \(error)")
+            }
+        }
     }
 
     func selectSaveFolder() {

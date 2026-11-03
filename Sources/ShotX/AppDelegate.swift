@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var selectionTranslationHotKeyManager: HotKeyManager!
     private var screenshotTranslationHotKeyManager: HotKeyManager!
     private var clipboardHistoryHotKeyManager: HotKeyManager!
+    private var editFromClipboardHotKeyManager: HotKeyManager!
 
     private var overlayController: OverlayController?
     private var popupController: PostCapturePopupController?
@@ -258,8 +259,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             title: "改图-从剪贴板打开",
             symbol: "doc.on.clipboard",
             action: #selector(openFromClipboard),
-            keyEquivalent: "v",
-            keyEquivalentModifiers: [.command, .shift]
+            shortcut: ShortcutStore.shared.editFromClipboardShortcut
         ))
 
         // 11. 拾色器
@@ -450,6 +450,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         selectionTranslationHotKeyManager = HotKeyManager()
         screenshotTranslationHotKeyManager = HotKeyManager()
         clipboardHistoryHotKeyManager = HotKeyManager()
+        editFromClipboardHotKeyManager = HotKeyManager()
 
         applyCaptureShortcut(ShortcutStore.shared.shortcut)
         applyFullscreenShortcut(ShortcutStore.shared.fullscreenShortcut)
@@ -465,6 +466,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         applySelectionTranslationShortcut(ShortcutStore.shared.selectionTranslationShortcut)
         applyScreenshotTranslationShortcut(ShortcutStore.shared.screenshotTranslationShortcut)
         applyClipboardHistoryShortcut(ShortcutStore.shared.clipboardHistoryShortcut)
+        applyEditFromClipboardShortcut(ShortcutStore.shared.editFromClipboardShortcut)
 
         ShortcutStore.shared.$shortcut
             .dropFirst()
@@ -534,6 +536,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         ShortcutStore.shared.$clipboardHistoryShortcut
             .dropFirst()
             .sink { [weak self] new in self?.applyClipboardHistoryShortcut(new) }
+            .store(in: &shortcutCancellables)
+
+        ShortcutStore.shared.$editFromClipboardShortcut
+            .dropFirst()
+            .sink { [weak self] new in self?.applyEditFromClipboardShortcut(new) }
             .store(in: &shortcutCancellables)
     }
 
@@ -618,6 +625,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private func applyClipboardHistoryShortcut(_ s: Shortcut) {
         clipboardHistoryHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
             self?.toggleClipboardHistory()
+        }
+    }
+
+    private func applyEditFromClipboardShortcut(_ s: Shortcut) {
+        editFromClipboardHotKeyManager.register(keyCode: s.keyCode, modifiers: s.modifiers) { [weak self] in
+            self?.openFromClipboard()
         }
     }
 
@@ -777,6 +790,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     @objc func translateSelection() {
+        // 如果翻译窗口当前正处于显示状态，再次按下快捷键直接关闭（Toggle 切换）
+        if let win = TranslationController.shared.window, win.isVisible {
+            TranslationController.shared.dismiss()
+            return
+        }
+
         if !Permissions.accessibilityGranted {
             Permissions.requestAccessibilityPermission()
             ToastController.shared.show(

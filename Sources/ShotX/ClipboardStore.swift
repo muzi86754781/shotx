@@ -179,6 +179,7 @@ final class ClipboardStore: ObservableObject {
 final class FloatingKeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { true }
+    var onDismiss: (() -> Void)?
 
     override func sendEvent(_ event: NSEvent) {
         if event.type == .leftMouseDown && !isKeyWindow {
@@ -188,12 +189,20 @@ final class FloatingKeyPanel: NSPanel {
     }
 
     override func cancelOperation(_ sender: Any?) {
-        orderOut(nil)
+        if let onDismiss = onDismiss {
+            onDismiss()
+        } else {
+            orderOut(nil)
+        }
     }
 
     override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { // ESC
-            orderOut(nil)
+            if let onDismiss = onDismiss {
+                onDismiss()
+            } else {
+                orderOut(nil)
+            }
             return
         }
         super.keyDown(with: event)

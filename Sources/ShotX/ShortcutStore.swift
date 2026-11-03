@@ -81,6 +81,11 @@ struct Shortcut: Codable, Equatable {
         keyCode: UInt32(kVK_ANSI_V),
         modifiers: UInt32(optionKey)
     )
+
+    static let defaultEditFromClipboard = Shortcut(
+        keyCode: UInt32(kVK_ANSI_V),
+        modifiers: UInt32(optionKey | shiftKey)
+    )
 }
 
 final class ShortcutStore: ObservableObject {
@@ -142,6 +147,10 @@ final class ShortcutStore: ObservableObject {
         didSet { Self.persist(clipboardHistoryShortcut, key: clipboardHistoryKey) }
     }
 
+    @Published var editFromClipboardShortcut: Shortcut {
+        didSet { Self.persist(editFromClipboardShortcut, key: editFromClipboardKey) }
+    }
+
     private let captureKey = "com.shotx.shortcut"
     private let fullscreenKey = "com.shotx.fullscreenShortcut"
     private let windowCaptureKey = "com.shotx.windowCaptureShortcut"
@@ -156,6 +165,7 @@ final class ShortcutStore: ObservableObject {
     private let selectionTranslationKey = "com.shotx.selectionTranslationShortcut"
     private let screenshotTranslationKey = "com.shotx.screenshotTranslationShortcut"
     private let clipboardHistoryKey = "com.shotx.clipboardHistoryShortcut"
+    private let editFromClipboardKey = "com.shotx.editFromClipboardShortcut"
 
     init() {
         shortcut = Self.load(key: captureKey) ?? .default
@@ -172,6 +182,7 @@ final class ShortcutStore: ObservableObject {
         selectionTranslationShortcut = Self.load(key: selectionTranslationKey) ?? .defaultSelectionTranslation
         screenshotTranslationShortcut = Self.load(key: screenshotTranslationKey) ?? .defaultScreenshotTranslation
         clipboardHistoryShortcut = Self.load(key: clipboardHistoryKey) ?? .defaultClipboardHistory
+        editFromClipboardShortcut = Self.load(key: editFromClipboardKey) ?? .defaultEditFromClipboard
     }
 
     private static func load(key: String) -> Shortcut? {
