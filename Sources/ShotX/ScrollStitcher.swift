@@ -48,7 +48,8 @@ final class ScrollStitcher {
         guard hasMovement, S >= 3 else { return (false, false) }
 
         // 新增露出的底部条带为 freshCG 的 [height - S, height]
-        let sliceRect = CGRect(x: 0, y: freshCG.height - S, width: freshCG.width, height: S)
+        let sliceW = min(currentLong.width, freshCG.width)
+        let sliceRect = CGRect(x: 0, y: freshCG.height - S, width: sliceW, height: S)
         guard let sliceCG = freshCG.cropping(to: sliceRect) else { return (false, false) }
 
         let newH = currentLong.height + S
@@ -66,7 +67,7 @@ final class ScrollStitcher {
         // CGContext 坐标系（原点在左下角）：
         // 旧内容上移至 y = S，新条带绘制在底部 y = 0
         ctx.draw(currentLong, in: CGRect(x: 0, y: S, width: currentLong.width, height: currentLong.height))
-        ctx.draw(sliceCG, in: CGRect(x: 0, y: 0, width: sliceCG.width, height: S))
+        ctx.draw(sliceCG, in: CGRect(x: 0, y: 0, width: currentLong.width, height: S))
         guard let newCompositeCG = ctx.makeImage() else { return (false, false) }
 
         // 仅在真实向前延展时推进水位线，确保 lastStitchedCG 永远代表已截取的绝对底部边缘
@@ -81,12 +82,34 @@ final class ScrollStitcher {
     }
 
     private func detectScrollMovement(baseCG: CGImage, freshCG: CGImage) -> (hasMovement: Bool, deltaY: Int) {
-        let w = baseCG.width
-        let h = baseCG.height
-        guard w == freshCG.width, h == freshCG.height, h > 60, w > 40 else { return (false, 0) }
+        let w1 = baseCG.width
+        let h1 = baseCG.height
+        let w2 = freshCG.width
+        let h2 = freshCG.height
+        guard h1 > 60, w1 > 40, h2 > 60, w2 > 40 else { return (false, 0) }
+        guard abs(w1 - w2) <= 4, abs(h1 - h2) <= 4 else { return (false, 0) }
 
-        guard let bufA = getGrayscalePixelBuffer(cg: baseCG),
-              let bufB = getGrayscalePixelBuffer(cg: freshCG) else { return (false, 0) }
+        let w = min(w1, w2)
+        let h = min(h1, h2)
+
+        let safeBaseCG: CGImage
+        if baseCG.width != w || baseCG.height != h {
+            guard let cropped = baseCG.cropping(to: CGRect(x: 0, y: 0, width: w, height: h)) else { return (false, 0) }
+            safeBaseCG = cropped
+        } else {
+            safeBaseCG = baseCG
+        }
+
+        let safeFreshCG: CGImage
+        if freshCG.width != w || freshCG.height != h {
+            guard let cropped = freshCG.cropping(to: CGRect(x: 0, y: 0, width: w, height: h)) else { return (false, 0) }
+            safeFreshCG = cropped
+        } else {
+            safeFreshCG = freshCG
+        }
+
+        guard let bufA = getGrayscalePixelBuffer(cg: safeBaseCG),
+              let bufB = getGrayscalePixelBuffer(cg: safeFreshCG) else { return (false, 0) }
 
         // 1. 横向宽幅 32 列采样：避开左右边距（各保留 16px 边距，杜绝垂直滚动条干扰）
         let marginX = min(20, w / 10)

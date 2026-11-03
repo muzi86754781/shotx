@@ -211,7 +211,7 @@ final class SelectionView: NSView {
     }
 
     private func hitTestCorner(at p: NSPoint) -> SelectionCorner? {
-        guard mode == .annotating, selectionRect.width > 0, selectionRect.height > 0 else { return nil }
+        guard mode == .annotating, !isScrollingMode, selectionRect.width > 0, selectionRect.height > 0 else { return nil }
         let threshold: CGFloat = 16.0
         let r = selectionRect
         if abs(p.x - r.minX) <= threshold && abs(p.y - r.maxY) <= threshold {
@@ -1068,7 +1068,11 @@ final class SelectionView: NSView {
     }
 
     private func setupScrollingMonitors() {
-        cleanupScrollingMode()
+        scrollingTimer?.invalidate()
+        scrollingTimer = nil
+        scrollingScrollToken = nil
+        scrollingMouseToken = nil
+        scrollingKeyToken = nil
         isScrollingMode = true
 
         // 1. 定时器：以 100ms 周期检测鼠标位置以即时更新穿透状态
@@ -1137,16 +1141,22 @@ final class SelectionView: NSView {
     }
 
     private func handleScrollingCapture() {
-        // Scrolling screenshot (长截图) mode (333.jpg)
+        // Scrolling screenshot (长截图) mode
+        cleanupScrollingMode()
+        isScrollingMode = true
+
+        // 立即抓取框选区域的第一屏内容并初始化到拼接器与预览区
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
-        if let initialCG = ScreenCapture.captureCGImage(rectInScreenCoords: globalRect, screen: targetScreen) {
-            stitcher.initialize(with: initialCG, initialSize: selectionRect.size)
-        } else if let initial = generateBaseCroppedImage() {
+        var initialCG = ScreenCapture.captureCGImage(rectInScreenCoords: globalRect, screen: targetScreen)
+        if initialCG == nil, let initial = generateBaseCroppedImage() {
             var r = NSRect(origin: .zero, size: initial.size)
-            if let cg = initial.cgImage(forProposedRect: &r, context: nil, hints: nil) {
-                stitcher.initialize(with: cg, initialSize: selectionRect.size)
-            }
+            initialCG = initial.cgImage(forProposedRect: &r, context: nil, hints: nil)
         }
+
+        if let cg = initialCG {
+            stitcher.initialize(with: cg, initialSize: selectionRect.size)
+        }
+
         setupScrollingMonitors()
         ToastController.shared.show(
             message: "已开启长截图：在选框内滚动页面拼接，点击对勾完成，按 Esc 或叉号直接退出",
@@ -1178,7 +1188,13 @@ final class SelectionView: NSView {
         let previewHeight: CGFloat = min(bounds.height - 60, max(380, selectionRect.height * 1.5))
 
         let fitsOnLeft = (selectionRect.minX >= previewWidth + 24)
-        let x: CGFloat = fitsOnLeft ? (selectionRect.minX - previewWidth - 16) : (selectionRect.maxX + 16)
+        var x: CGFloat = fitsOnLeft ? (selectionRect.minX - previewWidth - 16) : (selectionRect.maxX + 16)
+        if x + previewWidth > bounds.width - 16 {
+            x = bounds.width - previewWidth - 16
+        }
+        if x < 16 {
+            x = 16
+        }
         let y: CGFloat = max(20, min(bounds.height - previewHeight - 20, selectionRect.midY - previewHeight / 2))
         return NSRect(x: x, y: y, width: previewWidth, height: previewHeight)
     }
@@ -1220,6 +1236,15 @@ final class SelectionView: NSView {
         border.lineWidth = 1.0
         border.stroke()
 
+        // Top Header Title
+        let headerText = "长截图预览"
+        let headerAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+            .foregroundColor: NSColor(white: 0.25, alpha: 1.0)
+        ]
+        let hSize = headerText.size(withAttributes: headerAttrs)
+        headerText.draw(at: NSPoint(x: r.minX + 10, y: r.maxY - hSize.height - 8), withAttributes: headerAttrs)
+
         // Render Stitched Image inside Card
         if let img = stitchedLongImage {
             NSGraphicsContext.saveGraphicsState()
@@ -1227,28 +1252,40 @@ final class SelectionView: NSView {
 
             let imgSize = img.size
             if imgSize.width > 0 && imgSize.height > 0 {
-                let innerWidth = r.width - 12
-                let innerHeight = r.height - 68
+                let innerWidth = r.width - 16
+                let innerHeight = r.height - 94
                 let scale = min(innerWidth / imgSize.width, innerHeight / imgSize.height)
-                let drawWidth = imgSize.width * scale
-                let drawHeight = imgSize.height * scale
+                let drawWidth = (imgSize.width * scale).rounded()
+                let drawHeight = (imgSize.height * scale).rounded()
                 let drawRect = NSRect(
-                    x: r.midX - drawWidth / 2,
-                    y: r.maxY - drawHeight - 6,
+                    x: (r.midX - drawWidth / 2).rounded(),
+                    y: (r.maxY - 28 - drawHeight).rounded(),
                     width: drawWidth,
                     height: drawHeight
                 )
+
+                // Background canvas behind image
+                NSColor(white: 0.95, alpha: 1.0).setFill()
+                NSBezierPath(rect: drawRect).fill()
+
                 img.draw(in: drawRect, from: NSRect(origin: .zero, size: imgSize), operation: .sourceOver, fraction: 1.0)
+
+                // Subtle border around image
+                NSColor(white: 0.80, alpha: 1.0).setStroke()
+                let imgBorder = NSBezierPath(rect: drawRect)
+                imgBorder.lineWidth = 1.0
+                imgBorder.stroke()
             }
             NSGraphicsContext.restoreGraphicsState()
 
-            // Realtime preview badge showing height: "长图实时预览 • \(Int(img.size.height)) px"
+            // Realtime preview badge showing height: "长图高度: \(pixelH) px"
             let badgeRect = NSRect(x: r.minX + 6, y: r.minY + 36, width: r.width - 12, height: 20)
             NSColor(white: 0.15, alpha: 0.82).setFill()
             let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 4, yRadius: 4)
             badgePath.fill()
 
-            let badgeText = "长图高度: \(Int(img.size.height)) px"
+            let pixelH = stitchedLongCG?.height ?? Int(img.size.height)
+            let badgeText = "长图高度: \(pixelH) px"
             let attrs: [NSAttributedString.Key: Any] = [
                 .font: NSFont.systemFont(ofSize: 9.5, weight: .semibold),
                 .foregroundColor: NSColor.white
@@ -1258,39 +1295,47 @@ final class SelectionView: NSView {
                 at: NSPoint(x: badgeRect.midX - textSize.width / 2, y: badgeRect.midY - textSize.height / 2),
                 withAttributes: attrs
             )
-
-            // Cancel Button (Red/Dark)
-            let cancelRect = scrollingCancelButtonRect()
-            NSColor(srgbRed: 0.90, green: 0.28, blue: 0.28, alpha: 0.95).setFill()
-            let cancelPath = NSBezierPath(roundedRect: cancelRect, xRadius: 5, yRadius: 5)
-            cancelPath.fill()
-            let cancelText = "✖ 退出"
-            let cancelAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 11, weight: .bold),
-                .foregroundColor: NSColor.white
+        } else {
+            let msg = "正在捕获初始选区..."
+            let attrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11, weight: .regular),
+                .foregroundColor: NSColor.gray
             ]
-            let cSize = cancelText.size(withAttributes: cancelAttrs)
-            cancelText.draw(
-                at: NSPoint(x: cancelRect.midX - cSize.width / 2, y: cancelRect.midY - cSize.height / 2),
-                withAttributes: cancelAttrs
-            )
-
-            // Done Button (Blue)
-            let doneRect = scrollingDoneButtonRect()
-            NSColor(srgbRed: 0.12, green: 0.53, blue: 0.98, alpha: 1.0).setFill()
-            let donePath = NSBezierPath(roundedRect: doneRect, xRadius: 5, yRadius: 5)
-            donePath.fill()
-            let doneText = "✔ 完成"
-            let doneAttrs: [NSAttributedString.Key: Any] = [
-                .font: NSFont.systemFont(ofSize: 11, weight: .bold),
-                .foregroundColor: NSColor.white
-            ]
-            let dSize = doneText.size(withAttributes: doneAttrs)
-            doneText.draw(
-                at: NSPoint(x: doneRect.midX - dSize.width / 2, y: doneRect.midY - dSize.height / 2),
-                withAttributes: doneAttrs
-            )
+            let size = msg.size(withAttributes: attrs)
+            msg.draw(at: NSPoint(x: r.midX - size.width / 2, y: r.midY), withAttributes: attrs)
         }
+
+        // Cancel Button (Red/Dark)
+        let cancelRect = scrollingCancelButtonRect()
+        NSColor(srgbRed: 0.90, green: 0.28, blue: 0.28, alpha: 0.95).setFill()
+        let cancelPath = NSBezierPath(roundedRect: cancelRect, xRadius: 5, yRadius: 5)
+        cancelPath.fill()
+        let cancelText = "✖ 退出"
+        let cancelAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+            .foregroundColor: NSColor.white
+        ]
+        let cSize = cancelText.size(withAttributes: cancelAttrs)
+        cancelText.draw(
+            at: NSPoint(x: cancelRect.midX - cSize.width / 2, y: cancelRect.midY - cSize.height / 2),
+            withAttributes: cancelAttrs
+        )
+
+        // Done Button (Blue)
+        let doneRect = scrollingDoneButtonRect()
+        NSColor(srgbRed: 0.12, green: 0.53, blue: 0.98, alpha: 1.0).setFill()
+        let donePath = NSBezierPath(roundedRect: doneRect, xRadius: 5, yRadius: 5)
+        donePath.fill()
+        let doneText = "✔ 完成"
+        let doneAttrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: 11, weight: .bold),
+            .foregroundColor: NSColor.white
+        ]
+        let dSize = doneText.size(withAttributes: doneAttrs)
+        doneText.draw(
+            at: NSPoint(x: doneRect.midX - dSize.width / 2, y: doneRect.midY - dSize.height / 2),
+            withAttributes: doneAttrs
+        )
     }
 
     private func showToast(_ msg: String) {
