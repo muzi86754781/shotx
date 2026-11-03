@@ -59,12 +59,22 @@ final class SelectionView: NSView {
     private var currentTool: AnnotationTool? = nil
     private var currentColor: NSColor = .systemRed
     private var thickness: CGFloat = 4
-    private var annotations: [Annotation] = []
-    private var undoneAnnotations: [Annotation] = []
+    private let annotationManager = AnnotationManager()
+    private var annotations: [Annotation] {
+        get { annotationManager.annotations }
+        set { annotationManager.annotations = newValue }
+    }
+    private var undoneAnnotations: [Annotation] {
+        get { annotationManager.undoneAnnotations }
+        set { annotationManager.undoneAnnotations = newValue }
+    }
+    private var nextStepNumber: Int {
+        get { annotationManager.nextStepNumber }
+        set { annotationManager.nextStepNumber = newValue }
+    }
     private var inProgressAnnotation: Annotation?
     private var annotationDragStart: NSPoint?
     private var activeTextEditor: InlineTextEditor?
-    private var nextStepNumber: Int = 1
     private var hoveredButtonIndex: Int? = nil
     private var isDraggingCornerSlider: Bool = false
 
@@ -99,13 +109,12 @@ final class SelectionView: NSView {
 
     // Scrolling screenshot state (333.jpg)
     private var isScrollingMode: Bool = false
-    private var stitchedLongImage: NSImage?
-    private var lastStitchedCG: CGImage?
-    private var stitchedLongCG: CGImage?
-    private var isStitchingSlice: Bool = false
-    private var scrollingScrollMonitor: Any?
-    private var scrollingMouseMonitor: Any?
-    private var scrollingKeyMonitor: Any?
+    private let stitcher = ScrollStitcher()
+    private var stitchedLongImage: NSImage? { stitcher.stitchedLongImage }
+    private var stitchedLongCG: CGImage? { stitcher.stitchedLongCG }
+    private var scrollingScrollToken: EventMonitorToken?
+    private var scrollingMouseToken: EventMonitorToken?
+    private var scrollingKeyToken: EventMonitorToken?
     private var scrollingTimer: Timer?
     private var lastScrollCaptureTime: TimeInterval = 0
     private var cachedHUDImage: NSImage?
@@ -501,7 +510,8 @@ final class SelectionView: NSView {
             let minY = min(cornerAnchorPoint.y, clampedP.y)
             let maxY = max(cornerAnchorPoint.y, clampedP.y)
             if maxX - minX >= 10 && maxY - minY >= 10 {
-                selectionRect = NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+                let raw = NSRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+                selectionRect = PixelAlignment.alignedRect(raw, scale: targetScreen.backingScaleFactor)
                 needsDisplay = true
             }
             return
@@ -584,7 +594,7 @@ final class SelectionView: NSView {
                 startPoint = nil
             }
             if currentRect.width >= 5 && currentRect.height >= 5 {
-                selectionRect = currentRect
+                selectionRect = PixelAlignment.alignedRect(currentRect, scale: targetScreen.backingScaleFactor)
 
                 // If in OCR-only mode, directly finish without entering annotating
                 if isOCRMode {
@@ -910,23 +920,15 @@ final class SelectionView: NSView {
     }
 
     private func handleUndo() {
-        guard !annotations.isEmpty else { return }
-        let removed = annotations.removeLast()
-        undoneAnnotations.append(removed)
-        if case .step = removed.shape {
-            nextStepNumber = max(1, nextStepNumber - 1)
+        if annotationManager.undo() != nil {
+            needsDisplay = true
         }
-        needsDisplay = true
     }
 
     private func handleRedo() {
-        guard !undoneAnnotations.isEmpty else { return }
-        let restored = undoneAnnotations.removeLast()
-        annotations.append(restored)
-        if case .step = restored.shape {
-            nextStepNumber += 1
+        if annotationManager.redo() != nil {
+            needsDisplay = true
         }
-        needsDisplay = true
     }
 
     private func handleCancel() {
@@ -1034,23 +1036,12 @@ final class SelectionView: NSView {
 
     private func cleanupScrollingMode() {
         isScrollingMode = false
-        isStitchingSlice = false
-        lastStitchedCG = nil
-        stitchedLongCG = nil
+        stitcher.reset()
         scrollingTimer?.invalidate()
         scrollingTimer = nil
-        if let m = scrollingScrollMonitor {
-            NSEvent.removeMonitor(m)
-            scrollingScrollMonitor = nil
-        }
-        if let m = scrollingMouseMonitor {
-            NSEvent.removeMonitor(m)
-            scrollingMouseMonitor = nil
-        }
-        if let m = scrollingKeyMonitor {
-            NSEvent.removeMonitor(m)
-            scrollingKeyMonitor = nil
-        }
+        scrollingScrollToken = nil
+        scrollingMouseToken = nil
+        scrollingKeyToken = nil
         window?.ignoresMouseEvents = false
     }
 
@@ -1086,13 +1077,13 @@ final class SelectionView: NSView {
         }
 
         // 2. 全局滚轮监听：当底层 App 原生滚动时触发捕获与比对拼接
-        scrollingScrollMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.scrollWheel]) { [weak self] event in
+        scrollingScrollToken = EventMonitorToken(global: [.scrollWheel]) { [weak self] event in
             guard let self = self, self.isScrollingMode else { return }
             self.handleExternalScroll(event: event)
         }
 
         // 3. 全局鼠标移动与点击监听：无论焦点在哪个 App，点击面板按钮均直接响应
-        scrollingMouseMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged, .leftMouseDown]) { [weak self] event in
+        scrollingMouseToken = EventMonitorToken(global: [.mouseMoved, .leftMouseDragged, .leftMouseDown]) { [weak self] event in
             guard let self = self, self.isScrollingMode else { return }
             self.updateMouseIgnoreState()
             if event.type == .leftMouseDown {
@@ -1107,7 +1098,7 @@ final class SelectionView: NSView {
         }
 
         // 4. 全局键盘监听：无论哪个 App 处于激活状态，按 ESC 键均退出，按 Enter 键均完成
-        scrollingKeyMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.keyDown]) { [weak self] event in
+        scrollingKeyToken = EventMonitorToken(global: [.keyDown]) { [weak self] event in
             guard let self = self, self.isScrollingMode else { return }
             if event.keyCode == 53 { // ESC
                 DispatchQueue.main.async { self.handleCancel() }
@@ -1153,16 +1144,12 @@ final class SelectionView: NSView {
         // Scrolling screenshot (长截图) mode (333.jpg)
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         if let initialCG = ScreenCapture.captureCGImage(rectInScreenCoords: globalRect, screen: targetScreen) {
-            lastStitchedCG = initialCG
-            stitchedLongCG = initialCG
-            stitchedLongImage = NSImage(cgImage: initialCG, size: selectionRect.size)
+            stitcher.initialize(with: initialCG, initialSize: selectionRect.size)
         } else if let initial = generateBaseCroppedImage() {
             var r = NSRect(origin: .zero, size: initial.size)
             if let cg = initial.cgImage(forProposedRect: &r, context: nil, hints: nil) {
-                lastStitchedCG = cg
-                stitchedLongCG = cg
+                stitcher.initialize(with: cg, initialSize: selectionRect.size)
             }
-            stitchedLongImage = initial
         }
         setupScrollingMonitors()
         ToastController.shared.show(
@@ -1176,185 +1163,18 @@ final class SelectionView: NSView {
     }
 
     private func captureAndStitchSlice(deltaY: CGFloat) {
-        if isStitchingSlice { return }
-        isStitchingSlice = true
-        defer { isStitchingSlice = false }
-
         if deltaY > 0.5 { return }
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         guard let freshCG = ScreenCapture.captureCGImage(rectInScreenCoords: globalRect, screen: targetScreen) else { return }
 
-        guard let baseCG = lastStitchedCG, let currentLong = stitchedLongCG else {
-            self.lastStitchedCG = freshCG
-            self.stitchedLongCG = freshCG
-            self.stitchedLongImage = NSImage(cgImage: freshCG, size: selectionRect.size)
-            needsDisplay = true
-            return
-        }
-
-        if currentLong.height >= 32000 {
+        let result = stitcher.appendSlice(freshCG: freshCG, selectionSize: selectionRect.size)
+        if result.reachedLimit {
             ToastController.shared.show(message: "已达长截图最大高度限制 (32000px)", icon: "exclamationmark.triangle", tint: .systemOrange, duration: 2.0)
             return
         }
-
-        let (hasMovement, S) = detectScrollMovement(baseCG: baseCG, freshCG: freshCG)
-        guard hasMovement, S >= 3 else { return }
-
-        // The newly revealed bottom slice is rows (freshCG.height - S) to freshCG.height
-        let sliceRect = CGRect(x: 0, y: freshCG.height - S, width: freshCG.width, height: S)
-        guard let sliceCG = freshCG.cropping(to: sliceRect) else { return }
-
-        let newH = currentLong.height + S
-        let cs = CGColorSpaceCreateDeviceRGB()
-        guard let ctx = CGContext(
-            data: nil,
-            width: currentLong.width,
-            height: newH,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: cs,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return }
-
-        // In CGContext (0,0 is bottom-left):
-        // Upper/earlier content at y = S, newest bottom slice at y = 0
-        ctx.draw(currentLong, in: CGRect(x: 0, y: S, width: currentLong.width, height: currentLong.height))
-        ctx.draw(sliceCG, in: CGRect(x: 0, y: 0, width: sliceCG.width, height: S))
-        guard let newCompositeCG = ctx.makeImage() else { return }
-
-        self.stitchedLongCG = newCompositeCG
-        self.lastStitchedCG = freshCG
-
-        let scale = CGFloat(newH) / CGFloat(freshCG.height)
-        let newPointSize = NSSize(width: selectionRect.width, height: selectionRect.height * scale)
-        self.stitchedLongImage = NSImage(cgImage: newCompositeCG, size: newPointSize)
-        needsDisplay = true
-    }
-
-    private func detectScrollMovement(baseCG: CGImage, freshCG: CGImage) -> (hasMovement: Bool, deltaY: Int) {
-        let w = baseCG.width
-        let h = baseCG.height
-        guard w == freshCG.width, h == freshCG.height, h > 60, w > 40 else { return (false, 0) }
-
-        guard let bufA = getGrayscalePixelBuffer(cg: baseCG),
-              let bufB = getGrayscalePixelBuffer(cg: freshCG) else { return (false, 0) }
-
-        // 1. 横向宽幅 32 列采样：避开左右边距（各保留 16px 边距，杜绝垂直滚动条干扰）
-        let marginX = min(20, w / 10)
-        let sampleWidth = w - 2 * marginX
-        guard sampleWidth > 32 else { return (false, 0) }
-        var sampleCols: [Int] = []
-        let colStep = sampleWidth / 32
-        for i in 0..<32 {
-            sampleCols.append(marginX + i * colStep)
+        if result.didStitch {
+            needsDisplay = true
         }
-
-        // 2. 锚定带（Anchor）：选取 baseCG 底部上方一段具有明确特征的内容条带
-        let anchorH = min(56, h / 3)
-        let marginBottom = 8
-        var anchorTop = h - marginBottom - anchorH
-
-        // 寻找下半区对比度最强的文本行作为锚点
-        var bestVar = 0.0
-        var bestTop = anchorTop
-        let searchMinTop = max(10, h / 2)
-        for candTop in stride(from: anchorTop, through: searchMinTop, by: -10) {
-            var sum = 0.0
-            var sumSq = 0.0
-            var cnt = 0
-            for r in stride(from: 0, to: anchorH, by: 4) {
-                let row = (candTop + r) * w
-                for c in sampleCols {
-                    let val = Double(bufA[row + c])
-                    sum += val
-                    sumSq += val * val
-                    cnt += 1
-                }
-            }
-            if cnt > 0 {
-                let mean = sum / Double(cnt)
-                let variance = (sumSq / Double(cnt)) - (mean * mean)
-                if variance > bestVar {
-                    bestVar = variance
-                    bestTop = candTop
-                }
-            }
-        }
-
-        // 纯平坦区域（纯白或纯色背景）方差极小，不作盲目误匹配
-        if bestVar < 2.0 {
-            return (false, 0)
-        }
-        anchorTop = bestTop
-
-        // 3. 快速零位移检测（静止时直接返回，彻底消除静态重复行）
-        var zeroDiff = 0.0
-        var zeroCount = 0
-        for r in stride(from: 0, to: anchorH, by: 2) {
-            let rowA = (anchorTop + r) * w
-            for c in sampleCols {
-                zeroDiff += abs(Double(bufA[rowA + c]) - Double(bufB[rowA + c]))
-                zeroCount += 1
-            }
-        }
-        if zeroCount > 0 && (zeroDiff / Double(zeroCount)) < 1.2 {
-            return (false, 0)
-        }
-
-        // 4. 在 freshCG 中向上搜索该 Anchor 的匹配位置
-        let maxS = min(Int(CGFloat(h) * 0.45), anchorTop)
-        guard maxS >= 3 else { return (false, 0) }
-
-        var bestS = 0
-        var bestErr = Double.greatestFiniteMagnitude
-
-        for S in 3...maxS {
-            let y = anchorTop - S
-            guard y >= 0 else { break }
-
-            var diff = 0.0
-            var count = 0
-            for r in stride(from: 0, to: anchorH, by: 2) {
-                let rowA = (anchorTop + r) * w
-                let rowB = (y + r) * w
-                for c in sampleCols {
-                    diff += abs(Double(bufA[rowA + c]) - Double(bufB[rowB + c]))
-                    count += 1
-                }
-            }
-            if count > 0 {
-                let err = diff / Double(count)
-                if err < bestErr {
-                    bestErr = err
-                    bestS = S
-                }
-            }
-        }
-
-        // 5. 严格像素级吻合判定：平均误差小于 3.5 级灰度且位移 >= 3px
-        if bestErr < 3.5 && bestS >= 3 {
-            return (true, bestS)
-        }
-        return (false, 0)
-    }
-
-    private func getGrayscalePixelBuffer(cg: CGImage) -> [UInt8]? {
-        let w = cg.width
-        let h = cg.height
-        var buffer = [UInt8](repeating: 0, count: w * h)
-        let colorSpace = CGColorSpaceCreateDeviceGray()
-        guard let ctx = CGContext(
-            data: &buffer,
-            width: w,
-            height: h,
-            bitsPerComponent: 8,
-            bytesPerRow: w,
-            space: colorSpace,
-            bitmapInfo: CGImageAlphaInfo.none.rawValue
-        ) else { return nil }
-        ctx.interpolationQuality = .none
-        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
-        return buffer
     }
 
     private func scrollingPreviewPanelRect() -> NSRect {
@@ -1534,10 +1354,10 @@ final class SelectionView: NSView {
         guard selectionRect.width > 2, selectionRect.height > 2, let snapshot = screenSnapshot else { return nil }
         let scaleX = bounds.width > 0 ? (CGFloat(snapshot.width) / bounds.width) : (window?.backingScaleFactor ?? 2.0)
         let scaleY = bounds.height > 0 ? (CGFloat(snapshot.height) / bounds.height) : (window?.backingScaleFactor ?? 2.0)
-        let pixelX = selectionRect.minX * scaleX
-        let pixelY = (bounds.height - selectionRect.maxY) * scaleY
-        let pixelW = selectionRect.width * scaleX
-        let pixelH = selectionRect.height * scaleY
+        let pixelX = (selectionRect.minX * scaleX).rounded()
+        let pixelY = ((bounds.height - selectionRect.maxY) * scaleY).rounded()
+        let pixelW = (selectionRect.width * scaleX).rounded()
+        let pixelH = (selectionRect.height * scaleY).rounded()
         let cropRect = CGRect(x: pixelX, y: pixelY, width: pixelW, height: pixelH)
         let fullRect = CGRect(x: 0, y: 0, width: snapshot.width, height: snapshot.height)
         let clampedRect = cropRect.intersection(fullRect)

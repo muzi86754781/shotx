@@ -330,7 +330,7 @@ final class TranslationController {
     static let shared = TranslationController()
     private(set) var window: FloatingKeyPanel?
     private var hosting: FirstMouseHostingView<TranslationWindowView>?
-    private var outsideClickMonitor: Any?
+    private var outsideClickToken: EventMonitorToken?
     let viewModel = TranslationViewModel()
 
     func show(text: String = "") {
@@ -430,7 +430,7 @@ final class TranslationController {
     private func setupOutsideClickMonitor() {
         teardownOutsideClickMonitor()
         guard !viewModel.isPinned else { return }
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        outsideClickToken = EventMonitorToken(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self = self, let win = self.window, !self.viewModel.isPinned else { return }
             let loc = NSEvent.mouseLocation
             // 点击翻译窗口外部区域直接关闭窗口
@@ -443,10 +443,7 @@ final class TranslationController {
     }
 
     private func teardownOutsideClickMonitor() {
-        if let m = outsideClickMonitor {
-            NSEvent.removeMonitor(m)
-            outsideClickMonitor = nil
-        }
+        outsideClickToken = nil
     }
 
     func dismiss() {

@@ -9,7 +9,7 @@ final class AllInOneController {
     static let shared = AllInOneController()
 
     private var panel: NSPanel?
-    private var clickOutsideMonitor: Any?
+    private var clickOutsideToken: EventMonitorToken?
 
     func show(onAction: @escaping (AllInOneAction) -> Void) {
         dismiss()
@@ -45,16 +45,13 @@ final class AllInOneController {
         CaptureExclusions.register(panel)
         self.panel = panel
 
-        clickOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        clickOutsideToken = EventMonitorToken(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.dismiss()
         }
     }
 
     func dismiss() {
-        if let monitor = clickOutsideMonitor {
-            NSEvent.removeMonitor(monitor)
-            clickOutsideMonitor = nil
-        }
+        clickOutsideToken = nil
         closePanel(&panel)
     }
 

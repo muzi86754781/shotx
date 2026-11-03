@@ -27,7 +27,7 @@ final class ShortcutRecorderView: NSView {
             if isRecording { startMonitor() } else { stopMonitor() }
         }
     }
-    private var monitor: Any?
+    private var monitorToken: EventMonitorToken?
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { true }
@@ -44,7 +44,7 @@ final class ShortcutRecorderView: NSView {
     }
 
     private func startMonitor() {
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged]) { [weak self] event in
+        monitorToken = EventMonitorToken(local: [.keyDown, .flagsChanged]) { [weak self] event in
             guard let self = self, self.isRecording else { return event }
             if event.type == .keyDown {
                 if event.keyCode == UInt16(kVK_Escape) {
@@ -62,6 +62,15 @@ final class ShortcutRecorderView: NSView {
                     return nil
                 }
                 let captured = Shortcut(keyCode: UInt32(event.keyCode), modifiers: carbonMods)
+                if let conflict = ShortcutConflictChecker.check(captured) {
+                    NSSound.beep()
+                    ToastController.shared.show(
+                        message: "\(conflict.message)，建议更换避免冲突",
+                        icon: "exclamationmark.triangle",
+                        tint: .systemOrange,
+                        duration: 3.5
+                    )
+                }
                 self.displayShortcut = captured
                 self.onCapture?(captured)
                 self.isRecording = false
@@ -72,7 +81,7 @@ final class ShortcutRecorderView: NSView {
     }
 
     private func stopMonitor() {
-        if let m = monitor { NSEvent.removeMonitor(m); monitor = nil }
+        monitorToken = nil
     }
 
     deinit { stopMonitor() }
@@ -107,5 +116,15 @@ final class ShortcutRecorderView: NSView {
         let origin = NSPoint(x: (bounds.width - size.width) / 2,
                              y: (bounds.height - size.height) / 2)
         text.draw(at: origin, withAttributes: attrs)
+
+        // 快捷键冲突预警小图标
+        if !isRecording && !displayShortcut.isEmpty && ShortcutConflictChecker.check(displayShortcut) != nil {
+            let warnIcon = "⚠️"
+            let warnAttrs: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 11)
+            ]
+            let warnSize = warnIcon.size(withAttributes: warnAttrs)
+            warnIcon.draw(at: NSPoint(x: bounds.maxX - warnSize.width - 6, y: (bounds.height - warnSize.height) / 2), withAttributes: warnAttrs)
+        }
     }
 }

@@ -9,7 +9,7 @@ import QuartzCore
 final class ClickHighlightWindow {
     private var window: NSWindow?
     private var view: ClickHighlightView?
-    private var eventMonitor: Any?
+    private var eventMonitorToken: EventMonitorToken?
 
     func show() {
         guard let screen = NSScreen.main else { return }
@@ -35,15 +35,14 @@ final class ClickHighlightWindow {
         window = w
         view = v
 
-        eventMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        eventMonitorToken = EventMonitorToken(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             let p = NSEvent.mouseLocation
             self?.view?.addRipple(atGlobal: p)
         }
     }
 
     func dismiss() {
-        if let m = eventMonitor { NSEvent.removeMonitor(m) }
-        eventMonitor = nil
+        eventMonitorToken = nil
         window?.contentView = nil
         window?.close()
         window = nil

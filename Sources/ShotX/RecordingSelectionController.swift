@@ -229,6 +229,12 @@ final class RecordingSelectionView: NSView {
         needsDisplay = true
     }
 
+    private func confirmSelection() {
+        let scale = window?.backingScaleFactor ?? 2.0
+        let aligned = PixelAlignment.alignedRect(currentRect, scale: scale)
+        onSelect?(aligned)
+    }
+
     override func mouseDown(with event: NSEvent) {
         let p = convert(event.locationInWindow, from: nil)
         mousePosition = p
@@ -236,7 +242,7 @@ final class RecordingSelectionView: NSView {
         if isBoxed {
             // 1. 检查点击确认按钮
             if confirmBtnRect().contains(p) {
-                onSelect?(currentRect)
+                confirmSelection()
                 return
             }
             // 2. 检查点击取消按钮
@@ -246,7 +252,7 @@ final class RecordingSelectionView: NSView {
             }
             // 3. 双击选区内部直接确认
             if event.clickCount == 2 && currentRect.contains(p) {
-                onSelect?(currentRect)
+                confirmSelection()
                 return
             }
             // 4. 检查是否点击 4 个角进行调整
@@ -355,7 +361,9 @@ final class RecordingSelectionView: NSView {
             return
         }
 
-        // 框选完成后进入锁定与4角可拖拽状态，不立即关闭窗口
+        // 框选完成后进行物理像素对齐，进入锁定与4角可拖拽状态
+        let scale = window?.backingScaleFactor ?? 2.0
+        currentRect = PixelAlignment.alignedRect(currentRect, scale: scale)
         isBoxed = true
         NSCursor.unhide()
     }
@@ -369,7 +377,7 @@ final class RecordingSelectionView: NSView {
             onCancel?()
         } else if event.keyCode == 36 || event.keyCode == 76 { // Return / Enter
             if isBoxed && currentRect.width >= 15 && currentRect.height >= 15 {
-                onSelect?(currentRect)
+                confirmSelection()
             }
         } else {
             super.keyDown(with: event)

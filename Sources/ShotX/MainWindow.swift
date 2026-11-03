@@ -1484,7 +1484,7 @@ struct SettingsView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         HStack(alignment: .top) {
                             VStack(alignment: .leading, spacing: 4) {
-                                Text("ShotX  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.19")")
+                                Text("ShotX  v\(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.9.20")")
                                     .font(.system(size: 14, weight: .bold))
                                 HStack(spacing: 8) {
                                     Text("开发者:")
@@ -1573,10 +1573,24 @@ struct SettingsView: View {
         binding: Binding<Shortcut>,
         defaultVal: Shortcut
     ) -> some View {
-        HStack(alignment: .center, spacing: 14) {
+        let conflict = ShortcutConflictChecker.check(binding.wrappedValue)
+        return HStack(alignment: .center, spacing: 14) {
             VStack(alignment: .leading, spacing: 3) {
-                Text(title)
-                    .font(.system(size: 14.5, weight: .medium))
+                HStack(spacing: 6) {
+                    Text(title)
+                        .font(.system(size: 14.5, weight: .medium))
+                    if let c = conflict {
+                        HStack(spacing: 3) {
+                            Image(systemName: "exclamationmark.triangle.fill")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.orange)
+                            Text(c.systemFeature + "冲突")
+                                .font(.system(size: 11))
+                                .foregroundStyle(.orange)
+                        }
+                        .help(c.message)
+                    }
+                }
                 Text(desc)
                     .font(.system(size: 12.5))
                     .foregroundStyle(.secondary)

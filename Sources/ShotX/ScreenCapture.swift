@@ -71,13 +71,16 @@ enum ScreenCapture {
     ) -> CGImage? {
         guard let primary = NSScreen.screens.first else { return nil }
 
+        // 对齐物理像素网格，避免多屏幕/高低分屏跨 DPI 时的 1px 亚像素模糊
+        let aligned = PixelAlignment.alignedRect(rect, scale: screen.backingScaleFactor)
+
         // CGWindowListCreateImage expects top-left origin on the primary screen.
-        let flippedY = primary.frame.height - rect.origin.y - rect.height
+        let flippedY = primary.frame.height - aligned.origin.y - aligned.height
         let captureRect = CGRect(
-            x: rect.origin.x,
+            x: aligned.origin.x,
             y: flippedY,
-            width: rect.width,
-            height: rect.height
+            width: aligned.width,
+            height: aligned.height
         )
 
         return cgImage(of: captureRect, requiresChromeExclusion: requiresChromeExclusion)

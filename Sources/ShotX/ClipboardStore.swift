@@ -214,7 +214,7 @@ final class FloatingKeyPanel: NSPanel {
 final class ClipboardHistoryController {
     static let shared = ClipboardHistoryController()
     private var panel: FloatingKeyPanel?
-    private var outsideClickMonitor: Any?
+    private var outsideClickToken: EventMonitorToken?
     var previousApp: NSRunningApplication?
     var isPinned: Bool = true {
         didSet {
@@ -307,7 +307,7 @@ final class ClipboardHistoryController {
     private func setupOutsideClickMonitor() {
         teardownOutsideClickMonitor()
         guard !isPinned else { return }
-        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        outsideClickToken = EventMonitorToken(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             guard let self = self, let p = self.panel, !self.isPinned else { return }
             let loc = NSEvent.mouseLocation
             if !p.frame.contains(loc) {
@@ -319,10 +319,7 @@ final class ClipboardHistoryController {
     }
 
     private func teardownOutsideClickMonitor() {
-        if let m = outsideClickMonitor {
-            NSEvent.removeMonitor(m)
-            outsideClickMonitor = nil
-        }
+        outsideClickToken = nil
     }
 
     func dismiss() {

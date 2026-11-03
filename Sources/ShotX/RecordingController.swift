@@ -7,9 +7,9 @@ final class RecordingController {
 
     private var selectionController: RecordingSelectionController?
     private var optionsPanel: NSPanel?
-    private var optionsOutsideMonitor: Any?
-    private var optionsKeyMonitorLocal: Any?
-    private var optionsKeyMonitorGlobal: Any?
+    private var optionsOutsideToken: EventMonitorToken?
+    private var optionsKeyLocalToken: EventMonitorToken?
+    private var optionsKeyGlobalToken: EventMonitorToken?
 
     private var stopPanel: NSPanel?
     private var stopState = RecordingStopState()
@@ -95,11 +95,11 @@ final class RecordingController {
         CaptureExclusions.register(panel)
         optionsPanel = panel
 
-        optionsOutsideMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+        optionsOutsideToken = EventMonitorToken(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
             self?.handleOutsideClick(at: NSEvent.mouseLocation)
         }
 
-        optionsKeyMonitorLocal = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        optionsKeyLocalToken = EventMonitorToken(local: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape
                 self?.cancelOptions()
                 return nil
@@ -107,7 +107,7 @@ final class RecordingController {
             return event
         }
 
-        optionsKeyMonitorGlobal = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
+        optionsKeyGlobalToken = EventMonitorToken(global: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape
                 DispatchQueue.main.async {
                     self?.cancelOptions()
@@ -155,18 +155,9 @@ final class RecordingController {
     }
 
     private func tearDownOptionsPanel() {
-        if let monitor = optionsOutsideMonitor {
-            NSEvent.removeMonitor(monitor)
-            optionsOutsideMonitor = nil
-        }
-        if let monitor = optionsKeyMonitorLocal {
-            NSEvent.removeMonitor(monitor)
-            optionsKeyMonitorLocal = nil
-        }
-        if let monitor = optionsKeyMonitorGlobal {
-            NSEvent.removeMonitor(monitor)
-            optionsKeyMonitorGlobal = nil
-        }
+        optionsOutsideToken = nil
+        optionsKeyLocalToken = nil
+        optionsKeyGlobalToken = nil
         closePanel(&optionsPanel)
     }
 
