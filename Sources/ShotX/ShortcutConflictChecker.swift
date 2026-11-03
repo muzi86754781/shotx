@@ -93,3 +93,4 @@ enum ShortcutConflictChecker {
         return nil
     }
 }
+

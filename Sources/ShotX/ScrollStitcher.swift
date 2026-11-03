@@ -1,12 +1,13 @@
 import Cocoa
 import CoreGraphics
 
-/// 长截图核心拼接引擎：负责滚动位图的对比度采样、位移检测与垂直无缝拼接
+/// 长截图核心拼接引擎：负责滚动位图的对比度采样、双向位移检测、无缝拼接与平滑回滚
 final class ScrollStitcher {
     private(set) var stitchedLongCG: CGImage?
     private(set) var stitchedLongImage: NSImage?
     private(set) var lastStitchedCG: CGImage?
     private(set) var isStitching: Bool = false
+    private(set) var initialCGHeight: Int = 0
 
     /// 最大高度限制（32000px），避免超出 CoreGraphics / GPU 位图显存极限
     static let maxHeightLimit: Int = 32000
@@ -15,6 +16,7 @@ final class ScrollStitcher {
         lastStitchedCG = nil
         stitchedLongCG = nil
         stitchedLongImage = nil
+        initialCGHeight = 0
         isStitching = false
     }
 
@@ -22,6 +24,7 @@ final class ScrollStitcher {
         lastStitchedCG = initialCG
         stitchedLongCG = initialCG
         stitchedLongImage = NSImage(cgImage: initialCG, size: initialSize)
+        initialCGHeight = initialCG.height
         isStitching = false
     }
 
@@ -40,38 +43,63 @@ final class ScrollStitcher {
         }
 
         let (hasMovement, S) = detectScrollMovement(baseCG: baseCG, freshCG: freshCG)
-        guard hasMovement, S >= 3 else { return (false, false) }
+        guard hasMovement, abs(S) >= 3 else { return (false, false) }
 
-        // 新增露出的底部条带为 freshCG 的 [height - S, height]
-        let sliceRect = CGRect(x: 0, y: freshCG.height - S, width: freshCG.width, height: S)
-        guard let sliceCG = freshCG.cropping(to: sliceRect) else { return (false, false) }
+        if S >= 3 {
+            // ================= 顺向向下滚动拼接 =================
+            // 新增露出的底部条带为 freshCG 的 [height - S, height]
+            let sliceRect = CGRect(x: 0, y: freshCG.height - S, width: freshCG.width, height: S)
+            guard let sliceCG = freshCG.cropping(to: sliceRect) else { return (false, false) }
 
-        let newH = currentLong.height + S
-        let cs = CGColorSpaceCreateDeviceRGB()
-        guard let ctx = CGContext(
-            data: nil,
-            width: currentLong.width,
-            height: newH,
-            bitsPerComponent: 8,
-            bytesPerRow: 0,
-            space: cs,
-            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
-        ) else { return (false, false) }
+            let newH = currentLong.height + S
+            let cs = CGColorSpaceCreateDeviceRGB()
+            guard let ctx = CGContext(
+                data: nil,
+                width: currentLong.width,
+                height: newH,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: cs,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ) else { return (false, false) }
 
-        // CGContext 坐标系（原点在左下角）：
-        // 旧内容上移至 y = S，新条带绘制在底部 y = 0
-        ctx.draw(currentLong, in: CGRect(x: 0, y: S, width: currentLong.width, height: currentLong.height))
-        ctx.draw(sliceCG, in: CGRect(x: 0, y: 0, width: sliceCG.width, height: S))
-        guard let newCompositeCG = ctx.makeImage() else { return (false, false) }
+            // CGContext 坐标系（原点在左下角）：
+            // 旧内容上移至 y = S，新条带绘制在底部 y = 0
+            ctx.draw(currentLong, in: CGRect(x: 0, y: S, width: currentLong.width, height: currentLong.height))
+            ctx.draw(sliceCG, in: CGRect(x: 0, y: 0, width: sliceCG.width, height: S))
+            guard let newCompositeCG = ctx.makeImage() else { return (false, false) }
 
-        self.stitchedLongCG = newCompositeCG
-        self.lastStitchedCG = freshCG
+            self.stitchedLongCG = newCompositeCG
+            self.lastStitchedCG = freshCG
 
-        let scale = CGFloat(newH) / CGFloat(freshCG.height)
-        let newPointSize = NSSize(width: selectionSize.width, height: selectionSize.height * scale)
-        self.stitchedLongImage = NSImage(cgImage: newCompositeCG, size: newPointSize)
+            let scale = CGFloat(newH) / CGFloat(freshCG.height)
+            let newPointSize = NSSize(width: selectionSize.width, height: selectionSize.height * scale)
+            self.stitchedLongImage = NSImage(cgImage: newCompositeCG, size: newPointSize)
 
-        return (true, false)
+            return (true, false)
+        } else if S <= -3 {
+            // ================= 反向向上回滚处理（Rollback） =================
+            // 用户向上滚动，视口回退；同步裁减长截图底部多余部分，使视口与 lastStitchedCG 保持 100% 紧密同步
+            let rollback = -S
+            self.lastStitchedCG = freshCG
+
+            let minH = initialCGHeight > 0 ? initialCGHeight : freshCG.height
+            if currentLong.height > minH {
+                let newH = max(minH, currentLong.height - rollback)
+                // 在 CGImage 坐标系中（(0,0) 为左上角），从顶部向下保留 newH 高度，裁掉底部多余部分
+                let keepRect = CGRect(x: 0, y: 0, width: currentLong.width, height: newH)
+                if let trimmedCG = currentLong.cropping(to: keepRect) {
+                    self.stitchedLongCG = trimmedCG
+                    let scale = CGFloat(newH) / CGFloat(freshCG.height)
+                    let newPointSize = NSSize(width: selectionSize.width, height: selectionSize.height * scale)
+                    self.stitchedLongImage = NSImage(cgImage: trimmedCG, size: newPointSize)
+                    return (true, false)
+                }
+            }
+            return (false, false)
+        }
+
+        return (false, false)
     }
 
     private func detectScrollMovement(baseCG: CGImage, freshCG: CGImage) -> (hasMovement: Bool, deltaY: Int) {
@@ -92,16 +120,15 @@ final class ScrollStitcher {
             sampleCols.append(marginX + i * colStep)
         }
 
-        // 2. 锚定带（Anchor）：选取 baseCG 底部上方一段具有明确特征的内容条带
-        let anchorH = min(56, h / 3)
-        let marginBottom = 8
-        var anchorTop = h - marginBottom - anchorH
+        // 2. 锚定带（Anchor）：选取 baseCG 中部对比度最强的内容条带作为锚点（避开固定顶栏和底栏）
+        let anchorH = min(56, max(36, h / 6))
+        let searchMinTop = max(10, Int(Double(h) * 0.25))
+        let searchMaxTop = min(h - anchorH - 10, Int(Double(h) * 0.70))
 
-        // 寻找下半区对比度最强的文本行作为锚点
         var bestVar = 0.0
-        var bestTop = anchorTop
-        let searchMinTop = max(10, h / 2)
-        for candTop in stride(from: anchorTop, through: searchMinTop, by: -10) {
+        var bestTop = searchMaxTop
+
+        for candTop in stride(from: searchMaxTop, through: searchMinTop, by: -6) {
             var sum = 0.0
             var sumSq = 0.0
             var cnt = 0
@@ -128,13 +155,12 @@ final class ScrollStitcher {
         if bestVar < 2.0 {
             return (false, 0)
         }
-        anchorTop = bestTop
 
         // 3. 快速零位移检测（静止时直接返回，彻底消除静态重复行）
         var zeroDiff = 0.0
         var zeroCount = 0
         for r in stride(from: 0, to: anchorH, by: 2) {
-            let rowA = (anchorTop + r) * w
+            let rowA = (bestTop + r) * w
             for c in sampleCols {
                 zeroDiff += abs(Double(bufA[rowA + c]) - Double(bufB[rowA + c]))
                 zeroCount += 1
@@ -144,38 +170,68 @@ final class ScrollStitcher {
             return (false, 0)
         }
 
-        // 4. 在 freshCG 中向上搜索该 Anchor 的匹配位置
-        let maxS = min(Int(CGFloat(h) * 0.45), anchorTop)
-        guard maxS >= 3 else { return (false, 0) }
+        // 4. 双向搜索：在 freshCG 中同时搜索顺向下滚（S > 0）与反向上滚（S < 0）
+        let maxDown = min(Int(CGFloat(h) * 0.65), bestTop)
+        let maxUp = min(Int(CGFloat(h) * 0.65), h - bestTop - anchorH)
+        guard maxDown >= 3 || maxUp >= 3 else { return (false, 0) }
 
         var bestS = 0
         var bestErr = Double.greatestFiniteMagnitude
 
-        for S in 3...maxS {
-            let y = anchorTop - S
-            guard y >= 0 else { break }
+        // 4.1 优先搜索顺向下滚 S in 3...maxDown
+        if maxDown >= 3 {
+            for S in 3...maxDown {
+                let y = bestTop - S
+                guard y >= 0 else { break }
 
-            var diff = 0.0
-            var count = 0
-            for r in stride(from: 0, to: anchorH, by: 2) {
-                let rowA = (anchorTop + r) * w
-                let rowB = (y + r) * w
-                for c in sampleCols {
-                    diff += abs(Double(bufA[rowA + c]) - Double(bufB[rowB + c]))
-                    count += 1
+                var diff = 0.0
+                var count = 0
+                for r in stride(from: 0, to: anchorH, by: 2) {
+                    let rowA = (bestTop + r) * w
+                    let rowB = (y + r) * w
+                    for c in sampleCols {
+                        diff += abs(Double(bufA[rowA + c]) - Double(bufB[rowB + c]))
+                        count += 1
+                    }
                 }
-            }
-            if count > 0 {
-                let err = diff / Double(count)
-                if err < bestErr {
-                    bestErr = err
-                    bestS = S
+                if count > 0 {
+                    let err = diff / Double(count)
+                    if err < bestErr {
+                        bestErr = err
+                        bestS = S
+                    }
                 }
             }
         }
 
-        // 5. 严格像素级吻合判定：平均误差小于 3.5 级灰度且位移 >= 3px
-        if bestErr < 3.5 && bestS >= 3 {
+        // 4.2 若下滚未取得高吻合度（bestErr > 2.0），搜索反向上滚 S in 3...maxUp
+        if bestErr > 2.0 && maxUp >= 3 {
+            for S in 3...maxUp {
+                let y = bestTop + S
+                guard (y + anchorH) <= h else { break }
+
+                var diff = 0.0
+                var count = 0
+                for r in stride(from: 0, to: anchorH, by: 2) {
+                    let rowA = (bestTop + r) * w
+                    let rowB = (y + r) * w
+                    for c in sampleCols {
+                        diff += abs(Double(bufA[rowA + c]) - Double(bufB[rowB + c]))
+                        count += 1
+                    }
+                }
+                if count > 0 {
+                    let err = diff / Double(count)
+                    if err < bestErr {
+                        bestErr = err
+                        bestS = -S
+                    }
+                }
+            }
+        }
+
+        // 5. 严格像素级吻合判定：平均误差小于 3.5 级灰度且绝对位移 >= 3px
+        if bestErr < 3.5 && abs(bestS) >= 3 {
             return (true, bestS)
         }
         return (false, 0)

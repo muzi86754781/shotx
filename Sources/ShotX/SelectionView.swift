@@ -1109,30 +1109,26 @@ final class SelectionView: NSView {
     }
 
     private func handleExternalScroll(event: NSEvent) {
-        // 关键防护：如果用户反向回滚（Mac 触控板向下滑动 deltaY > 0.5），绝对不进行反向拼接
-        if event.scrollingDeltaY > 0.5 { return }
-
         let now = Date().timeIntervalSinceReferenceDate
-        guard now - lastScrollCaptureTime >= 0.07 else {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.08) { [weak self] in
-                self?.captureAndStitchSlice(deltaY: event.scrollingDeltaY)
+        guard now - lastScrollCaptureTime >= 0.04 else {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+                self?.captureAndStitchSlice()
             }
             return
         }
         lastScrollCaptureTime = now
         DispatchQueue.main.async { [weak self] in
-            self?.captureAndStitchSlice(deltaY: event.scrollingDeltaY)
+            self?.captureAndStitchSlice()
         }
     }
 
     override func scrollWheel(with event: NSEvent) {
         if isScrollingMode {
-            if event.scrollingDeltaY > 0.5 { return }
             let p = convert(event.locationInWindow, from: nil)
             if selectionRect.contains(p) {
                 updateMouseIgnoreState()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.06) { [weak self] in
-                    self?.captureAndStitchSlice(deltaY: event.scrollingDeltaY)
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { [weak self] in
+                    self?.captureAndStitchSlice()
                 }
                 return
             }
@@ -1162,8 +1158,7 @@ final class SelectionView: NSView {
         needsDisplay = true
     }
 
-    private func captureAndStitchSlice(deltaY: CGFloat) {
-        if deltaY > 0.5 { return }
+    private func captureAndStitchSlice() {
         let globalRect = selectionRect.offsetBy(dx: targetScreen.frame.origin.x, dy: targetScreen.frame.origin.y)
         guard let freshCG = ScreenCapture.captureCGImage(rectInScreenCoords: globalRect, screen: targetScreen) else { return }
 

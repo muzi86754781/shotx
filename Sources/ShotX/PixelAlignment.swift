@@ -53,3 +53,4 @@ enum PixelAlignment {
         return primaryScreen(for: rect).backingScaleFactor
     }
 }
+
