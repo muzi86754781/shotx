@@ -9,3 +9,4 @@ public enum OverlayMode
     Translate,      // 截图翻译 (框选后直接识别并弹出翻译窗)
     ColorPicker     // 拾色器 (全屏放大镜取色，点击或按 C 复制色值并退出)
 }
+

@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Net.Http;
 using System.Text.Json;
 using System.Windows;
+using MessageBox = System.Windows.MessageBox;
 
 namespace ShotX.Windows.Views;
 
@@ -58,3 +59,4 @@ public partial class AboutWindow : Window
         Close();
     }
 }
+

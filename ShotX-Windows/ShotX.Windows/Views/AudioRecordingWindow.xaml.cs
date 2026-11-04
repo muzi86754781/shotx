@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Windows;
 using System.Windows.Threading;
+using MessageBox = System.Windows.MessageBox;
 
 namespace ShotX.Windows.Views;
 
@@ -48,3 +49,4 @@ public partial class AudioRecordingWindow : Window
         MessageBox.Show($"录音完成！音频文件已保存至:\n{audioFile}", "ShotX 声音录制", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 }
+

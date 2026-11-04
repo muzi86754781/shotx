@@ -7,6 +7,8 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media.Imaging;
 using ShotX.Windows.Core;
+using MessageBox = System.Windows.MessageBox;
+using Clipboard = System.Windows.Clipboard;
 
 namespace ShotX.Windows.Views;
 
@@ -160,3 +162,4 @@ public partial class HistoryWindow : Window
         }
     }
 }
+

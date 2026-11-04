@@ -48,3 +48,4 @@ public partial class SupportAuthorWindow : Window
         Close();
     }
 }
+

@@ -40,3 +40,4 @@ public partial class CountdownWindow : Window
         }
     }
 }
+

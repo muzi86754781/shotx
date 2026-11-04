@@ -4,6 +4,7 @@ using System.Windows;
 using System.Windows.Input;
 using System.Windows.Threading;
 using ShotX.Windows.Core;
+using MessageBox = System.Windows.MessageBox;
 
 namespace ShotX.Windows.Views;
 
@@ -57,3 +58,4 @@ public partial class ScreenRecordingWindow : Window
         MessageBox.Show($"录制完成！录像文件已保存至:\n{sampleFile}", "ShotX 屏幕录制", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 }
+
