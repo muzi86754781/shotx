@@ -1,0 +1,44 @@
+<Window x:Class="ShotX.Windows.Views.ScreenRecordingWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ShotX 屏幕录制"
+        Width="320" Height="56"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        WindowStartupLocation="Manual"
+        MouseDown="Window_MouseDown">
+    <Border Background="#F0242426" CornerRadius="28" BorderBrush="#33FFFFFF" BorderThickness="1" Padding="14,0">
+        <Grid VerticalAlignment="Center">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+
+            <!-- Recording indicator & Timer -->
+            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                <Ellipse x:Name="DotRecording" Width="12" Height="12" Fill="#FF3B30" Margin="0,0,8,0" />
+                <TextBlock x:Name="TxtTimer" Text="00:00" FontSize="14" FontWeight="Bold" Foreground="White" FontFamily="Consolas, Monospace" VerticalAlignment="Center" />
+                <Border Background="#33FFFFFF" CornerRadius="4" Margin="8,0,0,0" Padding="5,1">
+                    <TextBlock x:Name="TxtFormat" Text="MP4" FontSize="10.5" FontWeight="SemiBold" Foreground="#8E8E93" />
+                </Border>
+            </StackPanel>
+
+            <!-- Stop Button -->
+            <StackPanel Grid.Column="2" Orientation="Horizontal">
+                <Button x:Name="BtnStop" Content="■ 停止并保存" Height="30" Padding="12,0"
+                        Background="#FF3B30" Foreground="White" BorderThickness="0" FontSize="12" FontWeight="SemiBold"
+                        Click="BtnStop_Click">
+                    <Button.Resources>
+                        <Style TargetType="{x:Type Border}">
+                            <Setter Property="CornerRadius" Value="15" />
+                        </Style>
+                    </Button.Resources>
+                </Button>
+            </StackPanel>
+        </Grid>
+    </Border>
+</Window>

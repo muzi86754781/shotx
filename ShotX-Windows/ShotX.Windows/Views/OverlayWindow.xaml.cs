@@ -108,9 +108,12 @@ public partial class OverlayWindow : Window
         Color.FromRgb(175, 82, 222)  // 紫色 #AF52DE
     };
 
-    public OverlayWindow(Rect? initialRect = null)
+    private readonly OverlayMode _overlayMode;
+
+    public OverlayWindow(OverlayMode overlayMode = OverlayMode.AllInOne, Rect? initialRect = null)
     {
         InitializeComponent();
+        _overlayMode = overlayMode;
 
         WindowStartupLocation = WindowStartupLocation.Manual;
         Left = SystemParameters.VirtualScreenLeft;
@@ -890,6 +893,13 @@ public partial class OverlayWindow : Window
         var p = e.GetPosition(this);
         CommitInlineText();
 
+        if (_overlayMode == OverlayMode.ColorPicker)
+        {
+            CopyCurrentPixelHex();
+            Close();
+            return;
+        }
+
         // 1. 右键处理：如果有选区则撤销选区重新框选；如果没有选区则直接关闭退出
         if (e.ChangedButton == MouseButton.Right)
         {
@@ -1177,8 +1187,20 @@ public partial class OverlayWindow : Window
             _startPoint = null;
             if (_selectionRect.Width >= 5 && _selectionRect.Height >= 5)
             {
-                _mode = CaptureMode.Annotating;
                 LastCaptureStore.LastRect = _selectionRect;
+
+                if (_overlayMode == OverlayMode.OCR)
+                {
+                    PerformOCR();
+                    return;
+                }
+                if (_overlayMode == OverlayMode.Translate)
+                {
+                    PerformTranslate();
+                    return;
+                }
+
+                _mode = CaptureMode.Annotating;
             }
             else
             {
@@ -1195,7 +1217,6 @@ public partial class OverlayWindow : Window
             _startPoint = null;
             Render();
         }
-    }
     }
 
     private void Window_MouseWheel(object sender, MouseWheelEventArgs e)
@@ -1542,8 +1563,20 @@ public partial class OverlayWindow : Window
     {
         var bmp = GetCroppedSelectionBitmap();
         string text = await OcrHelper.RecognizeTextAsync(bmp);
+        bmp.Dispose();
         System.Windows.Clipboard.SetText(text);
+        HistoryStore.AddOcr(text);
         System.Windows.MessageBox.Show(text, "ShotX 文字识别 (已复制到剪贴板)", MessageBoxButton.OK, MessageBoxImage.Information);
+        Close();
+    }
+
+    private async void PerformTranslate()
+    {
+        var bmp = GetCroppedSelectionBitmap();
+        string text = await OcrHelper.RecognizeTextAsync(bmp);
+        bmp.Dispose();
+        var trans = new TranslationWindow(text);
+        trans.Show();
         Close();
     }
 
@@ -1561,6 +1594,7 @@ public partial class OverlayWindow : Window
         CommitInlineText();
         var finalImage = GenerateFinalComposite();
         System.Windows.Clipboard.SetImage(ScreenCapture.ToBitmapSource(finalImage));
+        HistoryStore.AddCapture(finalImage, _mode == CaptureMode.Scrolling ? "长截图" : "截图");
         if (PreferencesStore.Current.PlaySound)
         {
             System.Media.SystemSounds.Beep.Play();
@@ -1582,6 +1616,7 @@ public partial class OverlayWindow : Window
         if (sfd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
         {
             finalImage.Save(sfd.FileName, ImageFormat.Png);
+            HistoryStore.AddCapture(finalImage, _mode == CaptureMode.Scrolling ? "长截图" : "截图");
             if (PreferencesStore.Current.PlaySound)
             {
                 System.Media.SystemSounds.Beep.Play();

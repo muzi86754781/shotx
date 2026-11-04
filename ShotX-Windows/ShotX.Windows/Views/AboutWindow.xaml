@@ -1,0 +1,94 @@
+<Window x:Class="ShotX.Windows.Views.AboutWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="关于 ShotX"
+        Width="500" Height="420"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="#F5F5F7">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,16">
+            <Border Width="56" Height="56" CornerRadius="12" Background="#007AFF">
+                <TextBlock Text="📷" FontSize="28" HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Border>
+            <StackPanel Margin="14,0,0,0" VerticalAlignment="Center">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="ShotX" FontSize="22" FontWeight="Bold" Foreground="#1D1D1F" />
+                    <Border Background="#E5E5EA" CornerRadius="10" Margin="10,2,0,2" Padding="8,2">
+                        <TextBlock Text="v1.9.23" FontSize="12" FontWeight="SemiBold" Foreground="#48484A" />
+                    </Border>
+                </StackPanel>
+                <TextBlock Text="专业全能屏幕截图、长截图、标注与多媒体录制工具" FontSize="12" Foreground="#86868B" Margin="0,4,0,0" />
+                <TextBlock Text="开发者: @muzi86754781 · QQ: 285351298" FontSize="11.5" Foreground="#007AFF" Margin="0,3,0,0" />
+            </StackPanel>
+        </StackPanel>
+
+        <!-- Features Info Card -->
+        <Border Grid.Row="1" Background="White" CornerRadius="10" BorderBrush="#E5E5EA" BorderThickness="1" Padding="14">
+            <StackPanel>
+                <TextBlock Text="核心亮点" FontSize="13" FontWeight="Bold" Foreground="#1D1D1F" Margin="0,0,0,8" />
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="✔ 16 项高颜值胶囊标注工具" FontSize="11.5" Foreground="#3A3A3C" Margin="0,3" />
+                    <TextBlock Grid.Row="0" Grid.Column="1" Text="✔ 智能外部窗口探测与吸附" FontSize="11.5" Foreground="#3A3A3C" Margin="0,3" />
+
+                    <TextBlock Grid.Row="1" Grid.Column="0" Text="✔ 绝对底部水位线长截图拼接" FontSize="11.5" Foreground="#3A3A3C" Margin="0,3" />
+                    <TextBlock Grid.Row="1" Grid.Column="1" Text="✔ WinRT 原生离线文字识别 OCR" FontSize="11.5" Foreground="#3A3A3C" Margin="0,3" />
+
+                    <TextBlock Grid.Row="2" Grid.Column="0" Text="✔ 划词 / 截图 / 双语输入翻译" FontSize="11.5" Foreground="#3A3A3C" Margin="0,3" />
+                    <TextBlock Grid.Row="2" Grid.Column="1" Text="✔ 剪贴板历史与多屏幕感知" FontSize="11.5" Foreground="#3A3A3C" Margin="0,3" />
+                </Grid>
+
+                <Separator Margin="0,12" Background="#E5E5EA" />
+                <TextBlock Text="基于 C# .NET 8 与 WPF Direct2D/Metal 硬件加速构建，秒级启动与流畅操作。" FontSize="11" Foreground="#86868B" TextWrapping="Wrap" />
+            </StackPanel>
+        </Border>
+
+        <!-- Footer -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="检查更新" Height="34" Padding="16,0" Margin="0,0,8,0"
+                    Background="#F2F2F7" Foreground="#1D1D1F" BorderBrush="#D2D2D7" BorderThickness="1"
+                    Click="BtnCheckUpdate_Click">
+                <Button.Resources>
+                    <Style TargetType="{x:Type Border}">
+                        <Setter Property="CornerRadius" Value="6" />
+                    </Style>
+                </Button.Resources>
+            </Button>
+            <Button Content="访问 GitHub" Height="34" Padding="16,0" Margin="0,0,8,0"
+                    Background="#F2F2F7" Foreground="#1D1D1F" BorderBrush="#D2D2D7" BorderThickness="1"
+                    Click="BtnGitHub_Click">
+                <Button.Resources>
+                    <Style TargetType="{x:Type Border}">
+                        <Setter Property="CornerRadius" Value="6" />
+                    </Style>
+                </Button.Resources>
+            </Button>
+            <Button Content="确定" Height="34" Padding="20,0"
+                    Background="#007AFF" Foreground="White" BorderThickness="0" FontWeight="SemiBold"
+                    Click="BtnClose_Click">
+                <Button.Resources>
+                    <Style TargetType="{x:Type Border}">
+                        <Setter Property="CornerRadius" Value="6" />
+                    </Style>
+                </Button.Resources>
+            </Button>
+        </StackPanel>
+    </Grid>
+</Window>

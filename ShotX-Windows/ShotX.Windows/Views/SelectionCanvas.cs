@@ -14,3 +14,4 @@ public class SelectionCanvas : Canvas
         CustomRender?.Invoke(dc);
     }
 }
+

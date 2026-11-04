@@ -75,3 +75,4 @@ public static class WindowDetectionHelper
         return null;
     }
 }
+

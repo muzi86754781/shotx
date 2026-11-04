@@ -8,3 +8,4 @@ public static class LastCaptureStore
 
     public static bool HasPrevious => LastRect.HasValue && LastRect.Value.Width > 5 && LastRect.Value.Height > 5;
 }
+
