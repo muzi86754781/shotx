@@ -35,6 +35,11 @@ public partial class TranslationWindow : Window
         _debounceTimer.Tick += DebounceTimer_Tick;
     }
 
+    public TranslationWindow(string sourceText) : this()
+    {
+        SetSourceText(sourceText);
+    }
+
     public void SetSourceText(string text)
     {
         TxtSource.Text = text;

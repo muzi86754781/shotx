@@ -246,4 +246,14 @@ public static class HistoryStore
     {
         Add(HistoryType.OCR, text, text);
     }
+
+    public static void AddOcr(string text)
+    {
+        Add(HistoryType.OCR, text, text);
+    }
+
+    public static void AddCapture(Bitmap bitmap, string kind = "截图")
+    {
+        Add(bitmap, kind);
+    }
 }

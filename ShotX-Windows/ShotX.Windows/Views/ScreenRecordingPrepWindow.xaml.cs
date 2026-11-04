@@ -14,6 +14,7 @@ using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using Pen = System.Windows.Media.Pen;
 using Point = System.Windows.Point;
+using FlowDirection = System.Windows.FlowDirection;
 
 namespace ShotX.Windows.Views;
 

@@ -21,6 +21,9 @@ using Cursors = System.Windows.Input.Cursors;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using PixelFormat = System.Drawing.Imaging.PixelFormat;
+using FlowDirection = System.Windows.FlowDirection;
+using FontFamily = System.Windows.Media.FontFamily;
+using Button = System.Windows.Controls.Button;
 
 namespace ShotX.Windows.Views;
 
@@ -1855,7 +1858,7 @@ public partial class OverlayWindow : Window
             {
                 if (LastCaptureStore.HasPrevious)
                 {
-                    _selectionRect = LastCaptureStore.LastRect;
+                    _selectionRect = LastCaptureStore.LastRect ?? Rect.Empty;
                     _mode = CaptureMode.Annotating;
                     ShowToast("已载入上一次截图区域");
                     Render();

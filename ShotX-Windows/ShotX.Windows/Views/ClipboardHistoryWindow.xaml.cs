@@ -8,6 +8,7 @@ using System.Windows.Input;
 using ShotX.Windows.Core;
 using Application = System.Windows.Application;
 using Clipboard = System.Windows.Clipboard;
+using Button = System.Windows.Controls.Button;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace ShotX.Windows.Views;

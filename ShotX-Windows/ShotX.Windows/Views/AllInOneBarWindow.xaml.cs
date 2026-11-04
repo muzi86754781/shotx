@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Input;
 using ShotX.Windows.Models;
+using Application = System.Windows.Application;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace ShotX.Windows.Views;

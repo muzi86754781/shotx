@@ -222,7 +222,7 @@ public partial class App : Application
                     if (!string.IsNullOrEmpty(txt) && txt != lastText)
                     {
                         lastText = txt;
-                        ClipboardManagerStore.Add(txt);
+                        HistoryStore.Add(HistoryType.Clipboard, txt, txt);
                     }
                 }
             }
