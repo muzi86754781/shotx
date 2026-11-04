@@ -19,6 +19,7 @@ using Rect = System.Windows.Rect;
 using Cursors = System.Windows.Input.Cursors;
 using MouseEventArgs = System.Windows.Input.MouseEventArgs;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using PixelFormat = System.Drawing.Imaging.PixelFormat;
 
 namespace ShotX.Windows.Views;
 
@@ -356,24 +357,33 @@ public partial class OverlayWindow : Window
         return new Rect(x, y, w, h);
     }
 
-    private static readonly (ToolbarTool Tool, string Label, string Tip)[] AllTools = new[]
+    private record ToolButton(ToolbarTool Tool, string Label, string Tip);
+
+    private static readonly ToolButton[] AllTools = new ToolButton[]
     {
-        (ToolbarTool.Rectangle, "矩", "矩形 (R)"),
-        (ToolbarTool.Ellipse, "圆", "椭圆 (O)"),
-        (ToolbarTool.Line, "线", "直线 (L)"),
-        (ToolbarTool.Arrow, "矢", "箭头 (A)"),
-        (ToolbarTool.Brush, "笔", "画笔 (P)"),
-        (ToolbarTool.Mosaic, "马", "马赛克/毛玻璃 (M)"),
-        (ToolbarTool.Text, "文", "文字 (T)"),
-        (ToolbarTool.Step, "①", "步骤序号 (S)"),
-        (ToolbarTool.Pin, "钉", "贴图置顶 (F3)"),
-        (ToolbarTool.Undo, "↩", "上一步撤销 (Ctrl+Z)"),
-        (ToolbarTool.Redo, "↪", "下一步重做 (Ctrl+Y)"),
-        (ToolbarTool.OCR, "识", "离线文字识别 OCR"),
-        (ToolbarTool.Scrolling, "长", "滚动长截图"),
-        (ToolbarTool.Cancel, "✖", "退出 (Esc)"),
-        (ToolbarTool.Save, "存", "保存文件 (Ctrl+S)"),
-        (ToolbarTool.Copy, "✔", "复制并完成 (Enter)")
+        new(ToolbarTool.Rectangle, "矩", "矩形 (R)"),
+        new(ToolbarTool.Ellipse, "圆", "椭圆 (O)"),
+        new(ToolbarTool.Line, "线", "直线 (L)"),
+        new(ToolbarTool.Arrow, "矢", "箭头 (A)"),
+        new(ToolbarTool.Brush, "笔", "画笔 (P)"),
+        new(ToolbarTool.Mosaic, "马", "马赛克/毛玻璃 (M)"),
+        new(ToolbarTool.Text, "文", "文字 (T)"),
+        new(ToolbarTool.Step, "①", "步骤序号 (S)"),
+        new(ToolbarTool.Pin, "钉", "贴图置顶 (F3)"),
+        new(ToolbarTool.Undo, "↩", "上一步撤销 (Ctrl+Z)"),
+        new(ToolbarTool.Redo, "↪", "下一步重做 (Ctrl+Y)"),
+        new(ToolbarTool.OCR, "识", "离线文字识别 OCR"),
+        new(ToolbarTool.Scrolling, "长", "滚动长截图"),
+        new(ToolbarTool.Cancel, "✖", "退出 (Esc)"),
+        new(ToolbarTool.Save, "存", "保存文件 (Ctrl+S)"),
+        new(ToolbarTool.Copy, "✔", "复制并完成 (Enter)")
+    };
+
+    private static readonly ToolButton[] ScrollingTools = new ToolButton[]
+    {
+        new(ToolbarTool.Cancel, "✖", "退出长截图"),
+        new(ToolbarTool.Save, "存", "保存长图"),
+        new(ToolbarTool.Copy, "✔", "完成并复制")
     };
 
     private void DrawBottomToolbar(DrawingContext dc)
@@ -384,7 +394,7 @@ public partial class OverlayWindow : Window
         dc.DrawRoundedRectangle(Brushes.White, new Pen(new SolidColorBrush(Color.FromRgb(225, 225, 230)), 1), r, 12, 12);
 
         var tools = _mode == CaptureMode.Scrolling
-            ? new[] { (ToolbarTool.Cancel, "✖", "退出长截图"), (ToolbarTool.Save, "存", "保存长图"), (ToolbarTool.Copy, "✔", "完成并复制") }
+            ? ScrollingTools
             : AllTools;
 
         for (int i = 0; i < tools.Length; i++)
@@ -1152,7 +1162,7 @@ public partial class OverlayWindow : Window
     {
         int idx = (int)((p.X - bar.Left - 8) / 33);
         var tools = _mode == CaptureMode.Scrolling
-            ? new[] { ToolbarTool.Cancel, ToolbarTool.Save, ToolbarTool.Copy }
+            ? ScrollingTools.Select(t => t.Tool).ToArray()
             : AllTools.Select(t => t.Tool).ToArray();
 
         if (idx < 0 || idx >= tools.Length) return;
@@ -1532,4 +1542,12 @@ public partial class OverlayWindow : Window
     }
 
     #endregion
+}
+
+public class VisualHost : FrameworkElement
+{
+    private readonly Visual _visual;
+    public VisualHost(Visual visual) => _visual = visual;
+    protected override int VisualChildrenCount => 1;
+    protected override Visual GetVisualChild(int index) => _visual;
 }
