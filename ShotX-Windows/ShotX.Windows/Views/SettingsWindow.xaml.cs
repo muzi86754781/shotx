@@ -1,4 +1,5 @@
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Forms;
 using ShotX.Windows.Core;
 
@@ -17,6 +18,7 @@ public partial class SettingsWindow : Window
         var cfg = PreferencesStore.Current;
         ChkAutoStart.IsChecked = cfg.LaunchAtStartup;
         ChkPlaySound.IsChecked = cfg.PlaySound;
+        ChkShadow.IsChecked = cfg.IncludeShadow;
         TxtSavePath.Text = cfg.SavePath;
     }
 
@@ -28,6 +30,12 @@ public partial class SettingsWindow : Window
     private void ChkPlaySound_Click(object sender, RoutedEventArgs e)
     {
         PreferencesStore.Current.PlaySound = ChkPlaySound.IsChecked == true;
+        PreferencesStore.Save();
+    }
+
+    private void ChkShadow_Click(object sender, RoutedEventArgs e)
+    {
+        PreferencesStore.Current.IncludeShadow = ChkShadow.IsChecked == true;
         PreferencesStore.Save();
     }
 
@@ -45,9 +53,13 @@ public partial class SettingsWindow : Window
         }
     }
 
+    private void CmbImageFormat_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        // Saved automatically
+    }
+
     private void BtnClose_Click(object sender, RoutedEventArgs e)
     {
         Close();
     }
 }
-

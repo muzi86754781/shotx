@@ -10,8 +10,8 @@ public enum ShapeType
 {
     Rectangle,
     Ellipse,
-    Arrow,
     Line,
+    Arrow,
     Brush,
     Mosaic,
     Text,
@@ -28,20 +28,46 @@ public class Annotation
 
     public Color PrimaryColor { get; set; } = Colors.Red;
     public Color SecondaryColor { get; set; } = Colors.White;
-    public double Thickness { get; set; } = 3.0;
+    public double Thickness { get; set; } = 4.0;
     public double Opacity { get; set; } = 1.0;
     public bool IsFilled { get; set; } = false;
 
+    // Rectangle specific
+    public bool IsRounded { get; set; } = false;
+
+    // Arrow specific
+    public bool IsCurved { get; set; } = false;
+
+    // Brush specific
+    public bool IsHighlighter { get; set; } = false;
+
     // Text specific
     public string Text { get; set; } = string.Empty;
-    public double FontSize { get; set; } = 16.0;
-    public TextStyle TextStyle { get; set; } = TextStyle.Border;
+    public double FontSize { get; set; } = 18.0;
+    public int TextStyleIndex { get; set; } = 1; // 0 = 无, 1 = 描边, 2 = 背景
 
     // Step number specific
     public int StepNumber { get; set; } = 1;
 
     // Mosaic specific
-    public MosaicStyle MosaicStyle { get; set; } = MosaicStyle.Pixelate;
+    public bool MosaicIsBlur { get; set; } = false; // false = 马赛克, true = 毛玻璃
+
+    public bool HitTest(Point p)
+    {
+        if (Type == ShapeType.Text)
+        {
+            return Bounds.Contains(p);
+        }
+        if (Type == ShapeType.Rectangle || Type == ShapeType.Ellipse || Type == ShapeType.Mosaic)
+        {
+            return Bounds.Contains(p);
+        }
+        if (Type == ShapeType.Step)
+        {
+            return (p - StartPoint).Length <= 18;
+        }
+        return false;
+    }
 }
 
 public class AnnotationManager
@@ -57,6 +83,16 @@ public class AnnotationManager
     {
         _annotations.Push(annotation);
         _redoStack.Clear();
+    }
+
+    public void Remove(Annotation annotation)
+    {
+        var list = _annotations.Where(a => a != annotation).Reverse().ToList();
+        _annotations.Clear();
+        foreach (var item in list)
+        {
+            _annotations.Push(item);
+        }
     }
 
     public void Undo()
@@ -81,4 +117,3 @@ public class AnnotationManager
         _redoStack.Clear();
     }
 }
-

@@ -16,8 +16,18 @@
         <!-- 背景屏幕快照 -->
         <Image x:Name="ImgSnapshot" Stretch="Fill" />
 
-        <!-- 绘制画板（遮罩、标注、选框、工具栏全部在 DrawingVisual / Canvas 中渲染） -->
-        <Canvas x:Name="OverlayCanvas" Background="Transparent" />
+        <!-- 绘制画板（遮罩、标注、选框、工具栏全部在此渲染） -->
+        <Canvas x:Name="OverlayCanvas" Background="Transparent">
+            <!-- 实时文字输入编辑框 (可编辑已有文字或新输入) -->
+            <TextBox x:Name="TxtInlineEditor"
+                     Visibility="Collapsed"
+                     Background="#40FFFFFF"
+                     BorderBrush="#007AFF"
+                     BorderThickness="1.5"
+                     Padding="4"
+                     AcceptsReturn="True"
+                     KeyDown="TxtInlineEditor_KeyDown"
+                     LostFocus="TxtInlineEditor_LostFocus" />
+        </Canvas>
     </Grid>
 </Window>
-

@@ -1,7 +1,9 @@
 using System.Drawing;
+using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Media;
@@ -9,7 +11,14 @@ using System.Windows.Media.Imaging;
 using ShotX.Windows.Core;
 using ShotX.Windows.Models;
 using Color = System.Windows.Media.Color;
+using Pen = System.Windows.Media.Pen;
 using Point = System.Windows.Point;
+using Brush = System.Windows.Media.Brush;
+using Brushes = System.Windows.Media.Brushes;
+using Rect = System.Windows.Rect;
+using Cursors = System.Windows.Input.Cursors;
+using MouseEventArgs = System.Windows.Input.MouseEventArgs;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace ShotX.Windows.Views;
 
@@ -22,6 +31,20 @@ public partial class OverlayWindow : Window
         Scrolling
     }
 
+    private enum HitArea
+    {
+        None,
+        Move,
+        TopLeft,
+        TopRight,
+        BottomLeft,
+        BottomRight,
+        LeftEdge,
+        RightEdge,
+        TopEdge,
+        BottomEdge
+    }
+
     private readonly Bitmap _fullSnapshot;
     private readonly System.Drawing.Rectangle _virtualBounds;
     private CaptureMode _mode = CaptureMode.Selecting;
@@ -29,23 +52,65 @@ public partial class OverlayWindow : Window
     private Point? _startPoint;
     private Rect _selectionRect = Rect.Empty;
     private Point _currentMouse;
+    private HitArea _activeHitArea = HitArea.None;
+    private Point _dragStartMouse;
+    private Rect _dragStartSelection;
 
+    // Top Bar State
+    private int _cornerRadius = 0;
+    private bool _includeShadow = false;
+    private bool _isDraggingCornerSlider = false;
+
+    // Annotation State
     private readonly AnnotationManager _annotationManager = new();
     private Annotation? _inProgressAnnotation;
+    private Annotation? _editingTextAnnotation;
     private ToolbarTool _currentTool = ToolbarTool.None;
-    private Color _currentColor = Colors.Red;
-    private double _currentThickness = 4.0;
-    private bool _isFilled = false;
-    private int _stepCounter = 1;
+    private int _hoveredButtonIndex = -1;
 
+    // Sub-toolbar State
+    private bool _isSubToolbarVisible = false;
+    private Color _currentColor = Color.FromRgb(255, 59, 48); // #FF3B30
+    private Color _secondaryColor = Colors.White;
+    private bool _textSelectingSecondary = false;
+    private double _currentThickness = 4.0;
+    private double _currentOpacity = 1.0;
+
+    // Tool specific sub-toolbar options
+    private bool _isRectFilled = false;
+    private bool _isRectRounded = false;
+    private bool _isOvalFilled = false;
+    private bool _isArrowCurved = false;
+    private bool _isHighlighter = false;
+    private bool _stepIsFilled = true;
+    private int _stepCounter = 1;
+    private int _textStyleIndex = 1; // 0 = 无, 1 = 描边, 2 = 背景
+    private bool _mosaicIsBlur = false; // false = 马赛克, true = 毛玻璃
+
+    private bool _isDraggingSizeSlider = false;
+    private bool _isDraggingOpacitySlider = false;
+
+    // Scrolling screenshot State
     private readonly ScrollStitcher _stitcher = new();
     private readonly DrawingVisual _drawingVisual = new();
+
+    // 8 Sub-Toolbar Preset Colors
+    private static readonly Color[] SubToolbarColors = new[]
+    {
+        Colors.White,
+        Color.FromRgb(30, 30, 30),
+        Color.FromRgb(255, 59, 48),  // 红色 #FF3B30
+        Color.FromRgb(255, 149, 0),  // 橙色 #FF9500
+        Color.FromRgb(255, 204, 0),  // 黄色 #FFCC00
+        Color.FromRgb(52, 199, 89),  // 绿色 #34C759
+        Color.FromRgb(0, 122, 255),  // 蓝色 #007AFF
+        Color.FromRgb(175, 82, 222)  // 紫色 #AF52DE
+    };
 
     public OverlayWindow()
     {
         InitializeComponent();
 
-        // 1. 抓取全屏幕物理像素
         _fullSnapshot = ScreenCapture.CaptureAllScreens(out _virtualBounds);
         ImgSnapshot.Source = ScreenCapture.ToBitmapSource(_fullSnapshot);
 
@@ -53,6 +118,9 @@ public partial class OverlayWindow : Window
         Top = _virtualBounds.Top;
         Width = _virtualBounds.Width;
         Height = _virtualBounds.Height;
+
+        _cornerRadius = PreferencesStore.Current.CornerRadius;
+        _includeShadow = PreferencesStore.Current.IncludeShadow;
 
         Loaded += (_, _) =>
         {
@@ -62,59 +130,74 @@ public partial class OverlayWindow : Window
         };
     }
 
+    #region Rendering
+
     private void Render()
     {
         using var dc = _drawingVisual.RenderOpen();
 
-        // 1. 绘制半透明黑色遮罩
+        // 1. 绘制半透明灰色遮罩
         var fullRect = new Rect(0, 0, Width, Height);
         var maskGeometry = new CombinedGeometry(
             GeometryCombineMode.Exclude,
             new RectangleGeometry(fullRect),
             new RectangleGeometry(_selectionRect.IsEmpty ? Rect.Empty : _selectionRect)
         );
-        dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(110, 0, 0, 0)), null, maskGeometry);
+        dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(120, 0, 0, 0)), null, maskGeometry);
 
         if (_mode == CaptureMode.Selecting)
         {
             if (!_selectionRect.IsEmpty)
             {
-                // 绘制当前选框边框
-                dc.DrawRectangle(null, new System.Windows.Media.Pen(System.Windows.Media.Brushes.DodgerBlue, 1.5), _selectionRect);
+                dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect);
                 DrawCornerBrackets(dc, _selectionRect);
-                DrawDimensionPill(dc, _selectionRect);
+                DrawTopBar(dc);
             }
             else
             {
-                // 绘制放大镜 Loupe
                 DrawLoupe(dc, _currentMouse);
             }
         }
         else if (_mode == CaptureMode.Annotating)
         {
-            // 绘制选区与 4 边角
-            dc.DrawRectangle(null, new System.Windows.Media.Pen(System.Windows.Media.Brushes.DodgerBlue, 1.5), _selectionRect);
+            // 选框与边角
+            dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect);
             DrawCornerBrackets(dc, _selectionRect);
-            DrawDimensionPill(dc, _selectionRect);
 
-            // 绘制所有已完成的标注
+            // 绘制马赛克/毛玻璃图层
+            DrawMosaics(dc);
+
+            // 绘制所有已完成标注
             foreach (var ann in _annotationManager.Items)
             {
-                DrawAnnotation(dc, ann);
+                if (ann != _editingTextAnnotation && ann.Type != ShapeType.Mosaic)
+                {
+                    DrawAnnotation(dc, ann);
+                }
             }
 
-            // 绘制正在拖拽中的标注
-            if (_inProgressAnnotation != null)
+            // 绘制正在拖拽绘制中的标注
+            if (_inProgressAnnotation != null && _inProgressAnnotation.Type != ShapeType.Mosaic)
             {
                 DrawAnnotation(dc, _inProgressAnnotation);
             }
 
-            // 绘制底部胶囊工具栏
+            // 顶部条 (尺寸、圆角滑块、阴影开关)
+            DrawTopBar(dc);
+
+            // 底部 16 项胶囊工具栏
             DrawBottomToolbar(dc);
+
+            // 展开的子工具栏
+            if (_isSubToolbarVisible && _currentTool != ToolbarTool.None)
+            {
+                DrawSubToolbar(dc);
+            }
         }
         else if (_mode == CaptureMode.Scrolling)
         {
-            // 绘制长截图预览卡片
+            dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect);
+            DrawCornerBrackets(dc, _selectionRect);
             DrawScrollingPreviewPanel(dc);
             DrawBottomToolbar(dc);
         }
@@ -122,127 +205,476 @@ public partial class OverlayWindow : Window
         dc.Close();
 
         OverlayCanvas.Children.Clear();
-        var visualHost = new VisualHost(_drawingVisual);
-        OverlayCanvas.Children.Add(visualHost);
+        OverlayCanvas.Children.Add(new VisualHost(_drawingVisual));
+
+        if (TxtInlineEditor.Visibility == Visibility.Visible)
+        {
+            OverlayCanvas.Children.Add(TxtInlineEditor);
+        }
     }
 
     private void DrawCornerBrackets(DrawingContext dc, Rect r)
     {
-        var pen = new System.Windows.Media.Pen(System.Windows.Media.Brushes.DodgerBlue, 3.5)
+        var pen = new Pen(new SolidColorBrush(Color.FromRgb(46, 135, 255)), 3.5)
         {
             StartLineCap = PenLineCap.Square,
             EndLineCap = PenLineCap.Square
         };
         double len = 16.0;
 
-        // Top-Left
+        // 4 角 L 型边角高亮
         dc.DrawLine(pen, new Point(r.Left - 1, r.Top + len), new Point(r.Left - 1, r.Top - 1));
         dc.DrawLine(pen, new Point(r.Left - 1, r.Top - 1), new Point(r.Left + len, r.Top - 1));
 
-        // Top-Right
         dc.DrawLine(pen, new Point(r.Right - len, r.Top - 1), new Point(r.Right + 1, r.Top - 1));
         dc.DrawLine(pen, new Point(r.Right + 1, r.Top - 1), new Point(r.Right + 1, r.Top + len));
 
-        // Bottom-Left
         dc.DrawLine(pen, new Point(r.Left - 1, r.Bottom - len), new Point(r.Left - 1, r.Bottom + 1));
         dc.DrawLine(pen, new Point(r.Left - 1, r.Bottom + 1), new Point(r.Left + len, r.Bottom + 1));
 
-        // Bottom-Right
         dc.DrawLine(pen, new Point(r.Right - len, r.Bottom + 1), new Point(r.Right + 1, r.Bottom + 1));
         dc.DrawLine(pen, new Point(r.Right + 1, r.Bottom + 1), new Point(r.Right + 1, r.Bottom - len));
     }
 
-    private void DrawDimensionPill(DrawingContext dc, Rect r)
+    private Rect TopBarRect()
     {
-        string text = $"{(int)r.Width} x {(int)r.Height}";
+        double w = 230;
+        double h = 28;
+        double x = Math.Max(10, Math.Min(Width - w - 10, _selectionRect.Left));
+        double y = _selectionRect.Top - h - 6;
+        if (y < 8)
+        {
+            y = _selectionRect.Top + 8;
+        }
+        return new Rect(x, y, w, h);
+    }
+
+    private void DrawTopBar(DrawingContext dc)
+    {
+        var r = TopBarRect();
+
+        // 蓝色胶囊背景
+        var pillBrush = new SolidColorBrush(Color.FromRgb(31, 135, 250));
+        dc.DrawRoundedRectangle(pillBrush, null, r, 6, 6);
+
+        // 1. 尺寸文本: "W × H"
+        string sizeText = $"{(int)_selectionRect.Width} × {(int)_selectionRect.Height}";
         var ft = new FormattedText(
-            text,
+            sizeText,
+            System.Globalization.CultureInfo.CurrentCulture,
+            System.Windows.FlowDirection.LeftToRight,
+            new Typeface(new System.Windows.Media.FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
+            11.5,
+            Brushes.White,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip
+        );
+        dc.DrawText(ft, new Point(r.Left + 8, r.Top + (r.Height - ft.Height) / 2));
+
+        // 2. 圆角滑块 (0 ~ 36 px)
+        double sliderMinX = r.Left + 88;
+        double sliderW = 55;
+        var trackRect = new Rect(sliderMinX, r.Top + 12, sliderW, 4);
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(90, 255, 255, 255)), null, trackRect, 2, 2);
+
+        double knobRatio = Math.Max(0, Math.Min(1, _cornerRadius / 36.0));
+        double knobX = sliderMinX + knobRatio * sliderW;
+        dc.DrawEllipse(Brushes.White, null, new Point(knobX, r.Top + 14), 6, 6);
+
+        // 3. 阴影开关
+        var switchRect = new Rect(r.Left + 160, r.Top + 7, 22, 14);
+        if (_includeShadow)
+        {
+            dc.DrawRoundedRectangle(Brushes.White, null, switchRect, 7, 7);
+            dc.DrawEllipse(pillBrush, null, new Point(switchRect.Right - 7, switchRect.Top + 7), 5, 5);
+        }
+        else
+        {
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(80, 255, 255, 255)), null, switchRect, 7, 7);
+            dc.DrawEllipse(Brushes.White, null, new Point(switchRect.Left + 7, switchRect.Top + 7), 5, 5);
+        }
+
+        var shadowFt = new FormattedText(
+            "阴影",
             System.Globalization.CultureInfo.CurrentCulture,
             System.Windows.FlowDirection.LeftToRight,
             new Typeface("Segoe UI Semibold"),
             11,
-            System.Windows.Media.Brushes.White,
+            Brushes.White,
             VisualTreeHelper.GetDpi(this).PixelsPerDip
         );
-
-        double pillW = ft.Width + 16;
-        double pillH = 22;
-        double pillX = r.Left;
-        double pillY = r.Top - pillH - 6;
-        if (pillY < 10) pillY = r.Top + 8;
-
-        var pillRect = new Rect(pillX, pillY, pillW, pillH);
-        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(200, 20, 20, 20)), null, pillRect, 4, 4);
-        dc.DrawText(ft, new Point(pillRect.Left + 8, pillRect.Top + (pillH - ft.Height) / 2));
+        dc.DrawText(shadowFt, new Point(r.Left + 188, r.Top + (r.Height - shadowFt.Height) / 2));
     }
 
     private void DrawLoupe(DrawingContext dc, Point p)
     {
         double loupeSize = 120;
-        double x = p.X + 20;
-        double y = p.Y + 20;
-        if (x + loupeSize > Width) x = p.X - loupeSize - 20;
-        if (y + loupeSize + 40 > Height) y = p.Y - loupeSize - 40;
+        double x = p.X + 22;
+        double y = p.Y + 22;
+        if (x + loupeSize > Width) x = p.X - loupeSize - 22;
+        if (y + loupeSize + 42 > Height) y = p.Y - loupeSize - 42;
 
-        int pixelX = Math.Max(0, Math.Min(_fullSnapshot.Width - 1, (int)p.X));
-        int pixelY = Math.Max(0, Math.Min(_fullSnapshot.Height - 1, (int)p.Y));
-        var c = _fullSnapshot.GetPixel(pixelX, pixelY);
+        int px = Math.Max(0, Math.Min(_fullSnapshot.Width - 1, (int)p.X));
+        int py = Math.Max(0, Math.Min(_fullSnapshot.Height - 1, (int)p.Y));
+        var c = _fullSnapshot.GetPixel(px, py);
 
         var loupeRect = new Rect(x, y, loupeSize, loupeSize);
-        dc.DrawRoundedRectangle(System.Windows.Media.Brushes.White, new System.Windows.Media.Pen(System.Windows.Media.Brushes.Gray, 1), loupeRect, 6, 6);
+        dc.DrawRoundedRectangle(Brushes.White, new Pen(Brushes.Gray, 1), loupeRect, 6, 6);
 
-        // 放大镜中心十字
+        // 中心十字瞄准线
         var center = new Point(loupeRect.Left + loupeSize / 2, loupeRect.Top + loupeSize / 2);
-        dc.DrawLine(new System.Windows.Media.Pen(System.Windows.Media.Brushes.DodgerBlue, 1), new Point(center.X - 10, center.Y), new Point(center.X + 10, center.Y));
-        dc.DrawLine(new System.Windows.Media.Pen(System.Windows.Media.Brushes.DodgerBlue, 1), new Point(center.X, center.Y - 10), new Point(center.X, center.Y + 10));
+        dc.DrawLine(new Pen(Brushes.DodgerBlue, 1), new Point(center.X - 12, center.Y), new Point(center.X + 12, center.Y));
+        dc.DrawLine(new Pen(Brushes.DodgerBlue, 1), new Point(center.X, center.Y - 12), new Point(center.X, center.Y + 12));
 
-        // 底部颜色信息条
-        var infoRect = new Rect(x, y + loupeSize + 4, loupeSize, 28);
-        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(220, 30, 30, 30)), null, infoRect, 4, 4);
+        // 底部颜色信息标签
+        var infoRect = new Rect(x, y + loupeSize + 4, loupeSize, 30);
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(220, 25, 25, 25)), null, infoRect, 4, 4);
 
-        string colorHex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
+        string hex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
         var ft = new FormattedText(
-            $"{colorHex}\nRGB:({c.R},{c.G},{c.B})",
+            $"{hex}\nRGB:({c.R},{c.G},{c.B})",
             System.Globalization.CultureInfo.CurrentCulture,
             System.Windows.FlowDirection.LeftToRight,
             new Typeface("Consolas"),
             9.5,
-            System.Windows.Media.Brushes.White,
+            Brushes.White,
             VisualTreeHelper.GetDpi(this).PixelsPerDip
         );
-        dc.DrawText(ft, new Point(infoRect.Left + 6, infoRect.Top + 2));
+        dc.DrawText(ft, new Point(infoRect.Left + 8, infoRect.Top + 3));
+    }
+
+    private Rect BottomToolbarRect()
+    {
+        int count = _mode == CaptureMode.Scrolling ? 3 : 16;
+        double w = count * 33 + 16;
+        double h = 42;
+        double x = Math.Max(10, Math.Min(Width - w - 10, _selectionRect.Left + (_selectionRect.Width - w) / 2));
+        double y = _selectionRect.Bottom + 12;
+        if (y + h > Height - 10)
+        {
+            y = _selectionRect.Bottom - h - 12;
+        }
+        return new Rect(x, y, w, h);
+    }
+
+    private static readonly (ToolbarTool Tool, string Label, string Tip)[] AllTools = new[]
+    {
+        (ToolbarTool.Rectangle, "矩", "矩形 (R)"),
+        (ToolbarTool.Ellipse, "圆", "椭圆 (O)"),
+        (ToolbarTool.Line, "线", "直线 (L)"),
+        (ToolbarTool.Arrow, "矢", "箭头 (A)"),
+        (ToolbarTool.Brush, "笔", "画笔 (P)"),
+        (ToolbarTool.Mosaic, "马", "马赛克/毛玻璃 (M)"),
+        (ToolbarTool.Text, "文", "文字 (T)"),
+        (ToolbarTool.Step, "①", "步骤序号 (S)"),
+        (ToolbarTool.Pin, "钉", "贴图置顶 (F3)"),
+        (ToolbarTool.Undo, "↩", "上一步撤销 (Ctrl+Z)"),
+        (ToolbarTool.Redo, "↪", "下一步重做 (Ctrl+Y)"),
+        (ToolbarTool.OCR, "识", "离线文字识别 OCR"),
+        (ToolbarTool.Scrolling, "长", "滚动长截图"),
+        (ToolbarTool.Cancel, "✖", "退出 (Esc)"),
+        (ToolbarTool.Save, "存", "保存文件 (Ctrl+S)"),
+        (ToolbarTool.Copy, "✔", "复制并完成 (Enter)")
+    };
+
+    private void DrawBottomToolbar(DrawingContext dc)
+    {
+        var r = BottomToolbarRect();
+
+        // 柔和白底胶囊与圆角阴影
+        dc.DrawRoundedRectangle(Brushes.White, new Pen(new SolidColorBrush(Color.FromRgb(225, 225, 230)), 1), r, 12, 12);
+
+        var tools = _mode == CaptureMode.Scrolling
+            ? new[] { (ToolbarTool.Cancel, "✖", "退出长截图"), (ToolbarTool.Save, "存", "保存长图"), (ToolbarTool.Copy, "✔", "完成并复制") }
+            : AllTools;
+
+        for (int i = 0; i < tools.Length; i++)
+        {
+            var btnRect = new Rect(r.Left + 8 + i * 33, r.Top + 6, 30, 30);
+            bool isSelected = (_currentTool == tools[i].Tool);
+            bool isHovered = (_hoveredButtonIndex == i);
+
+            if (isSelected)
+            {
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(46, 0, 122, 255)), null, btnRect, 6, 6);
+            }
+            else if (isHovered)
+            {
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(20, 0, 0, 0)), null, btnRect, 6, 6);
+            }
+
+            var brush = isSelected ? new SolidColorBrush(Color.FromRgb(0, 122, 255)) : (tools[i].Tool == ToolbarTool.Copy ? Brushes.Green : new SolidColorBrush(Color.FromRgb(60, 60, 67)));
+            var ft = new FormattedText(
+                tools[i].Label,
+                System.Globalization.CultureInfo.CurrentCulture,
+                System.Windows.FlowDirection.LeftToRight,
+                new Typeface("Segoe UI Semibold"),
+                13,
+                brush,
+                VisualTreeHelper.GetDpi(this).PixelsPerDip
+            );
+            dc.DrawText(ft, new Point(btnRect.Left + (btnRect.Width - ft.Width) / 2, btnRect.Top + (btnRect.Height - ft.Height) / 2));
+        }
+
+        // 悬停提示气泡
+        if (_hoveredButtonIndex >= 0 && _hoveredButtonIndex < tools.Length)
+        {
+            var btnRect = new Rect(r.Left + 8 + _hoveredButtonIndex * 33, r.Top + 6, 30, 30);
+            DrawTooltipBubble(dc, tools[_hoveredButtonIndex].Tip, btnRect);
+        }
+    }
+
+    private void DrawTooltipBubble(DrawingContext dc, string text, Rect targetRect)
+    {
+        var ft = new FormattedText(
+            text,
+            System.Globalization.CultureInfo.CurrentCulture,
+            System.Windows.FlowDirection.LeftToRight,
+            new Typeface("Segoe UI"),
+            10.5,
+            Brushes.White,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip
+        );
+
+        double bw = ft.Width + 14;
+        double bh = 22;
+        double bx = targetRect.Left + (targetRect.Width - bw) / 2;
+        double by = targetRect.Top - bh - 6;
+
+        var bubbleRect = new Rect(bx, by, bw, bh);
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(235, 30, 30, 30)), null, bubbleRect, 4, 4);
+        dc.DrawText(ft, new Point(bubbleRect.Left + 7, bubbleRect.Top + (bh - ft.Height) / 2));
+    }
+
+    private Rect SubToolbarRect()
+    {
+        if (!_isSubToolbarVisible || _mode == CaptureMode.Scrolling || _currentTool == ToolbarTool.None) return Rect.Empty;
+        var tb = BottomToolbarRect();
+        double w = (_currentTool == ToolbarTool.Mosaic) ? 180 : 520;
+        double h = 38;
+        double x = Math.Max(10, Math.Min(Width - w - 10, tb.Left + (tb.Width - w) / 2));
+        double y = tb.Top - h - 8;
+        if (y < 8)
+        {
+            y = tb.Bottom + 8;
+        }
+        return new Rect(x, y, w, h);
+    }
+
+    private void DrawSubToolbar(DrawingContext dc)
+    {
+        var r = SubToolbarRect();
+        if (r.IsEmpty) return;
+
+        // 白底与微边框
+        dc.DrawRoundedRectangle(Brushes.White, new Pen(new SolidColorBrush(Color.FromRgb(225, 225, 230)), 1), r, 10, 10);
+        double midY = r.Top + r.Height / 2;
+
+        if (_currentTool == ToolbarTool.Mosaic)
+        {
+            // 马赛克专属切换: [毛玻璃 | 马赛克]
+            DrawSegmented(dc, new[] { "毛玻璃", "马赛克" }, _mosaicIsBlur ? 0 : 1, new Rect(r.Left + 20, midY - 11, 140, 22));
+            return;
+        }
+
+        // 1. 左侧选项区 (Left Zone: r.Left + 12 ~ r.Left + 128)
+        switch (_currentTool)
+        {
+            case ToolbarTool.Rectangle:
+                DrawCheckbox(dc, new Rect(r.Left + 12, midY - 9, 52, 18), _isRectFilled, "实心");
+                DrawCheckbox(dc, new Rect(r.Left + 68, midY - 9, 52, 18), _isRectRounded, "圆角");
+                break;
+            case ToolbarTool.Ellipse:
+                DrawCheckbox(dc, new Rect(r.Left + 12, midY - 9, 52, 18), _isOvalFilled, "实心");
+                break;
+            case ToolbarTool.Arrow:
+                DrawCheckbox(dc, new Rect(r.Left + 12, midY - 9, 70, 18), _isArrowCurved, "曲线");
+                break;
+            case ToolbarTool.Brush:
+                DrawSegmented(dc, new[] { "单色", "荧光" }, _isHighlighter ? 1 : 0, new Rect(r.Left + 10, midY - 11, 110, 22));
+                break;
+            case ToolbarTool.Step:
+                DrawSegmented(dc, new[] { "描边", "实心" }, _stepIsFilled ? 1 : 0, new Rect(r.Left + 12, midY - 11, 80, 22));
+                break;
+            case ToolbarTool.Text:
+                DrawSegmented(dc, new[] { "无", "描边", "背景" }, _textStyleIndex, new Rect(r.Left + 10, midY - 11, 94, 22));
+                break;
+        }
+
+        // 2. 中间调色板 (Middle Zone: r.Left + 136)
+        double dotStartX = r.Left + 136;
+        var activeColor = (_currentTool == ToolbarTool.Text && _textSelectingSecondary) ? _secondaryColor : _currentColor;
+
+        for (int i = 0; i < SubToolbarColors.Length; i++)
+        {
+            var dotRect = new Rect(dotStartX + i * 19, midY - 8, 16, 16);
+            bool isSelected = (SubToolbarColors[i] == activeColor);
+
+            dc.DrawEllipse(new SolidColorBrush(SubToolbarColors[i]), new Pen(Brushes.LightGray, 1), new Point(dotRect.Left + 8, dotRect.Top + 8), 7, 7);
+            if (isSelected)
+            {
+                dc.DrawEllipse(null, new Pen(new SolidColorBrush(Color.FromRgb(0, 122, 255)), 2), new Point(dotRect.Left + 8, dotRect.Top + 8), 9, 9);
+            }
+        }
+
+        // 3. 右侧粗细/字号与透明度滑块
+        double sizeSliderX = r.Left + 316;
+        string sizeLabel = (_currentTool == ToolbarTool.Text) ? "字号" : "粗细";
+        var labelFt = new FormattedText(
+            sizeLabel,
+            System.Globalization.CultureInfo.CurrentCulture,
+            System.Windows.FlowDirection.LeftToRight,
+            new Typeface("Segoe UI"),
+            10.5,
+            Brushes.Gray,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip
+        );
+        dc.DrawText(labelFt, new Point(sizeSliderX, midY - labelFt.Height / 2));
+
+        var sizeTrack = new Rect(sizeSliderX + 28, midY - 2, 50, 4);
+        dc.DrawRoundedRectangle(Brushes.LightGray, null, sizeTrack, 2, 2);
+
+        double sizeRatio = Math.Max(0, Math.Min(1, (_currentThickness - 1) / 30.0));
+        dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(0, 122, 255)), null, new Point(sizeTrack.Left + sizeRatio * sizeTrack.Width, midY), 5, 5);
+
+        // 不透明度
+        double opacSliderX = r.Left + 418;
+        var opacFt = new FormattedText(
+            "透明度",
+            System.Globalization.CultureInfo.CurrentCulture,
+            System.Windows.FlowDirection.LeftToRight,
+            new Typeface("Segoe UI"),
+            10.5,
+            Brushes.Gray,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip
+        );
+        dc.DrawText(opacFt, new Point(opacSliderX, midY - opacFt.Height / 2));
+
+        var opacTrack = new Rect(opacSliderX + 38, midY - 2, 50, 4);
+        dc.DrawRoundedRectangle(Brushes.LightGray, null, opacTrack, 2, 2);
+        dc.DrawEllipse(new SolidColorBrush(Color.FromRgb(0, 122, 255)), null, new Point(opacTrack.Left + _currentOpacity * opacTrack.Width, midY), 5, 5);
+    }
+
+    private void DrawCheckbox(DrawingContext dc, Rect r, bool isChecked, string title)
+    {
+        var boxRect = new Rect(r.Left, r.Top + (r.Height - 12) / 2, 12, 12);
+        if (isChecked)
+        {
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(0, 122, 255)), null, boxRect, 2, 2);
+            var checkFt = new FormattedText("✓", System.Globalization.CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight, new Typeface("Segoe UI Bold"), 9, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            dc.DrawText(checkFt, new Point(boxRect.Left + 1.5, boxRect.Top));
+        }
+        else
+        {
+            dc.DrawRoundedRectangle(Brushes.White, new Pen(Brushes.Gray, 1), boxRect, 2, 2);
+        }
+
+        var ft = new FormattedText(title, System.Globalization.CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight, new Typeface("Segoe UI"), 11, Brushes.DimGray, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        dc.DrawText(ft, new Point(r.Left + 16, r.Top + (r.Height - ft.Height) / 2));
+    }
+
+    private void DrawSegmented(DrawingContext dc, string[] items, int selectedIdx, Rect r)
+    {
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(240, 240, 243)), null, r, 4, 4);
+        double segW = r.Width / items.Length;
+        for (int i = 0; i < items.Length; i++)
+        {
+            var segRect = new Rect(r.Left + i * segW, r.Top, segW, r.Height);
+            if (i == selectedIdx)
+            {
+                dc.DrawRoundedRectangle(Brushes.White, new Pen(new SolidColorBrush(Color.FromRgb(215, 215, 220)), 1), segRect, 4, 4);
+            }
+            var ft = new FormattedText(items[i], System.Globalization.CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight, new Typeface(i == selectedIdx ? "Segoe UI Bold" : "Segoe UI"), 10.5, i == selectedIdx ? new SolidColorBrush(Color.FromRgb(0, 122, 255)) : Brushes.DimGray, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            dc.DrawText(ft, new Point(segRect.Left + (segRect.Width - ft.Width) / 2, segRect.Top + (segRect.Height - ft.Height) / 2));
+        }
+    }
+
+    private void DrawMosaics(DrawingContext dc)
+    {
+        var mosaics = _annotationManager.Items.Where(a => a.Type == ShapeType.Mosaic).ToList();
+        if (_inProgressAnnotation?.Type == ShapeType.Mosaic)
+        {
+            mosaics.Add(_inProgressAnnotation);
+        }
+
+        foreach (var m in mosaics)
+        {
+            var r = m.Bounds;
+            if (r.Width <= 2 || r.Height <= 2) continue;
+
+            int bx = Math.Max(0, (int)r.Left);
+            int by = Math.Max(0, (int)r.Top);
+            int bw = Math.Min(_fullSnapshot.Width - bx, (int)r.Width);
+            int bh = Math.Min(_fullSnapshot.Height - by, (int)r.Height);
+
+            using var slice = ScreenCapture.CropBitmap(_fullSnapshot, new System.Drawing.Rectangle(bx, by, bw, bh));
+            using var processed = m.MosaicIsBlur ? ApplyBoxBlur(slice, 6) : ApplyPixelate(slice, 10);
+
+            var source = ScreenCapture.ToBitmapSource(processed);
+            dc.DrawImage(source, r);
+        }
+    }
+
+    private static Bitmap ApplyPixelate(Bitmap src, int pixelSize)
+    {
+        var dst = new Bitmap(src.Width, src.Height);
+        using var g = Graphics.FromImage(dst);
+        g.InterpolationMode = InterpolationMode.NearestNeighbor;
+        g.PixelOffsetMode = PixelOffsetMode.Half;
+
+        int smallW = Math.Max(1, src.Width / pixelSize);
+        int smallH = Math.Max(1, src.Height / pixelSize);
+        using var small = new Bitmap(smallW, smallH);
+        using (var sg = Graphics.FromImage(small))
+        {
+            sg.InterpolationMode = InterpolationMode.NearestNeighbor;
+            sg.DrawImage(src, 0, 0, smallW, smallH);
+        }
+        g.DrawImage(small, new System.Drawing.Rectangle(0, 0, src.Width, src.Height));
+        return dst;
+    }
+
+    private static Bitmap ApplyBoxBlur(Bitmap src, int radius)
+    {
+        var dst = new Bitmap(src.Width, src.Height);
+        using var g = Graphics.FromImage(dst);
+        g.InterpolationMode = InterpolationMode.Bilinear;
+
+        int smallW = Math.Max(1, src.Width / radius);
+        int smallH = Math.Max(1, src.Height / radius);
+        using var small = new Bitmap(smallW, smallH);
+        using (var sg = Graphics.FromImage(small))
+        {
+            sg.InterpolationMode = InterpolationMode.Bilinear;
+            sg.DrawImage(src, 0, 0, smallW, smallH);
+        }
+        g.DrawImage(small, new System.Drawing.Rectangle(0, 0, src.Width, src.Height));
+        return dst;
     }
 
     private void DrawAnnotation(DrawingContext dc, Annotation ann)
     {
         var brush = new SolidColorBrush(ann.PrimaryColor) { Opacity = ann.Opacity };
-        var pen = new System.Windows.Media.Pen(brush, ann.Thickness);
+        var pen = new Pen(brush, ann.Thickness);
 
         switch (ann.Type)
         {
             case ShapeType.Rectangle:
                 if (ann.IsFilled)
                 {
-                    dc.DrawRectangle(brush, null, ann.Bounds);
+                    if (ann.IsRounded) dc.DrawRoundedRectangle(brush, null, ann.Bounds, 8, 8);
+                    else dc.DrawRectangle(brush, null, ann.Bounds);
                 }
                 else
                 {
-                    dc.DrawRectangle(null, pen, ann.Bounds);
+                    if (ann.IsRounded) dc.DrawRoundedRectangle(null, pen, ann.Bounds, 8, 8);
+                    else dc.DrawRectangle(null, pen, ann.Bounds);
                 }
                 break;
 
             case ShapeType.Ellipse:
                 var center = new Point(ann.Bounds.Left + ann.Bounds.Width / 2, ann.Bounds.Top + ann.Bounds.Height / 2);
-                double rx = ann.Bounds.Width / 2;
-                double ry = ann.Bounds.Height / 2;
-                if (ann.IsFilled)
-                {
-                    dc.DrawEllipse(brush, null, center, rx, ry);
-                }
-                else
-                {
-                    dc.DrawEllipse(null, pen, center, rx, ry);
-                }
+                if (ann.IsFilled) dc.DrawEllipse(brush, null, center, ann.Bounds.Width / 2, ann.Bounds.Height / 2);
+                else dc.DrawEllipse(null, pen, center, ann.Bounds.Width / 2, ann.Bounds.Height / 2);
                 break;
 
             case ShapeType.Line:
@@ -250,7 +682,7 @@ public partial class OverlayWindow : Window
                 break;
 
             case ShapeType.Arrow:
-                DrawArrow(dc, pen, brush, ann.StartPoint, ann.EndPoint);
+                DrawArrow(dc, pen, brush, ann.StartPoint, ann.EndPoint, ann.IsCurved);
                 break;
 
             case ShapeType.Brush:
@@ -262,203 +694,270 @@ public partial class OverlayWindow : Window
                         ctx.BeginFigure(ann.Points[0], false, false);
                         ctx.PolyLineTo(ann.Points.Skip(1).ToList(), true, true);
                     }
-                    dc.DrawGeometry(null, pen, geo);
+                    var pPen = ann.IsHighlighter ? new Pen(new SolidColorBrush(ann.PrimaryColor) { Opacity = 0.35 }, ann.Thickness * 2.5) : pen;
+                    dc.DrawGeometry(null, pPen, geo);
                 }
                 break;
 
             case ShapeType.Step:
-                dc.DrawEllipse(brush, null, ann.StartPoint, 14, 14);
-                var ft = new FormattedText(
-                    ann.StepNumber.ToString(),
-                    System.Globalization.CultureInfo.CurrentCulture,
-                    System.Windows.FlowDirection.LeftToRight,
-                    new Typeface("Segoe UI Bold"),
-                    11,
-                    System.Windows.Media.Brushes.White,
-                    VisualTreeHelper.GetDpi(this).PixelsPerDip
-                );
-                dc.DrawText(ft, new Point(ann.StartPoint.X - ft.Width / 2, ann.StartPoint.Y - ft.Height / 2));
+                if (ann.IsFilled)
+                {
+                    dc.DrawEllipse(brush, null, ann.StartPoint, 13, 13);
+                    var ft = new FormattedText(ann.StepNumber.ToString(), System.Globalization.CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight, new Typeface("Segoe UI Bold"), 11, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                    dc.DrawText(ft, new Point(ann.StartPoint.X - ft.Width / 2, ann.StartPoint.Y - ft.Height / 2));
+                }
+                else
+                {
+                    dc.DrawEllipse(Brushes.White, pen, ann.StartPoint, 13, 13);
+                    var ft = new FormattedText(ann.StepNumber.ToString(), System.Globalization.CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight, new Typeface("Segoe UI Bold"), 11, brush, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                    dc.DrawText(ft, new Point(ann.StartPoint.X - ft.Width / 2, ann.StartPoint.Y - ft.Height / 2));
+                }
+                break;
+
+            case ShapeType.Text:
+                if (!string.IsNullOrEmpty(ann.Text))
+                {
+                    var ft = new FormattedText(
+                        ann.Text,
+                        System.Globalization.CultureInfo.CurrentCulture,
+                        System.Windows.FlowDirection.LeftToRight,
+                        new Typeface("Segoe UI Semibold"),
+                        ann.FontSize,
+                        brush,
+                        VisualTreeHelper.GetDpi(this).PixelsPerDip
+                    );
+
+                    var textRect = new Rect(ann.Bounds.Left, ann.Bounds.Top, ft.Width + 8, ft.Height + 4);
+                    if (ann.TextStyleIndex == 2) // 背景模式
+                    {
+                        dc.DrawRoundedRectangle(new SolidColorBrush(ann.SecondaryColor), null, textRect, 3, 3);
+                    }
+                    else if (ann.TextStyleIndex == 1) // 描边模式
+                    {
+                        dc.DrawRoundedRectangle(null, new Pen(new SolidColorBrush(ann.SecondaryColor), 1.5), textRect, 3, 3);
+                    }
+                    dc.DrawText(ft, new Point(textRect.Left + 4, textRect.Top + 2));
+                }
                 break;
         }
     }
 
-    private void DrawArrow(DrawingContext dc, System.Windows.Media.Pen pen, System.Windows.Media.Brush brush, Point start, Point end)
+    private void DrawArrow(DrawingContext dc, Pen pen, Brush brush, Point start, Point end, bool isCurved)
     {
-        dc.DrawLine(pen, start, end);
+        if (isCurved)
+        {
+            var mid = new Point((start.X + end.X) / 2, (start.Y + end.Y) / 2 - 30);
+            var geo = new StreamGeometry();
+            using (var ctx = geo.Open())
+            {
+                ctx.BeginFigure(start, false, false);
+                ctx.QuadraticBezierTo(mid, end, true, false);
+            }
+            dc.DrawGeometry(null, pen, geo);
+        }
+        else
+        {
+            dc.DrawLine(pen, start, end);
+        }
 
-        var v = end - start;
+        var v = end - (isCurved ? new Point((start.X + end.X) / 2, (start.Y + end.Y) / 2 - 30) : start);
         v.Normalize();
         var perp = new Vector(-v.Y, v.X);
+        var p1 = end - v * 15 + perp * 6.5;
+        var p2 = end - v * 15 - perp * 6.5;
 
-        double arrowLength = 16.0;
-        double arrowWidth = 7.0;
-
-        var p1 = end - v * arrowLength + perp * arrowWidth;
-        var p2 = end - v * arrowLength - perp * arrowWidth;
-
-        var geo = new StreamGeometry();
-        using (var ctx = geo.Open())
+        var headGeo = new StreamGeometry();
+        using (var ctx = headGeo.Open())
         {
             ctx.BeginFigure(end, true, true);
             ctx.LineTo(p1, true, false);
             ctx.LineTo(p2, true, false);
         }
-        dc.DrawGeometry(brush, null, geo);
-    }
-
-    private Rect BottomToolbarRect()
-    {
-        double w = 460;
-        double h = 42;
-        double x = Math.Max(10, Math.Min(Width - w - 10, _selectionRect.Left + (_selectionRect.Width - w) / 2));
-        double y = _selectionRect.Bottom + 12;
-        if (y + h > Height - 10)
-        {
-            y = _selectionRect.Bottom - h - 12;
-        }
-        return new Rect(x, y, w, h);
-    }
-
-    private void DrawBottomToolbar(DrawingContext dc)
-    {
-        var r = BottomToolbarRect();
-
-        // 胶囊白底与阴影
-        dc.DrawRoundedRectangle(System.Windows.Media.Brushes.White, new System.Windows.Media.Pen(System.Windows.Media.Brushes.LightGray, 1), r, 10, 10);
-
-        string[] items = _mode == CaptureMode.Scrolling
-            ? new[] { "✖ 退出", "✔ 完成" }
-            : new[] { "矩形", "椭圆", "箭头", "画笔", "贴图", "OCR", "长截图", "取消", "保存", "复制" };
-
-        double itemW = r.Width / items.Length;
-        for (int i = 0; i < items.Length; i++)
-        {
-            var btnRect = new Rect(r.Left + i * itemW, r.Top, itemW, r.Height);
-            var ft = new FormattedText(
-                items[i],
-                System.Globalization.CultureInfo.CurrentCulture,
-                System.Windows.FlowDirection.LeftToRight,
-                new Typeface("Segoe UI"),
-                11,
-                System.Windows.Media.Brushes.DimGray,
-                VisualTreeHelper.GetDpi(this).PixelsPerDip
-            );
-            dc.DrawText(ft, new Point(btnRect.Left + (btnRect.Width - ft.Width) / 2, btnRect.Top + (btnRect.Height - ft.Height) / 2));
-        }
+        dc.DrawGeometry(brush, null, headGeo);
     }
 
     private void DrawScrollingPreviewPanel(DrawingContext dc)
     {
         double cardW = 220;
         double cardH = Math.Min(Height - 60, Math.Max(360, _selectionRect.Height * 1.5));
-        double cardX = _selectionRect.Right + 16;
-        if (cardX + cardW > Width - 16)
-        {
-            cardX = _selectionRect.Left - cardW - 16;
-        }
-        double cardY = Math.Max(20, _selectionRect.Top);
+        double cardX = (_selectionRect.Left >= cardW + 24) ? (_selectionRect.Left - cardW - 16) : (_selectionRect.Right + 16);
+        cardX = Math.Max(16, Math.Min(Width - cardW - 16, cardX));
+        double cardY = Math.Max(20, Math.Min(Height - cardH - 20, _selectionRect.Top));
 
         var cardRect = new Rect(cardX, cardY, cardW, cardH);
-        dc.DrawRoundedRectangle(System.Windows.Media.Brushes.White, new System.Windows.Media.Pen(System.Windows.Media.Brushes.LightGray, 1), cardRect, 8, 8);
+        dc.DrawRoundedRectangle(Brushes.White, new Pen(new SolidColorBrush(Color.FromRgb(220, 220, 225)), 1), cardRect, 8, 8);
 
-        // 标题
-        var titleFt = new FormattedText(
-            "长截图预览",
-            System.Globalization.CultureInfo.CurrentCulture,
-            System.Windows.FlowDirection.LeftToRight,
-            new Typeface("Segoe UI Bold"),
-            11,
-            System.Windows.Media.Brushes.DarkSlateGray,
-            VisualTreeHelper.GetDpi(this).PixelsPerDip
-        );
-        dc.DrawText(titleFt, new Point(cardX + 12, cardY + 10));
+        // 标题栏 "长截图预览"
+        var titleFt = new FormattedText("长截图预览", System.Globalization.CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight, new Typeface("Segoe UI Bold"), 11, new SolidColorBrush(Color.FromRgb(50, 50, 60)), VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        dc.DrawText(titleFt, new Point(cardX + 10, cardY + 8));
 
-        // 渲染已拼接的长图
         if (_stitcher.HasImage && _stitcher.StitchedLongBitmap != null)
         {
             var imgSource = ScreenCapture.ToBitmapSource(_stitcher.StitchedLongBitmap);
             double innerW = cardW - 20;
-            double innerH = cardH - 80;
+            double innerH = cardH - 85;
             double scale = Math.Min(innerW / imgSource.Width, innerH / imgSource.Height);
             double dw = imgSource.Width * scale;
             double dh = imgSource.Height * scale;
 
-            var drawRect = new Rect(cardX + (cardW - dw) / 2, cardY + 34, dw, dh);
+            var drawRect = new Rect(cardX + (cardW - dw) / 2, cardY + 28, dw, dh);
+            dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(245, 245, 248)), null, drawRect);
             dc.DrawImage(imgSource, drawRect);
+            dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromRgb(215, 215, 220)), 1), drawRect);
 
             // 高度徽章
             var badgeRect = new Rect(cardX + 10, cardY + cardH - 36, cardW - 20, 22);
-            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(220, 40, 40, 40)), null, badgeRect, 4, 4);
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(220, 35, 35, 40)), null, badgeRect, 4, 4);
 
-            var badgeFt = new FormattedText(
-                $"长图高度: {_stitcher.CurrentHeight} px",
-                System.Globalization.CultureInfo.CurrentCulture,
-                System.Windows.FlowDirection.LeftToRight,
-                new Typeface("Segoe UI Semibold"),
-                10,
-                System.Windows.Media.Brushes.White,
-                VisualTreeHelper.GetDpi(this).PixelsPerDip
-            );
-            dc.DrawText(badgeFt, new Point(badgeRect.Left + (badgeRect.Width - badgeFt.Width) / 2, badgeRect.Top + 3));
+            var badgeFt = new FormattedText($"长图高度: {_stitcher.CurrentHeight} px", System.Globalization.CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight, new Typeface("Segoe UI Semibold"), 10, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            dc.DrawText(badgeFt, new Point(badgeRect.Left + (badgeRect.Width - badgeFt.Width) / 2, badgeRect.Top + 3.5));
         }
     }
 
-    #region Mouse & Keyboard Events
+    #endregion
+
+    #region Hit Testing & Mouse Events
+
+    private HitArea HitTestSelection(Point p)
+    {
+        if (_selectionRect.IsEmpty || _mode == CaptureMode.Scrolling) return HitArea.None;
+        double tol = 12.0;
+
+        if (Math.Abs(p.X - _selectionRect.Left) <= tol && Math.Abs(p.Y - _selectionRect.Top) <= tol) return HitArea.TopLeft;
+        if (Math.Abs(p.X - _selectionRect.Right) <= tol && Math.Abs(p.Y - _selectionRect.Top) <= tol) return HitArea.TopRight;
+        if (Math.Abs(p.X - _selectionRect.Left) <= tol && Math.Abs(p.Y - _selectionRect.Bottom) <= tol) return HitArea.BottomLeft;
+        if (Math.Abs(p.X - _selectionRect.Right) <= tol && Math.Abs(p.Y - _selectionRect.Bottom) <= tol) return HitArea.BottomRight;
+
+        if (Math.Abs(p.X - _selectionRect.Left) <= tol && p.Y >= _selectionRect.Top && p.Y <= _selectionRect.Bottom) return HitArea.LeftEdge;
+        if (Math.Abs(p.X - _selectionRect.Right) <= tol && p.Y >= _selectionRect.Top && p.Y <= _selectionRect.Bottom) return HitArea.RightEdge;
+        if (Math.Abs(p.Y - _selectionRect.Top) <= tol && p.X >= _selectionRect.Left && p.X <= _selectionRect.Right) return HitArea.TopEdge;
+        if (Math.Abs(p.Y - _selectionRect.Bottom) <= tol && p.X >= _selectionRect.Left && p.X <= _selectionRect.Right) return HitArea.BottomEdge;
+
+        if (_currentTool == ToolbarTool.None && _selectionRect.Contains(p)) return HitArea.Move;
+        return HitArea.None;
+    }
+
+    private void UpdateCursor(Point p)
+    {
+        var area = HitTestSelection(p);
+        switch (area)
+        {
+            case HitArea.TopLeft:
+            case HitArea.BottomRight:
+                Cursor = Cursors.SizeNWSE;
+                break;
+            case HitArea.TopRight:
+            case HitArea.BottomLeft:
+                Cursor = Cursors.SizeNESW;
+                break;
+            case HitArea.LeftEdge:
+            case HitArea.RightEdge:
+                Cursor = Cursors.SizeWE;
+                break;
+            case HitArea.TopEdge:
+            case HitArea.BottomEdge:
+                Cursor = Cursors.SizeNS;
+                break;
+            case HitArea.Move:
+                Cursor = Cursors.SizeAll;
+                break;
+            default:
+                Cursor = Cursors.Arrow;
+                break;
+        }
+    }
 
     private void Window_MouseDown(object sender, MouseButtonEventArgs e)
     {
         var p = e.GetPosition(this);
+        CommitInlineText();
 
         if (_mode == CaptureMode.Selecting)
         {
             _startPoint = p;
             _selectionRect = Rect.Empty;
+            return;
         }
-        else if (_mode == CaptureMode.Annotating)
+
+        // Top bar 点击 (圆角与阴影)
+        var topBar = TopBarRect();
+        if (topBar.Contains(p))
         {
-            var tb = BottomToolbarRect();
-            if (tb.Contains(p))
+            if (p.X >= topBar.Left + 88 && p.X <= topBar.Left + 145)
             {
-                HandleToolbarClick(p, tb);
+                _isDraggingCornerSlider = true;
+                UpdateCornerRadius(p.X, topBar.Left + 88, topBar.Left + 143);
                 return;
             }
-
-            if (_currentTool != ToolbarTool.None && _selectionRect.Contains(p))
+            if (p.X >= topBar.Left + 155)
             {
-                _startPoint = p;
-                if (_currentTool == ToolbarTool.Step)
-                {
-                    _annotationManager.Add(new Annotation
-                    {
-                        Type = ShapeType.Step,
-                        StartPoint = p,
-                        StepNumber = _stepCounter++,
-                        PrimaryColor = _currentColor,
-                        IsFilled = true
-                    });
-                    Render();
-                }
+                _includeShadow = !_includeShadow;
+                PreferencesStore.Current.IncludeShadow = _includeShadow;
+                PreferencesStore.Save();
+                Render();
+                return;
             }
         }
-        else if (_mode == CaptureMode.Scrolling)
+
+        // Sub-toolbar 点击
+        var subBar = SubToolbarRect();
+        if (_isSubToolbarVisible && subBar.Contains(p))
         {
-            var tb = BottomToolbarRect();
-            if (tb.Contains(p))
+            HandleSubToolbarClick(p, subBar);
+            return;
+        }
+
+        // Bottom toolbar 点击
+        var bottomBar = BottomToolbarRect();
+        if (bottomBar.Contains(p))
+        {
+            HandleBottomToolbarClick(p, bottomBar);
+            return;
+        }
+
+        // 选区调整或移动
+        var hit = HitTestSelection(p);
+        if (hit != HitArea.None)
+        {
+            _activeHitArea = hit;
+            _dragStartMouse = p;
+            _dragStartSelection = _selectionRect;
+            return;
+        }
+
+        // 文字标注编辑 (双击或单击已有文字)
+        if (_currentTool == ToolbarTool.Text && _selectionRect.Contains(p))
+        {
+            var hitText = _annotationManager.Items.LastOrDefault(a => a.Type == ShapeType.Text && a.HitTest(p));
+            if (hitText != null)
             {
-                double mid = tb.Left + tb.Width / 2;
-                if (p.X < mid)
+                StartInlineTextEdit(hitText.Bounds.TopLeft, hitText);
+                return;
+            }
+            StartInlineTextEdit(p, null);
+            return;
+        }
+
+        // 标注开始
+        if (_currentTool != ToolbarTool.None && _selectionRect.Contains(p))
+        {
+            _startPoint = p;
+            if (_currentTool == ToolbarTool.Step)
+            {
+                _annotationManager.Add(new Annotation
                 {
-                    Close();
-                }
-                else
-                {
-                    FinishAndCopy();
-                }
+                    Type = ShapeType.Step,
+                    StartPoint = p,
+                    StepNumber = _stepCounter++,
+                    PrimaryColor = _currentColor,
+                    IsFilled = _stepIsFilled
+                });
+                Render();
             }
         }
     }
 
-    private void Window_MouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    private void Window_MouseMove(object sender, MouseEventArgs e)
     {
         _currentMouse = e.GetPosition(this);
 
@@ -473,80 +972,133 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        if (_mode == CaptureMode.Annotating && _startPoint.HasValue && _currentTool != ToolbarTool.None)
+        if (_isDraggingCornerSlider)
         {
-            double x = Math.Min(_startPoint.Value.X, _currentMouse.X);
-            double y = Math.Min(_startPoint.Value.Y, _currentMouse.Y);
-            double w = Math.Abs(_startPoint.Value.X - _currentMouse.X);
-            double h = Math.Abs(_startPoint.Value.Y - _currentMouse.Y);
+            var topBar = TopBarRect();
+            UpdateCornerRadius(_currentMouse.X, topBar.Left + 88, topBar.Left + 143);
+            return;
+        }
 
-            switch (_currentTool)
+        if (_isDraggingSizeSlider)
+        {
+            var subBar = SubToolbarRect();
+            UpdateSubToolbarThickness(_currentMouse.X, subBar.Left + 344, subBar.Left + 394);
+            return;
+        }
+
+        if (_isDraggingOpacitySlider)
+        {
+            var subBar = SubToolbarRect();
+            UpdateSubToolbarOpacity(_currentMouse.X, subBar.Left + 456, subBar.Left + 506);
+            return;
+        }
+
+        // 选区边框拖拽调节
+        if (_activeHitArea != HitArea.None)
+        {
+            double dx = _currentMouse.X - _dragStartMouse.X;
+            double dy = _currentMouse.Y - _dragStartMouse.Y;
+            var r = _dragStartSelection;
+
+            switch (_activeHitArea)
             {
-                case ToolbarTool.Rectangle:
-                    _inProgressAnnotation = new Annotation
-                    {
-                        Type = ShapeType.Rectangle,
-                        Bounds = new Rect(x, y, w, h),
-                        PrimaryColor = _currentColor,
-                        Thickness = _currentThickness,
-                        IsFilled = _isFilled
-                    };
+                case HitArea.Move:
+                    _selectionRect = new Rect(r.Left + dx, r.Top + dy, r.Width, r.Height);
                     break;
-                case ToolbarTool.Ellipse:
-                    _inProgressAnnotation = new Annotation
-                    {
-                        Type = ShapeType.Ellipse,
-                        Bounds = new Rect(x, y, w, h),
-                        PrimaryColor = _currentColor,
-                        Thickness = _currentThickness,
-                        IsFilled = _isFilled
-                    };
+                case HitArea.TopLeft:
+                    _selectionRect = new Rect(Math.Min(r.Right - 10, r.Left + dx), Math.Min(r.Bottom - 10, r.Top + dy), Math.Max(10, r.Width - dx), Math.Max(10, r.Height - dy));
                     break;
-                case ToolbarTool.Line:
-                    _inProgressAnnotation = new Annotation
-                    {
-                        Type = ShapeType.Line,
-                        StartPoint = _startPoint.Value,
-                        EndPoint = _currentMouse,
-                        PrimaryColor = _currentColor,
-                        Thickness = _currentThickness
-                    };
+                case HitArea.TopRight:
+                    _selectionRect = new Rect(r.Left, Math.Min(r.Bottom - 10, r.Top + dy), Math.Max(10, r.Width + dx), Math.Max(10, r.Height - dy));
                     break;
-                case ToolbarTool.Arrow:
-                    _inProgressAnnotation = new Annotation
-                    {
-                        Type = ShapeType.Arrow,
-                        StartPoint = _startPoint.Value,
-                        EndPoint = _currentMouse,
-                        PrimaryColor = _currentColor,
-                        Thickness = _currentThickness
-                    };
+                case HitArea.BottomLeft:
+                    _selectionRect = new Rect(Math.Min(r.Right - 10, r.Left + dx), r.Top, Math.Max(10, r.Width - dx), Math.Max(10, r.Height + dy));
                     break;
-                case ToolbarTool.Brush:
-                    if (_inProgressAnnotation == null)
-                    {
-                        _inProgressAnnotation = new Annotation
-                        {
-                            Type = ShapeType.Brush,
-                            PrimaryColor = _currentColor,
-                            Thickness = _currentThickness
-                        };
-                    }
-                    _inProgressAnnotation.Points.Add(_currentMouse);
+                case HitArea.BottomRight:
+                    _selectionRect = new Rect(r.Left, r.Top, Math.Max(10, r.Width + dx), Math.Max(10, r.Height + dy));
+                    break;
+                case HitArea.LeftEdge:
+                    _selectionRect = new Rect(Math.Min(r.Right - 10, r.Left + dx), r.Top, Math.Max(10, r.Width - dx), r.Height);
+                    break;
+                case HitArea.RightEdge:
+                    _selectionRect = new Rect(r.Left, r.Top, Math.Max(10, r.Width + dx), r.Height);
+                    break;
+                case HitArea.TopEdge:
+                    _selectionRect = new Rect(r.Left, Math.Min(r.Bottom - 10, r.Top + dy), r.Width, Math.Max(10, r.Height - dy));
+                    break;
+                case HitArea.BottomEdge:
+                    _selectionRect = new Rect(r.Left, r.Top, r.Width, Math.Max(10, r.Height + dy));
                     break;
             }
             Render();
             return;
         }
 
-        if (_mode == CaptureMode.Selecting && !_startPoint.HasValue)
+        // 标注绘制中
+        if (_mode == CaptureMode.Annotating && _startPoint.HasValue && _currentTool != ToolbarTool.None)
+        {
+            double x = Math.Min(_startPoint.Value.X, _currentMouse.X);
+            double y = Math.Min(_startPoint.Value.Y, _currentMouse.Y);
+            double w = Math.Abs(_startPoint.Value.X - _currentMouse.X);
+            double h = Math.Abs(_startPoint.Value.Y - _currentMouse.Y);
+            var b = new Rect(x, y, w, h);
+
+            switch (_currentTool)
+            {
+                case ToolbarTool.Rectangle:
+                    _inProgressAnnotation = new Annotation { Type = ShapeType.Rectangle, Bounds = b, PrimaryColor = _currentColor, Thickness = _currentThickness, Opacity = _currentOpacity, IsFilled = _isRectFilled, IsRounded = _isRectRounded };
+                    break;
+                case ToolbarTool.Ellipse:
+                    _inProgressAnnotation = new Annotation { Type = ShapeType.Ellipse, Bounds = b, PrimaryColor = _currentColor, Thickness = _currentThickness, Opacity = _currentOpacity, IsFilled = _isOvalFilled };
+                    break;
+                case ToolbarTool.Line:
+                    _inProgressAnnotation = new Annotation { Type = ShapeType.Line, StartPoint = _startPoint.Value, EndPoint = _currentMouse, PrimaryColor = _currentColor, Thickness = _currentThickness, Opacity = _currentOpacity };
+                    break;
+                case ToolbarTool.Arrow:
+                    _inProgressAnnotation = new Annotation { Type = ShapeType.Arrow, StartPoint = _startPoint.Value, EndPoint = _currentMouse, PrimaryColor = _currentColor, Thickness = _currentThickness, Opacity = _currentOpacity, IsCurved = _isArrowCurved };
+                    break;
+                case ToolbarTool.Brush:
+                    if (_inProgressAnnotation == null)
+                    {
+                        _inProgressAnnotation = new Annotation { Type = ShapeType.Brush, PrimaryColor = _currentColor, Thickness = _currentThickness, Opacity = _currentOpacity, IsHighlighter = _isHighlighter };
+                    }
+                    _inProgressAnnotation.Points.Add(_currentMouse);
+                    break;
+                case ToolbarTool.Mosaic:
+                    _inProgressAnnotation = new Annotation { Type = ShapeType.Mosaic, Bounds = b, MosaicIsBlur = _mosaicIsBlur };
+                    break;
+            }
+            Render();
+            return;
+        }
+
+        // 更新工具栏 Hover 状态
+        var bar = BottomToolbarRect();
+        int oldHover = _hoveredButtonIndex;
+        if (bar.Contains(_currentMouse))
+        {
+            _hoveredButtonIndex = (int)((_currentMouse.X - bar.Left - 8) / 33);
+        }
+        else
+        {
+            _hoveredButtonIndex = -1;
+        }
+
+        if (oldHover != _hoveredButtonIndex)
         {
             Render();
         }
+
+        UpdateCursor(_currentMouse);
     }
 
     private void Window_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        _isDraggingCornerSlider = false;
+        _isDraggingSizeSlider = false;
+        _isDraggingOpacitySlider = false;
+        _activeHitArea = HitArea.None;
+
         if (_mode == CaptureMode.Selecting)
         {
             _startPoint = null;
@@ -578,14 +1130,13 @@ public partial class OverlayWindow : Window
             var p = e.GetPosition(this);
             if (_selectionRect.Contains(p))
             {
-                // 截取当前视口新鲜画面并追加到长截图
                 var fresh = GetCroppedSelectionBitmap();
-                var result = _stitcher.AppendSlice(fresh);
-                if (result.ReachedLimit)
+                var res = _stitcher.AppendSlice(fresh);
+                if (res.ReachedLimit)
                 {
                     System.Windows.MessageBox.Show("已达长截图最大高度限制 (32000px)", "ShotX", MessageBoxButton.OK, MessageBoxImage.Warning);
                 }
-                else if (result.DidStitch)
+                else if (res.DidStitch)
                 {
                     Render();
                 }
@@ -593,7 +1144,357 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private void Window_KeyDown(object sender, System.Windows.Input.KeyEventArgs e)
+    #endregion
+
+    #region Toolbar & Actions
+
+    private void HandleBottomToolbarClick(Point p, Rect bar)
+    {
+        int idx = (int)((p.X - bar.Left - 8) / 33);
+        var tools = _mode == CaptureMode.Scrolling
+            ? new[] { ToolbarTool.Cancel, ToolbarTool.Save, ToolbarTool.Copy }
+            : AllTools.Select(t => t.Tool).ToArray();
+
+        if (idx < 0 || idx >= tools.Length) return;
+        var clicked = tools[idx];
+
+        switch (clicked)
+        {
+            case ToolbarTool.Rectangle:
+            case ToolbarTool.Ellipse:
+            case ToolbarTool.Line:
+            case ToolbarTool.Arrow:
+            case ToolbarTool.Brush:
+            case ToolbarTool.Mosaic:
+            case ToolbarTool.Text:
+            case ToolbarTool.Step:
+                if (_currentTool == clicked)
+                {
+                    _isSubToolbarVisible = !_isSubToolbarVisible;
+                }
+                else
+                {
+                    _currentTool = clicked;
+                    _isSubToolbarVisible = true;
+                }
+                break;
+            case ToolbarTool.Pin:
+                PinCurrentSelection();
+                break;
+            case ToolbarTool.Undo:
+                _annotationManager.Undo();
+                break;
+            case ToolbarTool.Redo:
+                _annotationManager.Redo();
+                break;
+            case ToolbarTool.OCR:
+                PerformOCR();
+                break;
+            case ToolbarTool.Scrolling:
+                StartScrollingCapture();
+                break;
+            case ToolbarTool.Cancel:
+                Close();
+                break;
+            case ToolbarTool.Save:
+                SaveFinalImage();
+                break;
+            case ToolbarTool.Copy:
+                FinishAndCopy();
+                break;
+        }
+        Render();
+    }
+
+    private void HandleSubToolbarClick(Point p, Rect subBar)
+    {
+        double midY = subBar.Top + subBar.Height / 2;
+
+        if (_currentTool == ToolbarTool.Mosaic)
+        {
+            var segRect = new Rect(subBar.Left + 20, midY - 11, 140, 22);
+            if (segRect.Contains(p))
+            {
+                _mosaicIsBlur = (p.X < segRect.Left + 70);
+                Render();
+            }
+            return;
+        }
+
+        // 1. 左侧选项点击
+        switch (_currentTool)
+        {
+            case ToolbarTool.Rectangle:
+                if (new Rect(subBar.Left + 12, midY - 9, 52, 18).Contains(p)) _isRectFilled = !_isRectFilled;
+                if (new Rect(subBar.Left + 68, midY - 9, 52, 18).Contains(p)) _isRectRounded = !_isRectRounded;
+                break;
+            case ToolbarTool.Ellipse:
+                if (new Rect(subBar.Left + 12, midY - 9, 52, 18).Contains(p)) _isOvalFilled = !_isOvalFilled;
+                break;
+            case ToolbarTool.Arrow:
+                if (new Rect(subBar.Left + 12, midY - 9, 70, 18).Contains(p)) _isArrowCurved = !_isArrowCurved;
+                break;
+            case ToolbarTool.Brush:
+                var bSeg = new Rect(subBar.Left + 10, midY - 11, 110, 22);
+                if (bSeg.Contains(p)) _isHighlighter = (p.X >= bSeg.Left + 55);
+                break;
+            case ToolbarTool.Step:
+                var sSeg = new Rect(subBar.Left + 12, midY - 11, 80, 22);
+                if (sSeg.Contains(p)) _stepIsFilled = (p.X >= sSeg.Left + 40);
+                break;
+            case ToolbarTool.Text:
+                var tSeg = new Rect(subBar.Left + 10, midY - 11, 94, 22);
+                if (tSeg.Contains(p))
+                {
+                    _textStyleIndex = (int)((p.X - tSeg.Left) / (tSeg.Width / 3));
+                    _textStyleIndex = Math.Max(0, Math.Min(2, _textStyleIndex));
+                }
+                break;
+        }
+
+        // 2. 调色板颜色点击
+        double dotStartX = subBar.Left + 136;
+        for (int i = 0; i < SubToolbarColors.Length; i++)
+        {
+            var dotRect = new Rect(dotStartX + i * 19, midY - 8, 16, 16);
+            if (dotRect.Contains(p))
+            {
+                if (_currentTool == ToolbarTool.Text && _textSelectingSecondary)
+                {
+                    _secondaryColor = SubToolbarColors[i];
+                }
+                else
+                {
+                    _currentColor = SubToolbarColors[i];
+                }
+                break;
+            }
+        }
+
+        // 3. 粗细/透明度滑块开始拖拽
+        if (new Rect(subBar.Left + 344, midY - 6, 50, 12).Contains(p))
+        {
+            _isDraggingSizeSlider = true;
+            UpdateSubToolbarThickness(p.X, subBar.Left + 344, subBar.Left + 394);
+        }
+        if (new Rect(subBar.Left + 456, midY - 6, 50, 12).Contains(p))
+        {
+            _isDraggingOpacitySlider = true;
+            UpdateSubToolbarOpacity(p.X, subBar.Left + 456, subBar.Left + 506);
+        }
+
+        Render();
+    }
+
+    private void UpdateCornerRadius(double mouseX, double minX, double maxX)
+    {
+        double ratio = Math.Max(0, Math.Min(1, (mouseX - minX) / (maxX - minX)));
+        _cornerRadius = (int)(ratio * 36);
+        PreferencesStore.Current.CornerRadius = _cornerRadius;
+        PreferencesStore.Save();
+        Render();
+    }
+
+    private void UpdateSubToolbarThickness(double mouseX, double minX, double maxX)
+    {
+        double ratio = Math.Max(0, Math.Min(1, (mouseX - minX) / (maxX - minX)));
+        _currentThickness = Math.Max(1, ratio * 30);
+        Render();
+    }
+
+    private void UpdateSubToolbarOpacity(double mouseX, double minX, double maxX)
+    {
+        double ratio = Math.Max(0.1, Math.Min(1, (mouseX - minX) / (maxX - minX)));
+        _currentOpacity = ratio;
+        Render();
+    }
+
+    #endregion
+
+    #region Text Inline Editor
+
+    private void StartInlineTextEdit(Point p, Annotation? existing)
+    {
+        _editingTextAnnotation = existing;
+        TxtInlineEditor.Visibility = Visibility.Visible;
+        TxtInlineEditor.FontSize = existing?.FontSize ?? 18.0;
+        TxtInlineEditor.Foreground = new SolidColorBrush(existing?.PrimaryColor ?? _currentColor);
+        TxtInlineEditor.Text = existing?.Text ?? string.Empty;
+
+        Canvas.SetLeft(TxtInlineEditor, p.X);
+        Canvas.SetTop(TxtInlineEditor, p.Y);
+        TxtInlineEditor.Focus();
+        TxtInlineEditor.SelectAll();
+    }
+
+    private void CommitInlineText()
+    {
+        if (TxtInlineEditor.Visibility != Visibility.Visible) return;
+        string text = TxtInlineEditor.Text.Trim();
+        TxtInlineEditor.Visibility = Visibility.Collapsed;
+
+        if (!string.IsNullOrEmpty(text))
+        {
+            double x = Canvas.GetLeft(TxtInlineEditor);
+            double y = Canvas.GetTop(TxtInlineEditor);
+
+            if (_editingTextAnnotation != null)
+            {
+                _editingTextAnnotation.Text = text;
+            }
+            else
+            {
+                _annotationManager.Add(new Annotation
+                {
+                    Type = ShapeType.Text,
+                    Bounds = new Rect(x, y, 120, 32),
+                    Text = text,
+                    FontSize = 18.0,
+                    PrimaryColor = _currentColor,
+                    SecondaryColor = _secondaryColor,
+                    TextStyleIndex = _textStyleIndex
+                });
+            }
+        }
+        else if (_editingTextAnnotation != null)
+        {
+            _annotationManager.Remove(_editingTextAnnotation);
+        }
+        _editingTextAnnotation = null;
+        Render();
+    }
+
+    private void TxtInlineEditor_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Enter && (Keyboard.Modifiers & ModifierKeys.Shift) == 0)
+        {
+            CommitInlineText();
+            e.Handled = true;
+        }
+        else if (e.Key == Key.Escape)
+        {
+            TxtInlineEditor.Visibility = Visibility.Collapsed;
+            _editingTextAnnotation = null;
+            Render();
+            e.Handled = true;
+        }
+    }
+
+    private void TxtInlineEditor_LostFocus(object sender, RoutedEventArgs e)
+    {
+        CommitInlineText();
+    }
+
+    #endregion
+
+    #region Export & Save
+
+    private Bitmap GetCroppedSelectionBitmap()
+    {
+        int sx = (int)_selectionRect.X;
+        int sy = (int)_selectionRect.Y;
+        int sw = Math.Max(1, (int)_selectionRect.Width);
+        int sh = Math.Max(1, (int)_selectionRect.Height);
+        return ScreenCapture.CropBitmap(_fullSnapshot, new System.Drawing.Rectangle(sx, sy, sw, sh));
+    }
+
+    private Bitmap GenerateFinalComposite()
+    {
+        if (_mode == CaptureMode.Scrolling && _stitcher.StitchedLongBitmap != null)
+        {
+            return new Bitmap(_stitcher.StitchedLongBitmap);
+        }
+
+        var baseBitmap = GetCroppedSelectionBitmap();
+        var resultBitmap = new Bitmap(baseBitmap.Width, baseBitmap.Height, PixelFormat.Format32bppArgb);
+
+        using (var g = Graphics.FromImage(resultBitmap))
+        {
+            g.SmoothingMode = SmoothingMode.AntiAlias;
+            g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+
+            // 1. 裁剪圆角
+            if (_cornerRadius > 0)
+            {
+                using var path = new GraphicsPath();
+                int r = _cornerRadius * 2;
+                path.AddArc(0, 0, r, r, 180, 90);
+                path.AddArc(baseBitmap.Width - r, 0, r, r, 270, 90);
+                path.AddArc(baseBitmap.Width - r, baseBitmap.Height - r, r, r, 0, 90);
+                path.AddArc(0, baseBitmap.Height - r, r, r, 90, 90);
+                path.CloseFigure();
+                g.SetClip(path);
+            }
+
+            g.DrawImage(baseBitmap, 0, 0);
+        }
+
+        baseBitmap.Dispose();
+        return resultBitmap;
+    }
+
+    private void PinCurrentSelection()
+    {
+        var bmp = GenerateFinalComposite();
+        var pinned = new PinnedWindow(bmp, new Point(_selectionRect.Left, _selectionRect.Top));
+        pinned.Show();
+        Close();
+    }
+
+    private async void PerformOCR()
+    {
+        var bmp = GetCroppedSelectionBitmap();
+        string text = await OcrHelper.RecognizeTextAsync(bmp);
+        System.Windows.Clipboard.SetText(text);
+        System.Windows.MessageBox.Show(text, "ShotX 文字识别 (已复制到剪贴板)", MessageBoxButton.OK, MessageBoxImage.Information);
+        Close();
+    }
+
+    private void StartScrollingCapture()
+    {
+        _mode = CaptureMode.Scrolling;
+        _isSubToolbarVisible = false;
+        var initial = GetCroppedSelectionBitmap();
+        _stitcher.Initialize(initial);
+        Render();
+    }
+
+    private void FinishAndCopy()
+    {
+        CommitInlineText();
+        var finalImage = GenerateFinalComposite();
+        System.Windows.Clipboard.SetImage(ScreenCapture.ToBitmapSource(finalImage));
+        if (PreferencesStore.Current.PlaySound)
+        {
+            System.Media.SystemSounds.Beep.Play();
+        }
+        finalImage.Dispose();
+        Close();
+    }
+
+    private void SaveFinalImage()
+    {
+        CommitInlineText();
+        var finalImage = GenerateFinalComposite();
+        using var sfd = new SaveFileDialog
+        {
+            Filter = "PNG Image (*.png)|*.png|JPEG Image (*.jpg)|*.jpg|Bitmap Image (*.bmp)|*.bmp",
+            FileName = $"ShotX_{DateTime.Now:yyyyMMdd_HHmmss}.png",
+            InitialDirectory = PreferencesStore.Current.SavePath
+        };
+        if (sfd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        {
+            finalImage.Save(sfd.FileName, ImageFormat.Png);
+            if (PreferencesStore.Current.PlaySound)
+            {
+                System.Media.SystemSounds.Beep.Play();
+            }
+        }
+        finalImage.Dispose();
+        Close();
+    }
+
+    private void Window_KeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
@@ -623,126 +1524,12 @@ public partial class OverlayWindow : Window
         }
     }
 
-    #endregion
-
-    private void HandleToolbarClick(Point p, Rect tb)
-    {
-        string[] items = new[] { "矩形", "椭圆", "箭头", "画笔", "贴图", "OCR", "长截图", "取消", "保存", "复制" };
-        double itemW = tb.Width / items.Length;
-        int idx = (int)((p.X - tb.Left) / itemW);
-        if (idx < 0 || idx >= items.Length) return;
-
-        switch (items[idx])
-        {
-            case "矩形":
-                _currentTool = ToolbarTool.Rectangle;
-                break;
-            case "椭圆":
-                _currentTool = ToolbarTool.Ellipse;
-                break;
-            case "箭头":
-                _currentTool = ToolbarTool.Arrow;
-                break;
-            case "画笔":
-                _currentTool = ToolbarTool.Brush;
-                break;
-            case "贴图":
-                PinCurrentSelection();
-                break;
-            case "OCR":
-                PerformOCR();
-                break;
-            case "长截图":
-                StartScrollingCapture();
-                break;
-            case "取消":
-                Close();
-                break;
-            case "保存":
-                SaveFinalImage();
-                break;
-            case "复制":
-                FinishAndCopy();
-                break;
-        }
-        Render();
-    }
-
-    private Bitmap GetCroppedSelectionBitmap()
-    {
-        int sx = (int)_selectionRect.X;
-        int sy = (int)_selectionRect.Y;
-        int sw = (int)_selectionRect.Width;
-        int sh = (int)_selectionRect.Height;
-        return ScreenCapture.CropBitmap(_fullSnapshot, new System.Drawing.Rectangle(sx, sy, sw, sh));
-    }
-
-    private void PinCurrentSelection()
-    {
-        var bmp = GetCroppedSelectionBitmap();
-        var pinned = new PinnedWindow(bmp, new Point(_selectionRect.Left, _selectionRect.Top));
-        pinned.Show();
-        Close();
-    }
-
-    private async void PerformOCR()
-    {
-        var bmp = GetCroppedSelectionBitmap();
-        string text = await OcrHelper.RecognizeTextAsync(bmp);
-        System.Windows.Clipboard.SetText(text);
-        System.Windows.MessageBox.Show(text, "ShotX 文字识别 (已复制到剪贴板)", MessageBoxButton.OK, MessageBoxImage.Information);
-        Close();
-    }
-
-    private void StartScrollingCapture()
-    {
-        _mode = CaptureMode.Scrolling;
-        var initial = GetCroppedSelectionBitmap();
-        _stitcher.Initialize(initial);
-        Render();
-    }
-
-    private void FinishAndCopy()
-    {
-        var finalImage = _mode == CaptureMode.Scrolling && _stitcher.StitchedLongBitmap != null
-            ? _stitcher.StitchedLongBitmap
-            : GetCroppedSelectionBitmap();
-
-        System.Windows.Clipboard.SetImage(ScreenCapture.ToBitmapSource(finalImage));
-        Close();
-    }
-
-    private void SaveFinalImage()
-    {
-        var finalImage = _mode == CaptureMode.Scrolling && _stitcher.StitchedLongBitmap != null
-            ? _stitcher.StitchedLongBitmap
-            : GetCroppedSelectionBitmap();
-
-        using var sfd = new SaveFileDialog
-        {
-            Filter = "PNG Image (*.png)|*.png|JPEG Image (*.jpg)|*.jpg|Bitmap Image (*.bmp)|*.bmp",
-            FileName = $"ShotX_{DateTime.Now:yyyyMMdd_HHmmss}.png"
-        };
-        if (sfd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
-        {
-            finalImage.Save(sfd.FileName, ImageFormat.Png);
-        }
-        Close();
-    }
-
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
         _fullSnapshot.Dispose();
         _stitcher.Reset();
     }
-}
 
-public class VisualHost : FrameworkElement
-{
-    private readonly Visual _visual;
-    public VisualHost(Visual visual) => _visual = visual;
-    protected override int VisualChildrenCount => 1;
-    protected override Visual GetVisualChild(int index) => _visual;
+    #endregion
 }
-

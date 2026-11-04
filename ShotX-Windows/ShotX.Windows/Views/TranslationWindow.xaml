@@ -1,0 +1,77 @@
+<Window x:Class="ShotX.Windows.Views.TranslationWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ShotX 翻译"
+        Width="480"
+        Height="360"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        WindowStartupLocation="CenterScreen"
+        KeyDown="Window_KeyDown"
+        Deactivated="Window_Deactivated">
+    <Border Background="White" CornerRadius="10" BorderBrush="#E5E5EA" BorderThickness="1" Margin="12">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="16" ShadowDepth="4" Opacity="0.25" Color="Black" />
+        </Border.Effect>
+        <Grid Margin="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- Header & Language Selector -->
+            <Grid Grid.Row="0" Margin="0,0,0,12">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <ComboBox x:Name="CmbSourceLang" Grid.Column="0" SelectedIndex="0">
+                    <ComboBoxItem Content="自动检测" />
+                    <ComboBoxItem Content="中文" />
+                    <ComboBoxItem Content="英语" />
+                    <ComboBoxItem Content="日语" />
+                    <ComboBoxItem Content="韩语" />
+                </ComboBox>
+
+                <TextBlock Grid.Column="1" Text="➔" VerticalAlignment="Center" Margin="12,0" Foreground="Gray" FontWeight="Bold" />
+
+                <ComboBox x:Name="CmbTargetLang" Grid.Column="2" SelectedIndex="0">
+                    <ComboBoxItem Content="自动选择" />
+                    <ComboBoxItem Content="中文" />
+                    <ComboBoxItem Content="英语" />
+                    <ComboBoxItem Content="日语" />
+                    <ComboBoxItem Content="韩语" />
+                </ComboBox>
+
+                <Button Grid.Column="3" Content="✕" Width="24" Height="24" Margin="12,0,0,0" Background="Transparent" BorderThickness="0" Foreground="Gray" FontWeight="Bold" Click="BtnClose_Click" />
+            </Grid>
+
+            <!-- Source Input Text -->
+            <TextBox x:Name="TxtSource" Grid.Row="1" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                     BorderBrush="#E5E5EA" Padding="8" FontSize="13" TextChanged="TxtSource_TextChanged" />
+
+            <!-- Action Bar -->
+            <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,6">
+                <Button x:Name="BtnTranslate" Content="翻译" Width="60" Height="26" Background="#007AFF" Foreground="White" BorderThickness="0" Click="BtnTranslate_Click" />
+            </StackPanel>
+
+            <!-- Target Translated Output -->
+            <TextBox x:Name="TxtResult" Grid.Row="3" IsReadOnly="True" AcceptsReturn="True" TextWrapping="Wrap" VerticalScrollBarVisibility="Auto"
+                     Background="#F8F8FA" BorderBrush="#E5E5EA" Padding="8" FontSize="13" />
+
+            <!-- Footer -->
+            <DockPanel Grid.Row="4" Margin="0,8,0,0">
+                <TextBlock Text="按 Esc 键关闭窗口" VerticalAlignment="Center" Foreground="#86868B" FontSize="11" />
+                <Button Content="复制结果" HorizontalAlignment="Right" Width="80" Height="26" Click="BtnCopy_Click" />
+            </DockPanel>
+        </Grid>
+    </Border>
+</Window>
