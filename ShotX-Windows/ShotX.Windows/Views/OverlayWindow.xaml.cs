@@ -93,7 +93,7 @@ public partial class OverlayWindow : Window
 
     // Scrolling screenshot State
     private readonly ScrollStitcher _stitcher = new();
-    private readonly DrawingVisual _drawingVisual = new();
+    private Rect? _hoveredWindowRect;
 
     // 8 Sub-Toolbar Preset Colors
     private static readonly Color[] SubToolbarColors = new[]
@@ -108,20 +108,31 @@ public partial class OverlayWindow : Window
         Color.FromRgb(175, 82, 222)  // 紫色 #AF52DE
     };
 
-    public OverlayWindow()
+    public OverlayWindow(Rect? initialRect = null)
     {
         InitializeComponent();
 
+        WindowStartupLocation = WindowStartupLocation.Manual;
+        Left = SystemParameters.VirtualScreenLeft;
+        Top = SystemParameters.VirtualScreenTop;
+        Width = SystemParameters.VirtualScreenWidth;
+        Height = SystemParameters.VirtualScreenHeight;
+
         _fullSnapshot = ScreenCapture.CaptureAllScreens(out _virtualBounds);
         ImgSnapshot.Source = ScreenCapture.ToBitmapSource(_fullSnapshot);
+        ImgSnapshot.Width = Width;
+        ImgSnapshot.Height = Height;
 
-        Left = _virtualBounds.Left;
-        Top = _virtualBounds.Top;
-        Width = _virtualBounds.Width;
-        Height = _virtualBounds.Height;
+        OverlayCanvas.CustomRender = DrawCanvas;
 
         _cornerRadius = PreferencesStore.Current.CornerRadius;
         _includeShadow = PreferencesStore.Current.IncludeShadow;
+
+        if (initialRect.HasValue && initialRect.Value.Width > 5 && initialRect.Value.Height > 5)
+        {
+            _selectionRect = initialRect.Value;
+            _mode = CaptureMode.Annotating;
+        }
 
         Loaded += (_, _) =>
         {
@@ -135,8 +146,11 @@ public partial class OverlayWindow : Window
 
     private void Render()
     {
-        using var dc = _drawingVisual.RenderOpen();
+        OverlayCanvas.InvalidateVisual();
+    }
 
+    private void DrawCanvas(DrawingContext dc)
+    {
         // 1. 绘制半透明灰色遮罩
         var fullRect = new Rect(0, 0, Width, Height);
         var maskGeometry = new CombinedGeometry(
@@ -156,6 +170,10 @@ public partial class OverlayWindow : Window
             }
             else
             {
+                if (_hoveredWindowRect.HasValue)
+                {
+                    dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(35, 0, 122, 255)), new Pen(new SolidColorBrush(Color.FromRgb(0, 122, 255)), 2), _hoveredWindowRect.Value);
+                }
                 DrawLoupe(dc, _currentMouse);
             }
         }
@@ -201,16 +219,6 @@ public partial class OverlayWindow : Window
             DrawCornerBrackets(dc, _selectionRect);
             DrawScrollingPreviewPanel(dc);
             DrawBottomToolbar(dc);
-        }
-
-        dc.Close();
-
-        OverlayCanvas.Children.Clear();
-        OverlayCanvas.Children.Add(new VisualHost(_drawingVisual));
-
-        if (TxtInlineEditor.Visibility == Visibility.Visible)
-        {
-            OverlayCanvas.Children.Add(TxtInlineEditor);
         }
     }
 
@@ -882,8 +890,45 @@ public partial class OverlayWindow : Window
         var p = e.GetPosition(this);
         CommitInlineText();
 
+        // 1. 右键处理：如果有选区则撤销选区重新框选；如果没有选区则直接关闭退出
+        if (e.ChangedButton == MouseButton.Right)
+        {
+            if (_mode == CaptureMode.Annotating || !_selectionRect.IsEmpty)
+            {
+                _mode = CaptureMode.Selecting;
+                _selectionRect = Rect.Empty;
+                _currentTool = ToolbarTool.None;
+                _isSubToolbarVisible = false;
+                Render();
+                return;
+            }
+            Close();
+            return;
+        }
+
+        if (e.ChangedButton != MouseButton.Left) return;
+        CaptureMouse();
+
+        // 2. 双击选区直接完成并复制到剪贴板
+        if (e.ClickCount == 2 && !_selectionRect.IsEmpty && _selectionRect.Contains(p))
+        {
+            FinishAndCopy();
+            return;
+        }
+
         if (_mode == CaptureMode.Selecting)
         {
+            // 如果悬停在探测到的窗口上且无拖拽，直接吸附该窗口
+            if (_hoveredWindowRect.HasValue && _selectionRect.IsEmpty)
+            {
+                _selectionRect = _hoveredWindowRect.Value;
+                _hoveredWindowRect = null;
+                _mode = CaptureMode.Annotating;
+                LastCaptureStore.LastRect = _selectionRect;
+                Render();
+                return;
+            }
+
             _startPoint = p;
             _selectionRect = Rect.Empty;
             return;
@@ -971,15 +1016,28 @@ public partial class OverlayWindow : Window
     {
         _currentMouse = e.GetPosition(this);
 
-        if (_mode == CaptureMode.Selecting && _startPoint.HasValue)
+        if (_mode == CaptureMode.Selecting)
         {
-            double x = Math.Min(_startPoint.Value.X, _currentMouse.X);
-            double y = Math.Min(_startPoint.Value.Y, _currentMouse.Y);
-            double w = Math.Abs(_startPoint.Value.X - _currentMouse.X);
-            double h = Math.Abs(_startPoint.Value.Y - _currentMouse.Y);
-            _selectionRect = new Rect(x, y, w, h);
-            Render();
-            return;
+            if (_startPoint.HasValue)
+            {
+                double x = Math.Min(_startPoint.Value.X, _currentMouse.X);
+                double y = Math.Min(_startPoint.Value.Y, _currentMouse.Y);
+                double w = Math.Abs(_startPoint.Value.X - _currentMouse.X);
+                double h = Math.Abs(_startPoint.Value.Y - _currentMouse.Y);
+                _selectionRect = new Rect(x, y, w, h);
+                _hoveredWindowRect = null;
+                Render();
+                return;
+            }
+            else
+            {
+                // 窗口探测与吸附
+                double scaleX = (double)_virtualBounds.Width / Width;
+                double scaleY = (double)_virtualBounds.Height / Height;
+                _hoveredWindowRect = WindowDetectionHelper.GetWindowRectAtPoint(_currentMouse, scaleX, scaleY, Left, Top);
+                Render();
+                return;
+            }
         }
 
         if (_isDraggingCornerSlider)
@@ -1104,6 +1162,11 @@ public partial class OverlayWindow : Window
 
     private void Window_MouseUp(object sender, MouseButtonEventArgs e)
     {
+        if (IsMouseCaptured)
+        {
+            ReleaseMouseCapture();
+        }
+
         _isDraggingCornerSlider = false;
         _isDraggingSizeSlider = false;
         _isDraggingOpacitySlider = false;
@@ -1112,9 +1175,10 @@ public partial class OverlayWindow : Window
         if (_mode == CaptureMode.Selecting)
         {
             _startPoint = null;
-            if (_selectionRect.Width > 10 && _selectionRect.Height > 10)
+            if (_selectionRect.Width >= 5 && _selectionRect.Height >= 5)
             {
                 _mode = CaptureMode.Annotating;
+                LastCaptureStore.LastRect = _selectionRect;
             }
             else
             {
@@ -1131,6 +1195,7 @@ public partial class OverlayWindow : Window
             _startPoint = null;
             Render();
         }
+    }
     }
 
     private void Window_MouseWheel(object sender, MouseWheelEventArgs e)
@@ -1401,11 +1466,33 @@ public partial class OverlayWindow : Window
 
     private Bitmap GetCroppedSelectionBitmap()
     {
-        int sx = (int)_selectionRect.X;
-        int sy = (int)_selectionRect.Y;
-        int sw = Math.Max(1, (int)_selectionRect.Width);
-        int sh = Math.Max(1, (int)_selectionRect.Height);
-        return ScreenCapture.CropBitmap(_fullSnapshot, new System.Drawing.Rectangle(sx, sy, sw, sh));
+        double scaleX = (double)_virtualBounds.Width / Width;
+        double scaleY = (double)_virtualBounds.Height / Height;
+
+        int sx = Math.Max(0, (int)Math.Round(_selectionRect.X * scaleX));
+        int sy = Math.Max(0, (int)Math.Round(_selectionRect.Y * scaleY));
+        int sw = Math.Min(_virtualBounds.Width - sx, (int)Math.Round(_selectionRect.Width * scaleX));
+        int sh = Math.Min(_virtualBounds.Height - sy, (int)Math.Round(_selectionRect.Height * scaleY));
+
+        return ScreenCapture.CropBitmap(_fullSnapshot, new System.Drawing.Rectangle(sx, sy, Math.Max(1, sw), Math.Max(1, sh)));
+    }
+
+    private void CopyCurrentPixelHex()
+    {
+        try
+        {
+            double scaleX = (double)_virtualBounds.Width / Width;
+            double scaleY = (double)_virtualBounds.Height / Height;
+            int px = Math.Max(0, Math.Min(_virtualBounds.Width - 1, (int)Math.Round(_currentMouse.X * scaleX)));
+            int py = Math.Max(0, Math.Min(_virtualBounds.Height - 1, (int)Math.Round(_currentMouse.Y * scaleY)));
+            var col = _fullSnapshot.GetPixel(px, py);
+            string hex = $"#{col.R:X2}{col.G:X2}{col.B:X2}";
+            System.Windows.Clipboard.SetText(hex);
+            System.Windows.MessageBox.Show($"已复制颜色代码: {hex}", "ShotX 拾色器", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch
+        {
+        }
     }
 
     private Bitmap GenerateFinalComposite()
@@ -1509,8 +1596,16 @@ public partial class OverlayWindow : Window
         if (e.Key == Key.Escape)
         {
             Close();
+            return;
         }
-        else if (e.Key == Key.Enter)
+
+        if (_mode == CaptureMode.Selecting && e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            CopyCurrentPixelHex();
+            return;
+        }
+
+        if (e.Key == Key.Enter)
         {
             FinishAndCopy();
         }
@@ -1532,6 +1627,21 @@ public partial class OverlayWindow : Window
         {
             SaveFinalImage();
         }
+        else if (TxtInlineEditor.Visibility != Visibility.Visible && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            switch (e.Key)
+            {
+                case Key.R: _currentTool = ToolbarTool.Rectangle; _isSubToolbarVisible = true; Render(); break;
+                case Key.O: _currentTool = ToolbarTool.Ellipse; _isSubToolbarVisible = true; Render(); break;
+                case Key.L: _currentTool = ToolbarTool.Line; _isSubToolbarVisible = true; Render(); break;
+                case Key.A: _currentTool = ToolbarTool.Arrow; _isSubToolbarVisible = true; Render(); break;
+                case Key.P: _currentTool = ToolbarTool.Brush; _isSubToolbarVisible = true; Render(); break;
+                case Key.M: _currentTool = ToolbarTool.Mosaic; _isSubToolbarVisible = true; Render(); break;
+                case Key.T: _currentTool = ToolbarTool.Text; _isSubToolbarVisible = true; Render(); break;
+                case Key.S: _currentTool = ToolbarTool.Step; _isSubToolbarVisible = true; Render(); break;
+                case Key.F3: PinCurrentSelection(); break;
+            }
+        }
     }
 
     protected override void OnClosed(EventArgs e)
@@ -1542,12 +1652,4 @@ public partial class OverlayWindow : Window
     }
 
     #endregion
-}
-
-public class VisualHost : FrameworkElement
-{
-    private readonly Visual _visual;
-    public VisualHost(Visual visual) => _visual = visual;
-    protected override int VisualChildrenCount => 1;
-    protected override Visual GetVisualChild(int index) => _visual;
 }
