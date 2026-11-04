@@ -20,3 +20,4 @@
         <Canvas x:Name="OverlayCanvas" Background="Transparent" />
     </Grid>
 </Window>
+

@@ -26,3 +26,4 @@
         <Image x:Name="ImgPinned" Stretch="Uniform" RenderOptions.BitmapScalingMode="HighQuality" />
     </Border>
 </Window>
+

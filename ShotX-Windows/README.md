@@ -29,3 +29,4 @@ cd ShotX-Windows/ShotX.Windows
 dotnet publish -c Release -r win-x64 --self-contained true
 ```
 发布产物将位于：`ShotX-Windows/ShotX.Windows/bin/Release/net8.0-windows10.0.19041.0/win-x64/publish`。
+

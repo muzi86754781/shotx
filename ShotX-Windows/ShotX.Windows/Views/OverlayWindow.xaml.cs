@@ -745,3 +745,4 @@ public class VisualHost : FrameworkElement
     protected override int VisualChildrenCount => 1;
     protected override Visual GetVisualChild(int index) => _visual;
 }
+

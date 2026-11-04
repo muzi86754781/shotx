@@ -84,3 +84,4 @@ public sealed class HotKeyManager : IDisposable
         _source.Dispose();
     }
 }
+

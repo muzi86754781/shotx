@@ -32,3 +32,4 @@ public enum TextStyle
     Border,
     Background
 }
+

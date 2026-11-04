@@ -74,12 +74,16 @@ jobs:
           iscc /DMyAppVersion=${{ env.VERSION }} /O. /FShotX-Windows-Setup-${{ env.VERSION }} ShotX-Windows/installer/ShotX-Setup.iss
 
       - name: Upload Windows Artifacts to GitHub Release
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ env.TAG }}
-          name: ShotX ${{ env.TAG }}
-          files: |
-            ShotX-Windows-Setup-*.exe
-            ShotX-Windows-*-Portable.zip
+        shell: pwsh
+        run: |
+          $installer = "ShotX-Windows-Setup-${{ env.VERSION }}.exe"
+          $portable = "ShotX-Windows-${{ env.VERSION }}-Portable.zip"
+          Write-Host "Checking artifacts exist: $installer and $portable"
+          if ((Test-Path $installer) -and (Test-Path $portable)) {
+            gh release upload ${{ env.TAG }} $installer $portable --clobber
+          } else {
+            Write-Error "Release artifacts not found!"
+            exit 1
+          }
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

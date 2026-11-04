@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         Title="ShotX 设置"
         Width="520"
-        Height="460"
+        Height="480"
         WindowStartupLocation="CenterScreen"
         ResizeMode="NoResize"
         Background="#F5F5F7">
@@ -22,14 +22,14 @@
 
         <!-- Content -->
         <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
-            <StackPanel Spacing="16">
+            <StackPanel>
                 <!-- General Section -->
-                <Border Background="White" CornerRadius="8" Padding="16" BorderBrush="#E5E5EA" BorderThickness="1">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="常规设置" FontSize="14" FontWeight="SemiBold" Foreground="#1D1D1F" />
+                <Border Background="White" CornerRadius="8" Padding="16" BorderBrush="#E5E5EA" BorderThickness="1" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="常规设置" FontSize="14" FontWeight="SemiBold" Foreground="#1D1D1F" Margin="0,0,0,12" />
 
-                        <CheckBox x:Name="ChkAutoStart" Content="开机自动启动 ShotX" Click="ChkAutoStart_Click" />
-                        <CheckBox x:Name="ChkPlaySound" Content="截屏完成后播放快门提示音" Click="ChkPlaySound_Click" />
+                        <CheckBox x:Name="ChkAutoStart" Content="开机自动启动 ShotX" Click="ChkAutoStart_Click" Margin="0,0,0,8" />
+                        <CheckBox x:Name="ChkPlaySound" Content="截屏完成后播放快门提示音" Click="ChkPlaySound_Click" Margin="0,0,0,12" />
 
                         <DockPanel Margin="0,4,0,0">
                             <TextBlock Text="默认保存路径:" VerticalAlignment="Center" Width="100" />
@@ -40,9 +40,9 @@
                 </Border>
 
                 <!-- Hotkeys Section -->
-                <Border Background="White" CornerRadius="8" Padding="16" BorderBrush="#E5E5EA" BorderThickness="1">
-                    <StackPanel Spacing="12">
-                        <TextBlock Text="全局快捷键" FontSize="14" FontWeight="SemiBold" Foreground="#1D1D1F" />
+                <Border Background="White" CornerRadius="8" Padding="16" BorderBrush="#E5E5EA" BorderThickness="1" Margin="0,0,0,16">
+                    <StackPanel>
+                        <TextBlock Text="全局快捷键" FontSize="14" FontWeight="SemiBold" Foreground="#1D1D1F" Margin="0,0,0,12" />
 
                         <Grid>
                             <Grid.ColumnDefinitions>
@@ -69,9 +69,9 @@
 
                 <!-- About Section -->
                 <Border Background="White" CornerRadius="8" Padding="16" BorderBrush="#E5E5EA" BorderThickness="1">
-                    <StackPanel Spacing="6">
-                        <TextBlock Text="关于 ShotX (Windows 原生版)" FontSize="14" FontWeight="SemiBold" Foreground="#1D1D1F" />
-                        <TextBlock Text="版本: v1.9.23 (64-bit)" FontSize="12" Foreground="#86868B" />
+                    <StackPanel>
+                        <TextBlock Text="关于 ShotX (Windows 原生版)" FontSize="14" FontWeight="SemiBold" Foreground="#1D1D1F" Margin="0,0,0,6" />
+                        <TextBlock Text="版本: v1.9.23 (64-bit)" FontSize="12" Foreground="#86868B" Margin="0,0,0,4" />
                         <TextBlock Text="技术支持 QQ: 285351298" FontSize="12" Foreground="#86868B" />
                     </StackPanel>
                 </Border>

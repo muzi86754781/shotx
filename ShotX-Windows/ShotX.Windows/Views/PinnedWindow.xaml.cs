@@ -82,3 +82,4 @@ public partial class PinnedWindow : Window
         _bitmap.Dispose();
     }
 }
+

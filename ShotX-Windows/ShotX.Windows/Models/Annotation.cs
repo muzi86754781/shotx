@@ -78,3 +78,4 @@ public class AnnotationManager
         _redoStack.Clear();
     }
 }
+
