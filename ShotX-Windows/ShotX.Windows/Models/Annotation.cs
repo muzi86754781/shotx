@@ -1,5 +1,8 @@
 using System.Windows;
 using System.Windows.Media;
+using Point = System.Windows.Point;
+using Color = System.Windows.Media.Color;
+using Rect = System.Windows.Rect;
 
 namespace ShotX.Windows.Models;
 

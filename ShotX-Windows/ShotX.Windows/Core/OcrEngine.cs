@@ -2,14 +2,12 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices.WindowsRuntime;
-using Windows.Graphics.Imaging;
-using Windows.Media.Ocr;
 
 namespace ShotX.Windows.Core;
 
 public static class OcrHelper
 {
-    private static Windows.Media.Ocr.OcrEngine? _engine;
+    private static global::Windows.Media.Ocr.OcrEngine? _engine;
 
     public static async Task<string> RecognizeTextAsync(Bitmap bitmap)
     {
@@ -17,10 +15,10 @@ public static class OcrHelper
         {
             if (_engine == null)
             {
-                _engine = Windows.Media.Ocr.OcrEngine.TryCreateFromUserProfileLanguages();
-                if (_engine == null && Windows.Media.Ocr.OcrEngine.AvailableRecognizerLanguages.Count > 0)
+                _engine = global::Windows.Media.Ocr.OcrEngine.TryCreateFromUserProfileLanguages();
+                if (_engine == null && global::Windows.Media.Ocr.OcrEngine.AvailableRecognizerLanguages.Count > 0)
                 {
-                    _engine = Windows.Media.Ocr.OcrEngine.TryCreateFromLanguage(Windows.Media.Ocr.OcrEngine.AvailableRecognizerLanguages[0]);
+                    _engine = global::Windows.Media.Ocr.OcrEngine.TryCreateFromLanguage(global::Windows.Media.Ocr.OcrEngine.AvailableRecognizerLanguages[0]);
                 }
             }
 
@@ -34,7 +32,7 @@ public static class OcrHelper
             memory.Position = 0;
 
             var randomAccessStream = memory.AsRandomAccessStream();
-            var decoder = await BitmapDecoder.CreateAsync(randomAccessStream);
+            var decoder = await global::Windows.Graphics.Imaging.BitmapDecoder.CreateAsync(randomAccessStream);
             var softwareBitmap = await decoder.GetSoftwareBitmapAsync();
 
             var ocrResult = await _engine.RecognizeAsync(softwareBitmap);
@@ -46,4 +44,3 @@ public static class OcrHelper
         }
     }
 }
-
