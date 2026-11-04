@@ -1,0 +1,86 @@
+<Window x:Class="ShotX.Windows.Views.SettingsWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ShotX 设置"
+        Width="520"
+        Height="460"
+        WindowStartupLocation="CenterScreen"
+        ResizeMode="NoResize"
+        Background="#F5F5F7">
+    <Grid Margin="24">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- Header -->
+        <StackPanel Grid.Row="0" Margin="0,0,0,16">
+            <TextBlock Text="ShotX 设置" FontSize="20" FontWeight="Bold" Foreground="#1D1D1F" />
+            <TextBlock Text="配置全局热键与应用偏好设置" FontSize="12" Foreground="#86868B" Margin="0,4,0,0" />
+        </StackPanel>
+
+        <!-- Content -->
+        <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+            <StackPanel Spacing="16">
+                <!-- General Section -->
+                <Border Background="White" CornerRadius="8" Padding="16" BorderBrush="#E5E5EA" BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="常规设置" FontSize="14" FontWeight="SemiBold" Foreground="#1D1D1F" />
+
+                        <CheckBox x:Name="ChkAutoStart" Content="开机自动启动 ShotX" Click="ChkAutoStart_Click" />
+                        <CheckBox x:Name="ChkPlaySound" Content="截屏完成后播放快门提示音" Click="ChkPlaySound_Click" />
+
+                        <DockPanel Margin="0,4,0,0">
+                            <TextBlock Text="默认保存路径:" VerticalAlignment="Center" Width="100" />
+                            <Button DockPanel.Dock="Right" Content="浏览..." Width="60" Margin="8,0,0,0" Click="BtnBrowseSavePath_Click" />
+                            <TextBox x:Name="TxtSavePath" IsReadOnly="True" VerticalAlignment="Center" />
+                        </DockPanel>
+                    </StackPanel>
+                </Border>
+
+                <!-- Hotkeys Section -->
+                <Border Background="White" CornerRadius="8" Padding="16" BorderBrush="#E5E5EA" BorderThickness="1">
+                    <StackPanel Spacing="12">
+                        <TextBlock Text="全局快捷键" FontSize="14" FontWeight="SemiBold" Foreground="#1D1D1F" />
+
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="140" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="32" />
+                                <RowDefinition Height="32" />
+                                <RowDefinition Height="32" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="区域截图:" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="Alt + A" IsReadOnly="True" VerticalAlignment="Center" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="滚动长截图:" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Text="Alt + S" IsReadOnly="True" VerticalAlignment="Center" />
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="剪贴板与翻译:" VerticalAlignment="Center" />
+                            <TextBox Grid.Row="2" Grid.Column="1" Text="Alt + V" IsReadOnly="True" VerticalAlignment="Center" />
+                        </Grid>
+                    </StackPanel>
+                </Border>
+
+                <!-- About Section -->
+                <Border Background="White" CornerRadius="8" Padding="16" BorderBrush="#E5E5EA" BorderThickness="1">
+                    <StackPanel Spacing="6">
+                        <TextBlock Text="关于 ShotX (Windows 原生版)" FontSize="14" FontWeight="SemiBold" Foreground="#1D1D1F" />
+                        <TextBlock Text="版本: v1.9.23 (64-bit)" FontSize="12" Foreground="#86868B" />
+                        <TextBlock Text="技术支持 QQ: 285351298" FontSize="12" Foreground="#86868B" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Footer -->
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="0,16,0,0">
+            <Button Content="关闭" Width="80" Height="30" Click="BtnClose_Click" />
+        </StackPanel>
+    </Grid>
+</Window>

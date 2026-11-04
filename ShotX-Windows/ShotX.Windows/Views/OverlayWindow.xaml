@@ -1,0 +1,22 @@
+<Window x:Class="ShotX.Windows.Views.OverlayWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ShotX 截屏"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        Topmost="True"
+        ShowInTaskbar="False"
+        KeyDown="Window_KeyDown"
+        MouseDown="Window_MouseDown"
+        MouseMove="Window_MouseMove"
+        MouseUp="Window_MouseUp"
+        MouseWheel="Window_MouseWheel">
+    <Grid x:Name="RootGrid">
+        <!-- 背景屏幕快照 -->
+        <Image x:Name="ImgSnapshot" Stretch="Fill" />
+
+        <!-- 绘制画板（遮罩、标注、选框、工具栏全部在 DrawingVisual / Canvas 中渲染） -->
+        <Canvas x:Name="OverlayCanvas" Background="Transparent" />
+    </Grid>
+</Window>

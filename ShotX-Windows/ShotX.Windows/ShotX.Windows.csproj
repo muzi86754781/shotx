@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows10.0.19041.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <AssemblyTitle>ShotX</AssemblyTitle>
+    <Product>ShotX for Windows</Product>
+    <Version>1.9.23</Version>
+    <FileVersion>1.9.23.0</FileVersion>
+    <AssemblyVersion>1.9.23.0</AssemblyVersion>
+    <Authors>ShotX</Authors>
+    <Company>ShotX</Company>
+    <Description>专业的屏幕截图、长截图、标注、贴图与屏幕录制工具 (Windows 版)</Description>
+    <Copyright>Copyright © 2026 ShotX</Copyright>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="System.Drawing.Common" Version="8.0.8" />
+  </ItemGroup>
+
+</Project>

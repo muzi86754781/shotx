@@ -1,0 +1,85 @@
+name: Build and Release Windows
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Release version (e.g. 1.9.23)'
+        required: false
+        default: '1.9.23'
+
+concurrency:
+  group: release-windows
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build & Package Windows EXE
+    runs-on: windows-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET 8 SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Determine Version
+        id: get_version
+        shell: bash
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            VERSION="${{ github.event.inputs.version }}"
+          elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
+            VERSION="${BASH_REMATCH[1]}"
+          else
+            VERSION="1.9.23"
+          fi
+          TAG="v$VERSION"
+          echo "VERSION=$VERSION" >> $GITHUB_ENV
+          echo "TAG=$TAG" >> $GITHUB_ENV
+          echo "Building ShotX Windows version: $VERSION ($TAG)"
+
+      - name: Publish .NET 8 Windows App (Self-Contained x64)
+        shell: pwsh
+        run: |
+          dotnet publish ShotX-Windows/ShotX.Windows/ShotX.Windows.csproj `
+            -c Release `
+            -r win-x64 `
+            --self-contained true `
+            /p:Version=${{ env.VERSION }}
+
+      - name: Create Portable Zip
+        shell: pwsh
+        run: |
+          $publishDir = "ShotX-Windows/ShotX.Windows/bin/Release/net8.0-windows10.0.19041.0/win-x64/publish"
+          Compress-Archive -Path "$publishDir/*" -DestinationPath "ShotX-Windows-${{ env.VERSION }}-Portable.zip" -Force
+
+      - name: Compile Inno Setup Installer
+        shell: pwsh
+        run: |
+          if (-not (Get-Command iscc -ErrorAction SilentlyContinue)) {
+            choco install innosetup --no-progress -y
+            $env:Path += ";C:\Program Files (x86)\Inno Setup 6"
+          }
+          iscc /DMyAppVersion=${{ env.VERSION }} /O. /FShotX-Windows-Setup-${{ env.VERSION }} ShotX-Windows/installer/ShotX-Setup.iss
+
+      - name: Upload Windows Artifacts to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ env.TAG }}
+          name: ShotX ${{ env.TAG }}
+          files: |
+            ShotX-Windows-Setup-*.exe
+            ShotX-Windows-*-Portable.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
