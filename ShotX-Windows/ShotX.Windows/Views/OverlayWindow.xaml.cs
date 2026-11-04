@@ -108,6 +108,13 @@ public partial class OverlayWindow : Window
         Color.FromRgb(175, 82, 222)  // 紫色 #AF52DE
     };
 
+    // 比例锁定与快捷操作 (图 2 像素级对齐)
+    private int _lockedRatioIndex = 0; // 0=Free, 1=1:1, 2=2:3, 3=3:4, 4=4:5, 5=5:7, 6=9:16, 7=16:9, 8=3:2, 9=4:3
+    private static readonly double[] AspectRatios = { 0, 1.0, 2.0 / 3.0, 3.0 / 4.0, 4.0 / 5.0, 5.0 / 7.0, 9.0 / 16.0, 16.0 / 9.0, 3.0 / 2.0, 4.0 / 3.0 };
+    private static readonly string[] AspectRatioLabels = { "Free", "1:1", "2:3", "3:4", "4:5", "5:7", "9:16", "16:9", "3:2", "4:3" };
+    private string? _toastMessage = null;
+    private readonly DispatcherTimer _toastTimer = new() { Interval = TimeSpan.FromSeconds(2.0) };
+
     private readonly OverlayMode _overlayMode;
 
     public OverlayWindow(OverlayMode overlayMode = OverlayMode.AllInOne, Rect? initialRect = null)
@@ -127,6 +134,13 @@ public partial class OverlayWindow : Window
         ImgSnapshot.Height = Height;
 
         OverlayCanvas.CustomRender = DrawCanvas;
+
+        _toastTimer.Tick += (_, _) =>
+        {
+            _toastMessage = null;
+            _toastTimer.Stop();
+            Render();
+        };
 
         _cornerRadius = PreferencesStore.Current.CornerRadius;
         _includeShadow = PreferencesStore.Current.IncludeShadow;
@@ -173,11 +187,20 @@ public partial class OverlayWindow : Window
             }
             else
             {
+                // 十字准星贯穿全屏 (图 2)
+                var crossPen = new Pen(new SolidColorBrush(Color.FromArgb(130, 255, 255, 255)), 1)
+                {
+                    DashStyle = DashStyles.Dash
+                };
+                dc.DrawLine(crossPen, new Point(0, _currentMouse.Y), new Point(Width, _currentMouse.Y));
+                dc.DrawLine(crossPen, new Point(_currentMouse.X, 0), new Point(_currentMouse.X, Height));
+
                 if (_hoveredWindowRect.HasValue)
                 {
                     dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(35, 0, 122, 255)), new Pen(new SolidColorBrush(Color.FromRgb(0, 122, 255)), 2), _hoveredWindowRect.Value);
                 }
                 DrawLoupe(dc, _currentMouse);
+                DrawQuickHelpCard(dc);
             }
         }
         else if (_mode == CaptureMode.Annotating)
@@ -222,6 +245,12 @@ public partial class OverlayWindow : Window
             DrawCornerBrackets(dc, _selectionRect);
             DrawScrollingPreviewPanel(dc);
             DrawBottomToolbar(dc);
+        }
+
+        // 浮动 Toast 提示
+        if (!string.IsNullOrEmpty(_toastMessage))
+        {
+            DrawToast(dc, _toastMessage);
         }
     }
 
@@ -319,39 +348,193 @@ public partial class OverlayWindow : Window
 
     private void DrawLoupe(DrawingContext dc, Point p)
     {
-        double loupeSize = 120;
+        double loupeSize = 136;
         double x = p.X + 22;
         double y = p.Y + 22;
         if (x + loupeSize > Width) x = p.X - loupeSize - 22;
-        if (y + loupeSize + 42 > Height) y = p.Y - loupeSize - 42;
+        if (y + loupeSize + 46 > Height) y = p.Y - loupeSize - 46;
 
         int px = Math.Max(0, Math.Min(_fullSnapshot.Width - 1, (int)p.X));
         int py = Math.Max(0, Math.Min(_fullSnapshot.Height - 1, (int)p.Y));
         var c = _fullSnapshot.GetPixel(px, py);
 
         var loupeRect = new Rect(x, y, loupeSize, loupeSize);
-        dc.DrawRoundedRectangle(Brushes.White, new Pen(Brushes.Gray, 1), loupeRect, 6, 6);
+        dc.DrawRoundedRectangle(Brushes.White, new Pen(new SolidColorBrush(Color.FromRgb(160, 160, 165)), 1.5), loupeRect, 8, 8);
 
-        // 中心十字瞄准线
-        var center = new Point(loupeRect.Left + loupeSize / 2, loupeRect.Top + loupeSize / 2);
-        dc.DrawLine(new Pen(Brushes.DodgerBlue, 1), new Point(center.X - 12, center.Y), new Point(center.X + 12, center.Y));
-        dc.DrawLine(new Pen(Brushes.DodgerBlue, 1), new Point(center.X, center.Y - 12), new Point(center.X, center.Y + 12));
+        // 9x9 局部点阵放大网格
+        int gridSize = 9;
+        double cellSize = loupeSize / gridSize;
+        int halfGrid = gridSize / 2;
 
-        // 底部颜色信息标签
-        var infoRect = new Rect(x, y + loupeSize + 4, loupeSize, 30);
-        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(220, 25, 25, 25)), null, infoRect, 4, 4);
+        for (int gy = 0; gy < gridSize; gy++)
+        {
+            for (int gx = 0; gx < gridSize; gx++)
+            {
+                int sampleX = Math.Max(0, Math.Min(_fullSnapshot.Width - 1, px + (gx - halfGrid)));
+                int sampleY = Math.Max(0, Math.Min(_fullSnapshot.Height - 1, py + (gy - halfGrid)));
+                var sc = _fullSnapshot.GetPixel(sampleX, sampleY);
+                var cellRect = new Rect(x + gx * cellSize, y + gy * cellSize, cellSize, cellSize);
+                dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(sc.R, sc.G, sc.B)), null, cellRect);
+                dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromArgb(20, 0, 0, 0)), 0.5), cellRect);
+            }
+        }
+
+        // 中心瞄准线红框 (准星)
+        var centerCell = new Rect(x + halfGrid * cellSize, y + halfGrid * cellSize, cellSize, cellSize);
+        dc.DrawRectangle(null, new Pen(Brushes.Red, 1.5), centerCell);
+
+        // 底部颜色信息标签卡片
+        var infoRect = new Rect(x, y + loupeSize + 4, loupeSize, 40);
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(235, 25, 27, 32)), null, infoRect, 6, 6);
+
+        // 当前颜色方块
+        var colorBox = new Rect(infoRect.Left + 8, infoRect.Top + 8, 14, 14);
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), new Pen(Brushes.White, 1), colorBox, 2, 2);
 
         string hex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
-        var ft = new FormattedText(
-            $"{hex}\nRGB:({c.R},{c.G},{c.B})",
+        string colorName = GetColorName(c);
+        var ftHex = new FormattedText(
+            $"{hex} {colorName}",
             System.Globalization.CultureInfo.CurrentCulture,
-            System.Windows.FlowDirection.LeftToRight,
-            new Typeface("Consolas"),
-            9.5,
+            FlowDirection.LeftToRight,
+            new Typeface(new FontFamily("Consolas, Microsoft YaHei"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
+            10.5,
             Brushes.White,
             VisualTreeHelper.GetDpi(this).PixelsPerDip
         );
-        dc.DrawText(ft, new Point(infoRect.Left + 8, infoRect.Top + 3));
+        dc.DrawText(ftHex, new Point(infoRect.Left + 26, infoRect.Top + 7));
+
+        var ftRgb = new FormattedText(
+            $"RGB: ({c.R}, {c.G}, {c.B})",
+            System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            new Typeface("Consolas"),
+            9.5,
+            new SolidColorBrush(Color.FromRgb(180, 185, 195)),
+            VisualTreeHelper.GetDpi(this).PixelsPerDip
+        );
+        dc.DrawText(ftRgb, new Point(infoRect.Left + 8, infoRect.Top + 24));
+    }
+
+    private void DrawQuickHelpCard(DrawingContext dc)
+    {
+        double cardW = 390;
+        double cardH = 175;
+        double cardX = 24;
+        double cardY = Height - cardH - 24;
+        var bgRect = new Rect(cardX, cardY, cardW, cardH);
+
+        // 深色半透明圆角卡片 (图 2 像素级复刻)
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(225, 22, 24, 28)), new Pen(new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)), 1), bgRect, 10, 10);
+
+        string[] lines = new string[]
+        {
+            "单击 D 选择上一次截图区域",
+            "单击 F 选择全屏",
+            "点按数字按键锁定框选区域宽度:高度比例",
+            "0=Free  1=1:1  2=2:3  3=3:4  4=4:5  5=5:7  6=9:16  7=16:9  8=3:2  9=4:3",
+            "单击 ESC 或者右键退出截图",
+            "单击 R 拷贝 RGB 颜色",
+            "单击 H 拷贝 HEX 颜色",
+            "单击 Z 拷贝自定义颜色"
+        };
+
+        double curY = cardY + 12;
+        var typeface = new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+        var boldTypeface = new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+
+        for (int i = 0; i < lines.Length; i++)
+        {
+            var tf = (i == 2 || i == 3) ? boldTypeface : typeface;
+            var color = (i == 3) ? new SolidColorBrush(Color.FromRgb(100, 180, 255)) : new SolidColorBrush(Color.FromArgb(230, 240, 240, 240));
+            var ft = new FormattedText(
+                lines[i],
+                System.Globalization.CultureInfo.CurrentCulture,
+                FlowDirection.LeftToRight,
+                tf,
+                11,
+                color,
+                VisualTreeHelper.GetDpi(this).PixelsPerDip
+            );
+            dc.DrawText(ft, new Point(cardX + 14, curY));
+            curY += 18.5;
+        }
+    }
+
+    private void DrawToast(DrawingContext dc, string text)
+    {
+        var ft = new FormattedText(
+            text,
+            System.Globalization.CultureInfo.CurrentCulture,
+            FlowDirection.LeftToRight,
+            new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal),
+            12.5,
+            Brushes.White,
+            VisualTreeHelper.GetDpi(this).PixelsPerDip
+        );
+
+        double w = ft.Width + 28;
+        double h = 34;
+        double x = (Width - w) / 2.0;
+        double y = 48;
+
+        var r = new Rect(x, y, w, h);
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(230, 20, 20, 24)), new Pen(new SolidColorBrush(Color.FromArgb(50, 255, 255, 255)), 1), r, 8, 8);
+        dc.DrawText(ft, new Point(x + (w - ft.Width) / 2, y + (h - ft.Height) / 2));
+    }
+
+    private void ShowToast(string text)
+    {
+        _toastMessage = text;
+        _toastTimer.Stop();
+        _toastTimer.Start();
+        Render();
+    }
+
+    private static string GetColorName(System.Drawing.Color c)
+    {
+        int max = Math.Max(c.R, Math.Max(c.G, c.B));
+        int min = Math.Min(c.R, Math.Min(c.G, c.B));
+        if (max - min < 22)
+        {
+            if (max < 40) return "纯黑色";
+            if (max < 85) return "深灰色";
+            if (max < 160) return "灰色";
+            if (max < 225) return "浅灰色";
+            return "纯白色";
+        }
+
+        float hue = c.GetHue();
+        if (hue >= 345 || hue < 15) return "红色";
+        if (hue >= 15 && hue < 45) return "橙色";
+        if (hue >= 45 && hue < 70) return "黄色";
+        if (hue >= 70 && hue < 165) return "绿色";
+        if (hue >= 165 && hue < 200) return "青色";
+        if (hue >= 200 && hue < 260) return "蓝色";
+        if (hue >= 260 && hue < 315) return "紫色";
+        return "品红色";
+    }
+
+    private void CopyCurrentColor(string format)
+    {
+        try
+        {
+            int px = Math.Max(0, Math.Min(_fullSnapshot.Width - 1, (int)_currentMouse.X));
+            int py = Math.Max(0, Math.Min(_fullSnapshot.Height - 1, (int)_currentMouse.Y));
+            var c = _fullSnapshot.GetPixel(px, py);
+
+            string value = format switch
+            {
+                "RGB" => $"rgb({c.R}, {c.G}, {c.B})",
+                "HEX" => $"#{c.R:X2}{c.G:X2}{c.B:X2}",
+                "NAME" => $"{GetColorName(c)} #{c.R:X2}{c.G:X2}{c.B:X2}",
+                _ => $"#{c.R:X2}{c.G:X2}{c.B:X2}"
+            };
+
+            System.Windows.Clipboard.SetText(value);
+            ShowToast($"已复制颜色: {value}");
+        }
+        catch { }
     }
 
     private Rect BottomToolbarRect()
@@ -421,6 +604,23 @@ public partial class OverlayWindow : Window
             else if (isHovered)
             {
                 dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(20, 0, 0, 0)), null, btnRect, 6, 6);
+            }
+
+            if (tools[i].Tool == ToolbarTool.OCR)
+            {
+                var ocrRect = new Rect(btnRect.Left + 2, btnRect.Top + 7, btnRect.Width - 4, btnRect.Height - 14);
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(25, 25, 27)), null, ocrRect, 4, 4);
+                var ocrFt = new FormattedText(
+                    "OCR",
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    System.Windows.FlowDirection.LeftToRight,
+                    new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
+                    9.5,
+                    Brushes.White,
+                    VisualTreeHelper.GetDpi(this).PixelsPerDip
+                );
+                dc.DrawText(ocrFt, new Point(ocrRect.Left + (ocrRect.Width - ocrFt.Width) / 2, ocrRect.Top + (ocrRect.Height - ocrFt.Height) / 2));
+                continue;
             }
 
             var brush = isSelected ? new SolidColorBrush(Color.FromRgb(0, 122, 255)) : (tools[i].Tool == ToolbarTool.Copy ? Brushes.Green : new SolidColorBrush(Color.FromRgb(60, 60, 67)));
@@ -1030,11 +1230,25 @@ public partial class OverlayWindow : Window
         {
             if (_startPoint.HasValue)
             {
-                double x = Math.Min(_startPoint.Value.X, _currentMouse.X);
-                double y = Math.Min(_startPoint.Value.Y, _currentMouse.Y);
-                double w = Math.Abs(_startPoint.Value.X - _currentMouse.X);
-                double h = Math.Abs(_startPoint.Value.Y - _currentMouse.Y);
-                _selectionRect = new Rect(x, y, w, h);
+                if (_lockedRatioIndex > 0)
+                {
+                    double ratio = AspectRatios[_lockedRatioIndex];
+                    double dx = _currentMouse.X - _startPoint.Value.X;
+                    double dy = _currentMouse.Y - _startPoint.Value.Y;
+                    double w = Math.Abs(dx);
+                    double h = w / ratio;
+                    double x = dx >= 0 ? _startPoint.Value.X : _startPoint.Value.X - w;
+                    double y = dy >= 0 ? _startPoint.Value.Y : _startPoint.Value.Y - h;
+                    _selectionRect = new Rect(x, y, w, h);
+                }
+                else
+                {
+                    double x = Math.Min(_startPoint.Value.X, _currentMouse.X);
+                    double y = Math.Min(_startPoint.Value.Y, _currentMouse.Y);
+                    double w = Math.Abs(_startPoint.Value.X - _currentMouse.X);
+                    double h = Math.Abs(_startPoint.Value.Y - _currentMouse.Y);
+                    _selectionRect = new Rect(x, y, w, h);
+                }
                 _hoveredWindowRect = null;
                 Render();
                 return;
@@ -1634,10 +1848,50 @@ public partial class OverlayWindow : Window
             return;
         }
 
-        if (_mode == CaptureMode.Selecting && e.Key == Key.C && Keyboard.Modifiers == ModifierKeys.None)
+        if (_mode == CaptureMode.Selecting && Keyboard.Modifiers == ModifierKeys.None)
         {
-            CopyCurrentPixelHex();
-            return;
+            if (e.Key == Key.D)
+            {
+                if (LastCaptureStore.HasPrevious)
+                {
+                    _selectionRect = LastCaptureStore.LastRect;
+                    _mode = CaptureMode.Annotating;
+                    ShowToast("已载入上一次截图区域");
+                    Render();
+                    return;
+                }
+            }
+            else if (e.Key == Key.F)
+            {
+                _selectionRect = new Rect(0, 0, Width, Height);
+                _mode = CaptureMode.Annotating;
+                ShowToast("已选择全屏");
+                Render();
+                return;
+            }
+            else if ((e.Key >= Key.D0 && e.Key <= Key.D9) || (e.Key >= Key.NumPad0 && e.Key <= Key.NumPad9))
+            {
+                int num = (e.Key >= Key.NumPad0) ? (e.Key - Key.NumPad0) : (e.Key - Key.D0);
+                _lockedRatioIndex = num;
+                ShowToast(num == 0 ? "已恢复自由选区比例" : $"已锁定比例: {AspectRatioLabels[num]}");
+                Render();
+                return;
+            }
+            else if (e.Key == Key.R)
+            {
+                CopyCurrentColor("RGB");
+                return;
+            }
+            else if (e.Key == Key.H || e.Key == Key.C)
+            {
+                CopyCurrentColor("HEX");
+                return;
+            }
+            else if (e.Key == Key.Z)
+            {
+                CopyCurrentColor("NAME");
+                return;
+            }
         }
 
         if (e.Key == Key.Enter)

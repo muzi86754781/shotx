@@ -9,67 +9,147 @@
         Background="Transparent"
         Topmost="True"
         WindowStartupLocation="CenterScreen"
-        KeyDown="Window_KeyDown"
-        Deactivated="Window_Deactivated">
-    <Border Background="White" CornerRadius="10" BorderBrush="#E5E5EA" BorderThickness="1" Margin="12">
+        KeyDown="Window_KeyDown">
+    <Window.Resources>
+        <Style x:Key="IconBtnStyle" TargetType="Button">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Foreground" Value="#555555"/>
+            <Setter Property="FocusVisualStyle" Value="{x:Null}"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="4" Padding="4">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#1A000000"/>
+                                <Setter Property="Foreground" Value="#111111"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <!-- 外壳 (图 6 浅灰圆角毛玻璃窗口) -->
+    <Border Background="#F2EBEFF4" CornerRadius="12" BorderBrush="#D8DCE4" BorderThickness="1" Margin="10">
         <Border.Effect>
-            <DropShadowEffect BlurRadius="16" ShadowDepth="4" Opacity="0.25" Color="Black" />
+            <DropShadowEffect BlurRadius="20" ShadowDepth="4" Opacity="0.25" Color="#000000"/>
         </Border.Effect>
-        <Grid Margin="16">
+        <Grid Margin="14,12">
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
+                <RowDefinition Height="32"/> <!-- 顶栏 -->
+                <RowDefinition Height="36"/> <!-- 搜索框 -->
+                <RowDefinition Height="*"/>  <!-- 列表 -->
+                <RowDefinition Height="28"/> <!-- 底部状态栏 -->
             </Grid.RowDefinitions>
 
-            <!-- Header -->
-            <DockPanel Grid.Row="0" Margin="0,0,0,10">
-                <TextBlock Text="剪贴板历史" FontSize="16" FontWeight="Bold" Foreground="#1D1D1F" VerticalAlignment="Center" />
-                <Button Content="✕" Width="24" Height="24" HorizontalAlignment="Right" Background="Transparent" BorderThickness="0" Foreground="Gray" FontWeight="Bold" Click="BtnClose_Click" />
-            </DockPanel>
+            <!-- 1. 顶栏 (可拖拽) -->
+            <Grid Grid.Row="0" MouseDown="TopBar_MouseDown" Background="Transparent">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Path Width="16" Height="16" Margin="0,0,8,0" Stretch="Uniform" Fill="#007AFF"
+                          Data="M 19,3 L 14.8,3 C 14.4,1.8 13.3,1 12,1 C 10.7,1 9.6,1.8 9.2,3 L 5,3 C 3.9,3 3,3.9 3,5 L 3,19 C 3,20.1 3.9,21 5,21 L 19,21 C 20.1,21 21,20.1 21,19 L 21,5 C 21,3.9 20.1,3 19,3 Z  M 12,3 C 12.6,3 13,3.4 13,4 C 13,4.6 12.6,5 12,5 C 11.4,5 11,4.6 11,4 C 11,3.4 11.4,3 12,3 Z  M 19,19 L 5,19 L 5,5 L 7,5 L 7,7 L 17,7 L 17,5 L 19,5 Z"/>
+                    <TextBlock Text="剪贴板历史" FontSize="14.5" FontWeight="Bold" Foreground="#1E2024"/>
+                </StackPanel>
 
-            <!-- Search -->
-            <TextBox x:Name="TxtSearch" Grid.Row="1" Padding="6" Margin="0,0,0,10" BorderBrush="#E5E5EA" TextChanged="TxtSearch_TextChanged">
-                <TextBox.Resources>
-                    <Style TargetType="{x:Type TextBox}">
-                        <Setter Property="Template">
-                            <Setter.Value>
-                                <ControlTemplate TargetType="{x:Type TextBox}">
-                                    <Border Background="White" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="1" CornerRadius="4">
-                                        <ScrollViewer x:Name="PART_ContentHost" Margin="4,2" />
-                                    </Border>
-                                </ControlTemplate>
-                            </Setter.Value>
-                        </Setter>
-                    </Style>
-                </TextBox.Resources>
-            </TextBox>
+                <Button HorizontalAlignment="Right" Style="{StaticResource IconBtnStyle}" Width="24" Height="24" Click="BtnClose_Click" ToolTip="关闭">
+                    <TextBlock Text="✕" FontSize="13" FontWeight="Bold"/>
+                </Button>
+            </Grid>
 
-            <!-- Items List -->
-            <ListBox x:Name="LstHistory" Grid.Row="2" BorderThickness="0" MouseDoubleClick="LstHistory_MouseDoubleClick" SelectionMode="Single">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <Border BorderBrush="#F0F0F2" BorderThickness="0,0,0,1" Padding="6,8">
+            <!-- 2. 搜索框 (图 6 放大镜 + 占位符) -->
+            <Border Grid.Row="1" Background="#FFFFFF" CornerRadius="8" BorderBrush="#D8DCE4" BorderThickness="1" Margin="0,4,0,8" Padding="8,0">
+                <Grid VerticalAlignment="Center">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto"/>
+                        <ColumnDefinition Width="*"/>
+                    </Grid.ColumnDefinitions>
+                    <TextBlock Grid.Column="0" Text="🔍" FontSize="11" Foreground="#999999" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                    <TextBox x:Name="TxtSearch" Grid.Column="1" BorderThickness="0" Background="Transparent"
+                             FontSize="12.5" Foreground="#222222" VerticalAlignment="Center"
+                             TextChanged="TxtSearch_TextChanged"/>
+                    <!-- 占位文字 -->
+                    <TextBlock x:Name="TxtPlaceholder" Grid.Column="1" Text="搜索剪贴板记录..." FontSize="12.5" Foreground="#AAAAAA"
+                               IsHitTestVisible="False" VerticalAlignment="Center"/>
+                </Grid>
+            </Border>
+
+            <!-- 3. 历史记录列表 -->
+            <Border Grid.Row="2" Background="#FFFFFF" CornerRadius="8" BorderBrush="#E0E3EA" BorderThickness="1" Padding="4">
+                <ListBox x:Name="LstHistory" BorderThickness="0" Background="Transparent"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                         MouseDoubleClick="LstHistory_MouseDoubleClick">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                            <Setter Property="Padding" Value="0"/>
+                            <Setter Property="Margin" Value="0,2"/>
+                            <Setter Property="Cursor" Value="Hand"/>
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="ListBoxItem">
+                                        <Border x:Name="itemBorder" Background="Transparent" CornerRadius="6" Padding="8,6">
+                                            <ContentPresenter/>
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsMouseOver" Value="True">
+                                                <Setter TargetName="itemBorder" Property="Background" Value="#0D007AFF"/>
+                                            </Trigger>
+                                            <Trigger Property="IsSelected" Value="True">
+                                                <Setter TargetName="itemBorder" Property="Background" Value="#1A007AFF"/>
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
                             <Grid>
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="28"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="{Binding PreviewText}" TextTrimming="CharacterEllipsis" FontSize="13" Foreground="#1D1D1F" />
-                                <TextBlock Grid.Column="1" Text="{Binding TimeString}" FontSize="11" Foreground="#86868B" Margin="8,0,0,0" />
-                            </Grid>
-                        </Border>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
 
-            <!-- Footer -->
-            <DockPanel Grid.Row="3" Margin="0,10,0,0">
-                <TextBlock Text="双击项目复制，按 Esc 关闭" VerticalAlignment="Center" Foreground="#86868B" FontSize="11" />
-                <Button Content="清空历史" HorizontalAlignment="Right" Width="70" Height="24" Click="BtnClear_Click" />
-            </DockPanel>
+                                <!-- 左侧图标 -->
+                                <TextBlock Grid.Column="0" Text="📄" FontSize="14" VerticalAlignment="Top" Margin="0,2,0,0"/>
+
+                                <!-- 标题与内容摘要 -->
+                                <StackPanel Grid.Column="1" Margin="4,0,8,0">
+                                    <TextBlock Text="{Binding Title}" FontWeight="SemiBold" FontSize="12.5" Foreground="#1E2024" TextTrimming="CharacterEllipsis"/>
+                                    <TextBlock Text="{Binding Snippet}" FontSize="11" Foreground="#666666" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                    <TextBlock Text="{Binding TimeString}" FontSize="10" Foreground="#999999" Margin="0,2,0,0"/>
+                                </StackPanel>
+
+                                <!-- 右侧快捷操作按钮 -->
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Button Style="{StaticResource IconBtnStyle}" Width="24" Height="24" Tag="{Binding}" Click="BtnItemCopy_Click" ToolTip="复制到剪贴板">
+                                        <TextBlock Text="📋" FontSize="11"/>
+                                    </Button>
+                                    <Button Style="{StaticResource IconBtnStyle}" Width="24" Height="24" Tag="{Binding}" Click="BtnItemDelete_Click" ToolTip="删除">
+                                        <TextBlock Text="🗑️" FontSize="11"/>
+                                    </Button>
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Border>
+
+            <!-- 4. 底部状态栏 (图 6 像素级实现) -->
+            <Grid Grid.Row="3" Margin="4,6,4,0">
+                <TextBlock x:Name="TxtFooter" Text="双击条目直接在光标处粘贴 (窗口不关闭可连续操作) · 0 条记录"
+                           FontSize="10.5" Foreground="#888888" VerticalAlignment="Center" HorizontalAlignment="Left"/>
+                <Button Content="清空所有" HorizontalAlignment="Right" VerticalAlignment="Center"
+                        Background="Transparent" BorderThickness="0" Foreground="#E0382B" FontSize="11" FontWeight="SemiBold"
+                        Cursor="Hand" Click="BtnClearAll_Click"/>
+            </Grid>
         </Grid>
     </Border>
 </Window>
-

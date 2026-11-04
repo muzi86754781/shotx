@@ -1,84 +1,48 @@
-using System.Collections.ObjectModel;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
-using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using ShotX.Windows.Core;
+using Application = System.Windows.Application;
+using Clipboard = System.Windows.Clipboard;
 
 namespace ShotX.Windows.Views;
 
-public class ClipboardItem
-{
-    public string Content { get; set; } = string.Empty;
-    public string PreviewText { get; set; } = string.Empty;
-    public DateTime Timestamp { get; set; } = DateTime.Now;
-    public string TimeString => Timestamp.ToString("HH:mm:ss");
-}
-
-public static class ClipboardManagerStore
-{
-    public static List<ClipboardItem> History { get; } = new();
-
-    public static void Add(string text)
-    {
-        if (string.IsNullOrWhiteSpace(text)) return;
-        text = text.Trim();
-        History.RemoveAll(x => x.Content == text);
-        History.Insert(0, new ClipboardItem
-        {
-            Content = text,
-            PreviewText = text.Replace("\r", " ").Replace("\n", " "),
-            Timestamp = DateTime.Now
-        });
-        if (History.Count > 100)
-        {
-            History.RemoveAt(History.Count - 1);
-        }
-    }
-}
-
 public partial class ClipboardHistoryWindow : Window
 {
-    private readonly ObservableCollection<ClipboardItem> _displayItems = new();
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    private const byte VK_CONTROL = 0x11;
+    private const byte VK_V = 0x56;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+
+    public class ClipboardItemViewModel
+    {
+        public string Title { get; set; } = string.Empty;
+        public string Snippet { get; set; } = string.Empty;
+        public string FullText { get; set; } = string.Empty;
+        public string TimeString { get; set; } = string.Empty;
+        public HistoryItem? RawItem { get; set; }
+    }
+
+    private readonly List<ClipboardItemViewModel> _allItems = new();
 
     public ClipboardHistoryWindow()
     {
         InitializeComponent();
-        RefreshList();
-        TxtSearch.Focus();
+        LoadData();
     }
 
-    private void RefreshList()
+    private void TopBar_MouseDown(object sender, MouseButtonEventArgs e)
     {
-        _displayItems.Clear();
-        string filter = TxtSearch.Text.Trim();
-        foreach (var item in ClipboardManagerStore.History)
+        if (e.LeftButton == MouseButtonState.Pressed)
         {
-            if (string.IsNullOrEmpty(filter) || item.Content.Contains(filter, StringComparison.OrdinalIgnoreCase))
-            {
-                _displayItems.Add(item);
-            }
+            DragMove();
         }
-        LstHistory.ItemsSource = _displayItems;
-    }
-
-    private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e)
-    {
-        RefreshList();
-    }
-
-    private void LstHistory_MouseDoubleClick(object sender, MouseButtonEventArgs e)
-    {
-        if (LstHistory.SelectedItem is ClipboardItem item)
-        {
-            System.Windows.Clipboard.SetText(item.Content);
-            Close();
-        }
-    }
-
-    private void BtnClear_Click(object sender, RoutedEventArgs e)
-    {
-        ClipboardManagerStore.History.Clear();
-        RefreshList();
     }
 
     private void BtnClose_Click(object sender, RoutedEventArgs e)
@@ -94,9 +58,106 @@ public partial class ClipboardHistoryWindow : Window
         }
     }
 
-    private void Window_Deactivated(object sender, EventArgs e)
+    private void LoadData()
     {
-        Close();
+        _allItems.Clear();
+        var rawList = HistoryStore.GetItemsByType(HistoryType.Clipboard);
+
+        if (rawList.Count == 0)
+        {
+            // 如果历史为空，提供默认或当前剪贴板内容
+            if (Clipboard.ContainsText())
+            {
+                string text = Clipboard.GetText();
+                if (!string.IsNullOrWhiteSpace(text))
+                {
+                    HistoryStore.Add(HistoryType.Clipboard, text, text);
+                    rawList = HistoryStore.GetItemsByType(HistoryType.Clipboard);
+                }
+            }
+        }
+
+        foreach (var it in rawList)
+        {
+            string line1 = it.Content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? it.Content;
+            string preview = it.Content.Length > 80 ? it.Content.Substring(0, 80) + "..." : it.Content;
+            _allItems.Add(new ClipboardItemViewModel
+            {
+                Title = line1,
+                Snippet = preview,
+                FullText = it.Content,
+                TimeString = it.Timestamp.ToString("HH:mm"),
+                RawItem = it
+            });
+        }
+
+        RefreshFilteredList();
+    }
+
+    private void RefreshFilteredList()
+    {
+        string query = TxtSearch.Text.Trim();
+        var filtered = string.IsNullOrEmpty(query)
+            ? _allItems
+            : _allItems.Where(i => i.FullText.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
+
+        LstHistory.ItemsSource = filtered;
+        TxtFooter.Text = $"双击条目直接在光标处粘贴 (窗口不关闭可连续操作) · {filtered.Count} 条记录";
+    }
+
+    private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e)
+    {
+        TxtPlaceholder.Visibility = string.IsNullOrEmpty(TxtSearch.Text) ? Visibility.Visible : Visibility.Collapsed;
+        RefreshFilteredList();
+    }
+
+    private void LstHistory_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (LstHistory.SelectedItem is ClipboardItemViewModel model)
+        {
+            try
+            {
+                Clipboard.SetText(model.FullText);
+
+                // 模拟 Ctrl+V 粘贴
+                keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_V, 0, 0, UIntPtr.Zero);
+                keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+            }
+            catch { }
+        }
+    }
+
+    private void BtnItemCopy_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is ClipboardItemViewModel model)
+        {
+            try
+            {
+                Clipboard.SetText(model.FullText);
+            }
+            catch { }
+        }
+    }
+
+    private void BtnItemDelete_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is ClipboardItemViewModel model)
+        {
+            if (model.RawItem != null)
+            {
+                HistoryStore.Delete(model.RawItem);
+            }
+            _allItems.Remove(model);
+            RefreshFilteredList();
+        }
+    }
+
+    private void BtnClearAll_Click(object sender, RoutedEventArgs e)
+    {
+        HistoryStore.Clear(HistoryType.Clipboard);
+        _allItems.Clear();
+        RefreshFilteredList();
     }
 }
-

@@ -60,7 +60,7 @@ public partial class App : Application
         var contextMenu = new ContextMenuStrip();
 
         // 1. 全能截图
-        contextMenu.Items.Add("全能截图", null, (_, _) => StartScreenshot(OverlayMode.AllInOne));
+        contextMenu.Items.Add("全能截图", null, (_, _) => ShowAllInOneBar());
 
         // 2. 区域截图
         contextMenu.Items.Add("区域截图 (Alt+A)", null, (_, _) => StartScreenshot(OverlayMode.Area));
@@ -128,7 +128,7 @@ public partial class App : Application
         contextMenu.Items.Add(isDesktopVisible ? "隐藏桌面图标" : "显示桌面图标", null, (_, _) => ToggleDesktopIcons());
 
         // 19. 历史记录
-        contextMenu.Items.Add("历史记录", null, (_, _) => ShowHistoryWindow());
+        contextMenu.Items.Add("历史记录", null, (_, _) => ShowPreferences(initialTabIsHistory: true));
 
         contextMenu.Items.Add(new ToolStripSeparator());
 
@@ -136,13 +136,13 @@ public partial class App : Application
         contextMenu.Items.Add("支持作者", null, (_, _) => ShowSupportAuthorWindow());
 
         // 21. 偏好设置
-        contextMenu.Items.Add("偏好设置...", null, (_, _) => ShowSettings());
+        contextMenu.Items.Add("偏好设置", null, (_, _) => ShowPreferences(initialTabIsHistory: false));
 
         // 22. 检查更新
         contextMenu.Items.Add("检查更新", null, (_, _) => CheckForUpdates());
 
         // 23. 关于 ShotX
-        contextMenu.Items.Add("关于 ShotX", null, (_, _) => ShowAboutWindow());
+        contextMenu.Items.Add("关于 ShotX", null, (_, _) => ShowPreferences(initialTabIsHistory: false));
 
         // 24. 退出 ShotX
         contextMenu.Items.Add("退出 ShotX", null, (_, _) => ExitApp());
@@ -252,10 +252,22 @@ public partial class App : Application
         win.Show();
     }
 
+    public void ShowAllInOneBar()
+    {
+        var bar = new AllInOneBarWindow();
+        bar.Show();
+    }
+
+    public void ShowPreferences(bool initialTabIsHistory = false)
+    {
+        var win = new PreferencesWindow(initialTabIsHistory);
+        win.Show();
+    }
+
     public void StartScreenRecording()
     {
-        var rec = new ScreenRecordingWindow();
-        rec.Show();
+        var prep = new ScreenRecordingPrepWindow();
+        prep.Show();
     }
 
     public void StartAudioRecording()
@@ -278,7 +290,8 @@ public partial class App : Application
                 Dispatcher.Invoke(() =>
                 {
                     string text = System.Windows.Clipboard.GetText().Trim();
-                    var win = new TranslationWindow(text);
+                    var win = new TranslationWindow();
+                    if (!string.IsNullOrEmpty(text)) win.SetSourceText(text);
                     win.Show();
                 });
             });
@@ -291,8 +304,7 @@ public partial class App : Application
 
     public void ShowHistoryWindow()
     {
-        var win = new HistoryWindow();
-        win.Show();
+        ShowPreferences(initialTabIsHistory: true);
     }
 
     public void ShowSupportAuthorWindow()

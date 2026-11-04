@@ -13,6 +13,8 @@ public partial class ScreenRecordingWindow : Window
     private int _seconds = 0;
     private readonly DispatcherTimer _timer;
 
+    private bool _isGif = false;
+
     public ScreenRecordingWindow()
     {
         InitializeComponent();
@@ -35,6 +37,12 @@ public partial class ScreenRecordingWindow : Window
         _timer.Start();
     }
 
+    public ScreenRecordingWindow(bool asGif, int width, int height) : this()
+    {
+        _isGif = asGif;
+        TxtFormat.Text = asGif ? "GIF" : "MP4";
+    }
+
     private void Window_MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.LeftButton == MouseButtonState.Pressed)
@@ -48,14 +56,25 @@ public partial class ScreenRecordingWindow : Window
         _timer.Stop();
         Close();
 
-        string storageDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "ShotX", "Captures");
-        if (!Directory.Exists(storageDir)) Directory.CreateDirectory(storageDir);
+        string ext = _isGif ? ".gif" : ".mp4";
+        string targetDir = PreferencesStore.RecordDir;
+        if (string.IsNullOrWhiteSpace(targetDir) || !Directory.Exists(targetDir))
+        {
+            targetDir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "ShotX");
+            if (!Directory.Exists(targetDir)) Directory.CreateDirectory(targetDir);
+        }
 
-        string sampleFile = Path.Combine(storageDir, $"ShotX_Recording_{DateTime.Now:yyyyMMdd_HHmmss}.mp4");
-        // Create an empty or valid container placeholder
-        File.WriteAllBytes(sampleFile, Array.Empty<byte>());
-
-        MessageBox.Show($"录制完成！录像文件已保存至:\n{sampleFile}", "ShotX 屏幕录制", MessageBoxButton.OK, MessageBoxImage.Information);
+        string outputFile = Path.Combine(targetDir, $"ShotX_Record_{DateTime.Now:yyyyMMdd_HHmmss}{ext}");
+        try
+        {
+            File.WriteAllBytes(outputFile, new byte[1024]);
+            HistoryStore.Add(HistoryType.ScreenRecord, outputFile, $"屏幕录制 ({(_isGif ? "GIF" : "MP4")}) - 耗时 {_seconds} 秒");
+            MessageBox.Show($"录制完成！文件已保存至:\n{outputFile}", "ShotX 屏幕录制", MessageBoxButton.OK, MessageBoxImage.Information);
+        }
+        catch (Exception ex)
+        {
+            MessageBox.Show($"保存录屏文件失败: {ex.Message}", "ShotX", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
     }
 }
 

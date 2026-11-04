@@ -1,0 +1,683 @@
+<Window x:Class="ShotX.Windows.Views.PreferencesWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="ShotX"
+        Width="680"
+        Height="620"
+        WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
+        AllowsTransparency="True"
+        Background="Transparent"
+        KeyDown="Window_KeyDown">
+    <Window.Resources>
+        <!-- 基础样式 -->
+        <Style x:Key="SegmentBtnStyle" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="#555555"/>
+            <Setter Property="FontSize" Value="12"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="16,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="6" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#FFFFFF"/>
+                                <Setter Property="Foreground" Value="#111111"/>
+                                <Setter TargetName="bd" Property="Effect">
+                                    <Setter.Value>
+                                        <DropShadowEffect BlurRadius="4" ShadowDepth="1" Opacity="0.15" Color="#000000"/>
+                                    </Setter.Value>
+                                </Setter>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="FilterPillStyle" TargetType="RadioButton">
+            <Setter Property="Background" Value="Transparent"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Foreground" Value="#555555"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="10,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="RadioButton">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsChecked" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#007AFF"/>
+                                <Setter Property="Foreground" Value="#FFFFFF"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 卡片容器样式 -->
+        <Style x:Key="CardBorderStyle" TargetType="Border">
+            <Setter Property="Background" Value="#FFFFFF"/>
+            <Setter Property="CornerRadius" Value="10"/>
+            <Setter Property="BorderBrush" Value="#E5E7EB"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Padding" Value="16,14"/>
+            <Setter Property="Margin" Value="0,0,0,14"/>
+        </Style>
+
+        <!-- 扁平小按钮 -->
+        <Style x:Key="SmallBtnStyle" TargetType="Button">
+            <Setter Property="Background" Value="#F2F3F5"/>
+            <Setter Property="Foreground" Value="#333333"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="BorderBrush" Value="#DCDFE6"/>
+            <Setter Property="BorderThickness" Value="1"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="10,3"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}" BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="5" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#E5E7EB"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <Style x:Key="PrimaryPillBtnStyle" TargetType="Button">
+            <Setter Property="Background" Value="#FF9500"/>
+            <Setter Property="Foreground" Value="#FFFFFF"/>
+            <Setter Property="FontSize" Value="11.5"/>
+            <Setter Property="FontWeight" Value="SemiBold"/>
+            <Setter Property="BorderThickness" Value="0"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Padding" Value="12,4"/>
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="bd" Background="{TemplateBinding Background}" CornerRadius="12" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="bd" Property="Background" Value="#E08500"/>
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+
+    <!-- 窗口主外壳 (浅灰质感 + 圆角阴影) -->
+    <Border Background="#F4F5F7" CornerRadius="12" BorderBrush="#D5D8DF" BorderThickness="1" Margin="10">
+        <Border.Effect>
+            <DropShadowEffect BlurRadius="24" ShadowDepth="4" Opacity="0.25" Color="#000000"/>
+        </Border.Effect>
+
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="50"/> <!-- 顶部标题栏与分段控制器 -->
+                <RowDefinition Height="*"/>  <!-- 主内容区 -->
+            </Grid.RowDefinitions>
+
+            <!-- 1. 顶部标题栏 (可拖动) -->
+            <Grid Grid.Row="0" MouseDown="TopBar_MouseDown" Background="Transparent" Margin="16,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto"/>
+                    <ColumnDefinition Width="*"/>
+                    <ColumnDefinition Width="Auto"/>
+                </Grid.ColumnDefinitions>
+
+                <!-- 左侧红黄绿小圆点 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Width="12" Height="12" Margin="0,0,6,0" Click="BtnClose_Click" ToolTip="关闭" Cursor="Hand">
+                        <Button.Template>
+                            <ControlTemplate>
+                                <Ellipse Fill="#FF5F56"/>
+                            </ControlTemplate>
+                        </Button.Template>
+                    </Button>
+                    <Ellipse Width="12" Height="12" Fill="#FFBD2E" Margin="0,0,6,0"/>
+                    <Ellipse Width="12" Height="12" Fill="#27C93F"/>
+                </StackPanel>
+
+                <!-- 中央分段控制器 (图 7/8/9/10: [ 历史记录 ] [ 偏好设置 ]) -->
+                <Border Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                        Background="#E2E5EB" CornerRadius="8" Padding="3">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="TabHistory" Content="历史记录" Style="{StaticResource SegmentBtnStyle}" Checked="TabHistory_Checked"/>
+                        <RadioButton x:Name="TabSettings" Content="偏好设置" Style="{StaticResource SegmentBtnStyle}" IsChecked="True" Checked="TabSettings_Checked"/>
+                    </StackPanel>
+                </Border>
+
+                <!-- 右侧 ShotX 标题 -->
+                <TextBlock Grid.Column="2" Text="ShotX" FontSize="13" FontWeight="Bold" Foreground="#888888" VerticalAlignment="Center"/>
+            </Grid>
+
+            <!-- 2. 主内容区 -->
+            <Grid Grid.Row="1">
+                <!-- ================= TAB 1: 历史记录 (图 7 像素级实现) ================= -->
+                <Grid x:Name="ViewHistory" Visibility="Collapsed" Margin="16,0,16,12">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="40"/> <!-- 过滤胶囊与搜索框 -->
+                        <RowDefinition Height="26"/> <!-- 统计说明条 -->
+                        <RowDefinition Height="*"/>  <!-- 列表/空状态 -->
+                    </Grid.RowDefinitions>
+
+                    <!-- 过滤栏 -->
+                    <Grid Grid.Row="0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*"/>
+                            <ColumnDefinition Width="160"/>
+                        </Grid.ColumnDefinitions>
+
+                        <!-- 左侧分类过滤胶囊 -->
+                        <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
+                            <RadioButton Content="⊞ 全部" Style="{StaticResource FilterPillStyle}" Margin="0,0,4,0" Checked="HistoryFilter_Changed"/>
+                            <RadioButton Content="🖼️ 截图" Style="{StaticResource FilterPillStyle}" Margin="0,0,4,0" Checked="HistoryFilter_Changed"/>
+                            <RadioButton x:Name="PillRecord" Content="📹 录屏" Style="{StaticResource FilterPillStyle}" Margin="0,0,4,0" IsChecked="True" Checked="HistoryFilter_Changed"/>
+                            <RadioButton Content="🎙️ 录音" Style="{StaticResource FilterPillStyle}" Margin="0,0,4,0" Checked="HistoryFilter_Changed"/>
+                            <RadioButton Content="🔤 提取文字" Style="{StaticResource FilterPillStyle}" Margin="0,0,4,0" Checked="HistoryFilter_Changed"/>
+                            <RadioButton Content="🌐 翻译" Style="{StaticResource FilterPillStyle}" Margin="0,0,4,0" Checked="HistoryFilter_Changed"/>
+                            <RadioButton Content="📋 复制记录" Style="{StaticResource FilterPillStyle}" Checked="HistoryFilter_Changed"/>
+                        </StackPanel>
+
+                        <!-- 右侧搜索框 -->
+                        <Border Grid.Column="1" Background="#FFFFFF" CornerRadius="12" BorderBrush="#D8DCE4" BorderThickness="1" Height="26" Padding="8,0">
+                            <Grid VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Grid.Column="0" Text="🔍" FontSize="9.5" Foreground="#999999" Margin="0,0,4,0" VerticalAlignment="Center"/>
+                                <TextBox x:Name="TxtHistorySearch" Grid.Column="1" BorderThickness="0" Background="Transparent"
+                                         FontSize="11" Foreground="#333333" VerticalAlignment="Center" TextChanged="TxtHistorySearch_TextChanged"/>
+                                <TextBlock x:Name="TxtHistoryPlaceholder" Grid.Column="1" Text="搜索..." FontSize="11" Foreground="#AAAAAA"
+                                           IsHitTestVisible="False" VerticalAlignment="Center"/>
+                            </Grid>
+                        </Border>
+                    </Grid>
+
+                    <!-- 统计条 -->
+                    <Border Grid.Row="1" BorderBrush="#E5E7EB" BorderThickness="0,1,0,0">
+                        <TextBlock x:Name="TxtHistoryCount" Text="录屏 · 0 条记录" FontSize="11" Foreground="#888888" VerticalAlignment="Center"/>
+                    </Border>
+
+                    <!-- 内容展示区 (空状态与列表) -->
+                    <Grid Grid.Row="2">
+                        <!-- 空状态展示 (图 7 紧密复刻) -->
+                        <StackPanel x:Name="PanelEmptyHistory" VerticalAlignment="Center" HorizontalAlignment="Center">
+                            <Border Background="#E6EAF2" CornerRadius="16" Width="64" Height="64" HorizontalAlignment="Center" Margin="0,0,0,16">
+                                <TextBlock x:Name="TxtEmptyIcon" Text="📹" FontSize="28" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+                            </Border>
+                            <TextBlock x:Name="TxtEmptyTitle" Text="暂无录屏记录" FontSize="14.5" FontWeight="SemiBold" Foreground="#333333" HorizontalAlignment="Center" Margin="0,0,0,6"/>
+                            <TextBlock Text="使用 ShotX 的各项功能后，历史记录将自动汇总于此" FontSize="11.5" Foreground="#888888" HorizontalAlignment="Center"/>
+                        </StackPanel>
+
+                        <!-- 有数据时的列表 -->
+                        <ListBox x:Name="LstFullHistory" Visibility="Collapsed" Background="Transparent" BorderThickness="0"
+                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,8" Padding="12,10">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="36"/>
+                                                <ColumnDefinition Width="*"/>
+                                                <ColumnDefinition Width="Auto"/>
+                                            </Grid.ColumnDefinitions>
+                                            <TextBlock Grid.Column="0" Text="{Binding Icon}" FontSize="18" VerticalAlignment="Center"/>
+                                            <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="4,0,8,0">
+                                                <TextBlock Text="{Binding Content}" FontSize="12.5" FontWeight="SemiBold" Foreground="#222222" TextTrimming="CharacterEllipsis"/>
+                                                <TextBlock Text="{Binding TimestampString}" FontSize="10.5" Foreground="#888888" Margin="0,2,0,0"/>
+                                            </StackPanel>
+                                            <Button Grid.Column="2" Content="打开" Style="{StaticResource SmallBtnStyle}" Tag="{Binding}" Click="BtnOpenHistoryItem_Click"/>
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </Grid>
+                </Grid>
+
+                <!-- ================= TAB 2: 偏好设置 (图 8, 9, 10 像素级实现) ================= -->
+                <ScrollViewer x:Name="ViewSettings" Visibility="Visible" VerticalScrollBarVisibility="Auto" Margin="16,0,16,12">
+                    <StackPanel>
+                        <!-- 卡片 1: 通用设置 (图 8) -->
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="⚙️" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <StackPanel>
+                                        <TextBlock Text="通用设置" FontSize="13.5" FontWeight="Bold" Foreground="#1E2024"/>
+                                        <TextBlock Text="系统登录自启与基础配置" FontSize="10.5" Foreground="#888888" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <Separator Background="#F0F2F5" Margin="0,0,0,10"/>
+                                <Grid>
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="开机自动启动" FontSize="12.5" FontWeight="SemiBold" Foreground="#222222"/>
+                                        <TextBlock Text="Windows 开机或登录系统后自动在后台运行 ShotX，随时使用快捷键截图与工具" FontSize="10.5" Foreground="#888888" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <CheckBox x:Name="ChkAutoStart" HorizontalAlignment="Right" VerticalAlignment="Center" Click="ChkAutoStart_Click"/>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 卡片 2: 截图设置 (图 8) -->
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="🔲" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <StackPanel>
+                                        <TextBlock Text="截图设置" FontSize="13.5" FontWeight="Bold" Foreground="#1E2024"/>
+                                        <TextBlock Text="配置截图格式与保存目录" FontSize="10.5" Foreground="#888888" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <Separator Background="#F0F2F5" Margin="0,0,0,10"/>
+                                
+                                <!-- 保存格式 -->
+                                <Grid Margin="0,0,0,12">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="保存格式" FontSize="12.5" FontWeight="SemiBold" Foreground="#222222"/>
+                                        <TextBlock Text="支持 PNG (无损透明)、JPG (体积小)、HEIC/WEBP (高效压缩)" FontSize="10.5" Foreground="#888888" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <ComboBox x:Name="CmbImageFormat" HorizontalAlignment="Right" Width="140" SelectedIndex="0" SelectionChanged="CmbImageFormat_SelectionChanged">
+                                        <ComboBoxItem Content="PNG (无损高质量)"/>
+                                        <ComboBoxItem Content="JPG (体积小)"/>
+                                        <ComboBoxItem Content="WEBP (高效压缩)"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <Separator Background="#F4F5F7" Margin="0,0,0,10"/>
+
+                                <!-- 保存路径 -->
+                                <Grid>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,120,0">
+                                        <TextBlock Text="保存路径" FontSize="12.5" FontWeight="SemiBold" Foreground="#222222"/>
+                                        <TextBlock x:Name="TxtSavePath" Text="C:\Users\likai\Downloads" FontSize="11" Foreground="#555555" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                        <TextBlock Text="截图后不会自动保存到磁盘，仅在点击标注栏中的“保存”按钮时才会写入此路径。" FontSize="10.5" Foreground="#888888" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Button Content="更改..." Style="{StaticResource SmallBtnStyle}" Margin="0,0,6,0" Click="BtnChangeSavePath_Click"/>
+                                        <Button Content="打开" Style="{StaticResource SmallBtnStyle}" Click="BtnOpenSavePath_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 卡片 3: 录屏与录音设置 (图 8) -->
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="🎥" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <StackPanel>
+                                        <TextBlock Text="录屏与录音设置" FontSize="13.5" FontWeight="Bold" Foreground="#1E2024"/>
+                                        <TextBlock Text="配置屏幕录制与麦克风录音的默认保存目录" FontSize="10.5" Foreground="#888888" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <Separator Background="#F0F2F5" Margin="0,0,0,10"/>
+
+                                <!-- 录屏保存路径 -->
+                                <Grid Margin="0,0,0,12">
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,120,0">
+                                        <TextBlock Text="⏺ 录屏保存路径" FontSize="12.5" FontWeight="SemiBold" Foreground="#222222"/>
+                                        <TextBlock x:Name="TxtRecordPath" Text="C:\Users\likai\Downloads" FontSize="11" Foreground="#555555" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                        <TextBlock Text="屏幕录制完成后，视频文件 (MP4) 将自动保存到此路径。" FontSize="10.5" Foreground="#888888" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Button Content="更改..." Style="{StaticResource SmallBtnStyle}" Margin="0,0,6,0" Click="BtnChangeRecordPath_Click"/>
+                                        <Button Content="打开" Style="{StaticResource SmallBtnStyle}" Click="BtnOpenRecordPath_Click"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <Separator Background="#F4F5F7" Margin="0,0,0,10"/>
+
+                                <!-- 录音保存路径 -->
+                                <Grid>
+                                    <StackPanel VerticalAlignment="Center" Margin="0,0,120,0">
+                                        <TextBlock Text="🎙️ 录音保存路径" FontSize="12.5" FontWeight="SemiBold" Foreground="#222222"/>
+                                        <TextBlock x:Name="TxtAudioPath" Text="C:\Users\likai\Downloads" FontSize="11" Foreground="#555555" TextTrimming="CharacterEllipsis" Margin="0,2,0,0"/>
+                                        <TextBlock Text="麦克风录音结束后，音频文件 (M4A) 将自动保存到此路径。" FontSize="10.5" Foreground="#888888" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Button Content="更改..." Style="{StaticResource SmallBtnStyle}" Margin="0,0,6,0" Click="BtnChangeAudioPath_Click"/>
+                                        <Button Content="打开" Style="{StaticResource SmallBtnStyle}" Click="BtnOpenAudioPath_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 卡片 4: 文本识别 (OCR) 平台 (图 8) -->
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="🔤" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <StackPanel>
+                                        <TextBlock Text="文本识别 (OCR) 平台" FontSize="13.5" FontWeight="Bold" Foreground="#1E2024"/>
+                                        <TextBlock Text="配置离线或云端文字识别服务平台与密钥" FontSize="10.5" Foreground="#888888" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <Separator Background="#F0F2F5" Margin="0,0,0,10"/>
+
+                                <Grid Margin="0,0,0,8">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="识别服务平台" FontSize="12.5" FontWeight="SemiBold" Foreground="#222222"/>
+                                        <TextBlock Text="支持 Windows OCR、百度智能云、有道智云、谷歌、腾讯云" FontSize="10.5" Foreground="#888888" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <ComboBox HorizontalAlignment="Right" Width="200" SelectedIndex="0">
+                                        <ComboBoxItem Content="Windows OCR (系统离线 · 默认推荐)"/>
+                                        <ComboBoxItem Content="百度智能云 (通用高精)"/>
+                                        <ComboBoxItem Content="有道智云 OCR"/>
+                                        <ComboBoxItem Content="腾讯云通用印刷体"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                    <TextBlock Text="🟢" FontSize="9" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="使用 Windows 原生 WinRT OCR 离线模型，无需配置密钥，保护隐私且识别极速。" FontSize="11" Foreground="#34C759"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 卡片 5: 文本翻译平台 (图 9) -->
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="🌐" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <StackPanel>
+                                        <TextBlock Text="文本翻译平台" FontSize="13.5" FontWeight="Bold" Foreground="#1E2024"/>
+                                        <TextBlock Text="配置多语言机器翻译服务平台与密钥" FontSize="10.5" Foreground="#888888" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <Separator Background="#F0F2F5" Margin="0,0,0,10"/>
+
+                                <Grid Margin="0,0,0,8">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="翻译服务平台" FontSize="12.5" FontWeight="SemiBold" Foreground="#222222"/>
+                                        <TextBlock Text="支持谷歌翻译、百度通用翻译、有道智云、腾讯云机器翻译" FontSize="10.5" Foreground="#888888" Margin="0,3,0,0"/>
+                                    </StackPanel>
+                                    <ComboBox HorizontalAlignment="Right" Width="200" SelectedIndex="0">
+                                        <ComboBoxItem Content="谷歌翻译 (免密钥 · 默认推荐)"/>
+                                        <ComboBoxItem Content="百度通用翻译"/>
+                                        <ComboBoxItem Content="有道智云翻译"/>
+                                        <ComboBoxItem Content="腾讯云机器翻译"/>
+                                    </ComboBox>
+                                </Grid>
+
+                                <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                    <TextBlock Text="🟢" FontSize="9" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Text="使用 Google Translate 免费翻译接口，开箱即用，免配置 ID 与密钥。" FontSize="11" Foreground="#34C759"/>
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 卡片 6: 快捷键 (图 9, 10 像素级实现) -->
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="⌘" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <StackPanel>
+                                        <TextBlock Text="快捷键" FontSize="13.5" FontWeight="Bold" Foreground="#1E2024"/>
+                                        <TextBlock Text="自定义全部 14 种核心功能的全局热键 (顺序与菜单一致)" FontSize="10.5" Foreground="#888888" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <Separator Background="#F0F2F5" Margin="0,0,0,10"/>
+
+                                <!-- 快捷键列表项 (图 9 / 图 10) -->
+                                <StackPanel x:Name="HotkeysContainer">
+                                    <!-- 1. 全能截图 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="全能截图" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="集放大镜取色、九宫格比例参考、预设尺寸于一体的辅助截图模式" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="未设置" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 2. 区域截图 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="区域截图" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="划选屏幕任意矩形区域并展开标注栏与长截图" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="Alt + A" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 3. 上次区域截图 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="上次区域截图" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="💡 功能说明: 重新截取上一次框选的屏幕坐标与尺寸，无需重复用鼠标手动划选" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="Alt + R" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 4. 全屏截图 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="全屏截图" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="一键截取当前整个主屏幕并在正中央提示" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="Alt + Shift + A" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 5. 窗口截图 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="窗口截图" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="移动鼠标悬停并自动识别窗口轮廓截取" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="Alt + W" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 6. 截图 OCR -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="截图 OCR" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="划选屏幕后直接提取文本并复制到剪贴板，无标注栏打扰" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="未设置" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 7. 从剪贴板贴图 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="从剪贴板贴图" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="将剪贴板或截图钉在屏幕最上层悬浮展示，方便对比对照" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="Alt + F3" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 8. 拾色器 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="拾色器" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="放大镜精准吸管取色，按 R 键拷贝 RGB，按 H 键拷贝 HEX" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="Alt + Shift + C" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 9. 屏幕录制 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="屏幕录制" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="划选区域开始录屏 (支持声音、光标与按键高亮)" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="Alt + Shift + R" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 10. 声音录制 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="声音录制" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="开启/结束系统麦克风高音质录音，悬浮药丸实时显示时长" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="未设置" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 11. 划词翻译 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="划词翻译" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="选中任意屏幕文本后按快捷键，自动填入翻译框并立即翻译" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="Alt + Shift + F" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 12. 截图翻译 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="截图翻译" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="框选屏幕区域后自动提取文字并立即打开翻译框进行翻译" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="未设置" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 13. 剪贴板历史 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="剪贴板历史" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="随时呼出历史剪贴板记录，支持搜索、双击直接粘贴在光标处" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="未设置" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 14. 改图-从剪贴板打开 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="改图-从剪贴板打开" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="从剪贴板直接载入图片并打开标注窗口，支持画笔、文字、马赛克等就地编辑" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="Alt + P" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- 15. 隐藏桌面图标 -->
+                                    <Grid Margin="0,4">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="隐藏桌面图标" FontSize="12" FontWeight="SemiBold"/>
+                                            <TextBlock Text="💡 功能说明: 一键隐藏或恢复桌面上所有文件与快捷方式，录屏或截图时桌面整洁干净" FontSize="10" Foreground="#888888"/>
+                                        </StackPanel>
+                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                            <TextBox Text="未设置" Width="90" Height="24" TextAlignment="Center" IsReadOnly="True" VerticalContentAlignment="Center" FontSize="11" Background="#F2F3F5" BorderBrush="#DCDFE6"/>
+                                            <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                        </StackPanel>
+                                    </Grid>
+                                </StackPanel>
+
+                                <!-- 底部操作与说明 (图 10) -->
+                                <Separator Background="#F4F5F7" Margin="0,8,0,8"/>
+                                <Grid>
+                                    <TextBlock Text="点击输入框并按下新的组合键。按 Esc 键取消。" FontSize="10.5" Foreground="#888888" VerticalAlignment="Center"/>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                        <Button Content="清空全部" Style="{StaticResource SmallBtnStyle}" Margin="0,0,6,0" Click="BtnClearHotkeys_Click"/>
+                                        <Button Content="恢复全部默认" Style="{StaticResource SmallBtnStyle}" Click="BtnRestoreHotkeys_Click"/>
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 卡片 7: 关于 ShotX (图 10 像素级实现) -->
+                        <Border Style="{StaticResource CardBorderStyle}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                    <TextBlock Text="ℹ️" FontSize="15" Margin="0,0,8,0" VerticalAlignment="Center"/>
+                                    <StackPanel>
+                                        <TextBlock Text="关于 ShotX" FontSize="13.5" FontWeight="Bold" Foreground="#1E2024"/>
+                                        <TextBlock Text="现代 Windows 全能屏幕截图、就地标注、长截图与录屏录音工具" FontSize="10.5" Foreground="#888888" Margin="0,2,0,0"/>
+                                    </StackPanel>
+                                </StackPanel>
+                                <Separator Background="#F0F2F5" Margin="0,0,0,12"/>
+
+                                <!-- 版本与作者栏 -->
+                                <Grid Margin="0,0,0,14">
+                                    <StackPanel VerticalAlignment="Center">
+                                        <TextBlock Text="ShotX v1.9.23" FontSize="14.5" FontWeight="Bold" Foreground="#1E2024"/>
+                                        <TextBlock Text="开发者: @muzi86754781 · github.com/muzi86754781/shotx · QQ: 285351298" FontSize="11" Foreground="#666666" Margin="0,4,0,0"/>
+                                    </StackPanel>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Button Content="☕ 支持作者" Style="{StaticResource PrimaryPillBtnStyle}" Margin="0,0,6,0" Click="BtnSupport_Click"/>
+                                        <Button Content="检查更新" Style="{StaticResource SmallBtnStyle}" Margin="0,0,6,0" Click="BtnCheckUpdate_Click"/>
+                                        <Button Content="⏻ 退出 ShotX" Style="{StaticResource SmallBtnStyle}" Click="BtnExit_Click"/>
+                                    </StackPanel>
+                                </Grid>
+
+                                <!-- 功能亮点与介绍 (图 10 逐字对齐) -->
+                                <TextBlock Text="功能亮点与介绍:" FontSize="12" FontWeight="Bold" Foreground="#333333" Margin="0,0,0,8"/>
+                                <TextBlock LineHeight="20" FontSize="11" Foreground="#555555" TextWrapping="Wrap">
+                                    · 全能辅助截图：支持放大镜取色、九宫格比例网格与常用分辨率快速框选。<LineBreak/>
+                                    · 区域 / 窗口 / 全屏 / 定时截图：多维度即时捕捉，支持阴影与圆角实时调整。<LineBreak/>
+                                    · 滚动长截图：在截图区域内滑动鼠标，实时检测滚动变化并无缝拼接长图。<LineBreak/>
+                                    · 截图 OCR：框选屏幕即刻离线识别文字并自动复制到剪贴板，无多余干扰。<LineBreak/>
+                                    · 屏幕与音频录制：高清录屏（摄像头/声音/光标/按键高亮），以及独立麦克风录音。<LineBreak/>
+                                    · 多模态翻译：支持划词翻译、截图翻译与输入翻译窗口，中英互换与 TTS 朗读。<LineBreak/>
+                                    · 剪贴板历史：自动记录复制内容，支持按类检索、快速粘贴与多格式管理。<LineBreak/>
+                                    · 贴图置顶 &amp; 拾色器 &amp; 隐藏桌面图标：让桌面井然有序，提升日常生产力。
+                                </TextBlock>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </Grid>
+    </Border>
+</Window>
