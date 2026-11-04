@@ -16,3 +16,4 @@
         <views:SelectionCanvas x:Name="OverlayCanvas" Background="Transparent" />
     </Grid>
 </Window>
+

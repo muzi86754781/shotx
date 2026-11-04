@@ -400,3 +400,4 @@ public partial class ScreenRecordingPrepWindow : Window
         _dragStart = null;
     }
 }
+

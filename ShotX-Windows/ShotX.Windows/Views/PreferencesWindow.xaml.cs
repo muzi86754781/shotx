@@ -9,6 +9,7 @@ using System.Windows.Input;
 using ShotX.Windows.Core;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace ShotX.Windows.Views;
 
@@ -299,3 +300,4 @@ public partial class PreferencesWindow : Window
         Application.Current.Shutdown();
     }
 }
+

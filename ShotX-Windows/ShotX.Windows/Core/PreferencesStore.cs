@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using System.Text.Json;
 using Microsoft.Win32;
@@ -6,7 +7,10 @@ namespace ShotX.Windows.Core;
 
 public class AppPreferences
 {
-    public string SavePath { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "ShotX");
+    public string SavePath { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+    public string RecordPath { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+    public string AudioPath { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
+    public string ImageFormat { get; set; } = "PNG";
     public int CornerRadius { get; set; } = 0;
     public bool IncludeShadow { get; set; } = false;
     public bool PlaySound { get; set; } = true;
@@ -35,6 +39,36 @@ public static class PreferencesStore
             }
             return _current!;
         }
+    }
+
+    public static bool AutoStart
+    {
+        get => Current.LaunchAtStartup;
+        set => SetLaunchAtStartup(value);
+    }
+
+    public static string SaveDir
+    {
+        get => Current.SavePath;
+        set => Current.SavePath = value;
+    }
+
+    public static string RecordDir
+    {
+        get => Current.RecordPath;
+        set => Current.RecordPath = value;
+    }
+
+    public static string AudioDir
+    {
+        get => Current.AudioPath;
+        set => Current.AudioPath = value;
+    }
+
+    public static string ImageFormat
+    {
+        get => Current.ImageFormat;
+        set => Current.ImageFormat = value;
     }
 
     public static void Load()
@@ -100,4 +134,3 @@ public static class PreferencesStore
         }
     }
 }
-

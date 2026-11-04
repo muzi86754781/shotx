@@ -2,6 +2,7 @@ using System;
 using System.Windows;
 using System.Windows.Input;
 using ShotX.Windows.Models;
+using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace ShotX.Windows.Views;
 
@@ -90,3 +91,4 @@ public partial class AllInOneBarWindow : Window
         }
     }
 }
+

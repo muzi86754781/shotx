@@ -8,6 +8,7 @@ using System.Windows.Forms;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
+using System.Windows.Threading;
 using ShotX.Windows.Core;
 using ShotX.Windows.Models;
 using Color = System.Windows.Media.Color;
