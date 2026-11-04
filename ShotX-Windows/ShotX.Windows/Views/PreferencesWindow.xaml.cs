@@ -10,6 +10,7 @@ using ShotX.Windows.Core;
 using Application = System.Windows.Application;
 using MessageBox = System.Windows.MessageBox;
 using Button = System.Windows.Controls.Button;
+using RadioButton = System.Windows.Controls.RadioButton;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace ShotX.Windows.Views;
