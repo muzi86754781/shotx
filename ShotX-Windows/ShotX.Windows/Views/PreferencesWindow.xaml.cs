@@ -8,10 +8,10 @@ using System.Windows.Controls;
 using System.Windows.Input;
 using ShotX.Windows.Core;
 using Application = System.Windows.Application;
-using MessageBox = System.Windows.MessageBox;
 using Button = System.Windows.Controls.Button;
-using RadioButton = System.Windows.Controls.RadioButton;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
+using MessageBox = System.Windows.MessageBox;
+using RadioButton = System.Windows.Controls.RadioButton;
 
 namespace ShotX.Windows.Views;
 
@@ -19,10 +19,12 @@ public partial class PreferencesWindow : Window
 {
     private HistoryType? _selectedHistoryFilter = HistoryType.ScreenRecord;
     private readonly List<HistoryItem> _allHistoryItems = new();
+    private bool _isReady = false;
 
     public PreferencesWindow(bool initialTabIsHistory = false)
     {
         InitializeComponent();
+        _isReady = true;
 
         if (initialTabIsHistory)
         {
@@ -45,8 +47,13 @@ public partial class PreferencesWindow : Window
     {
         if (e.LeftButton == MouseButtonState.Pressed)
         {
-            DragMove();
+            try { DragMove(); } catch { }
         }
+    }
+
+    private void BtnMinimize_Click(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState.Minimized;
     }
 
     private void BtnClose_Click(object sender, RoutedEventArgs e)
@@ -64,7 +71,7 @@ public partial class PreferencesWindow : Window
 
     private void TabHistory_Checked(object sender, RoutedEventArgs e)
     {
-        if (ViewHistory == null || ViewSettings == null) return;
+        if (!_isReady || ViewHistory == null || ViewSettings == null) return;
         ViewHistory.Visibility = Visibility.Visible;
         ViewSettings.Visibility = Visibility.Collapsed;
         RefreshHistoryDisplay();
@@ -72,12 +79,42 @@ public partial class PreferencesWindow : Window
 
     private void TabSettings_Checked(object sender, RoutedEventArgs e)
     {
-        if (ViewHistory == null || ViewSettings == null) return;
+        if (!_isReady || ViewHistory == null || ViewSettings == null) return;
         ViewHistory.Visibility = Visibility.Collapsed;
         ViewSettings.Visibility = Visibility.Visible;
     }
 
-    // --- 历史记录模块 (图 7) ---
+    // --- 左侧 Windows 11 导航栏跳转 ---
+    private void NavGeneral_Click(object sender, RoutedEventArgs e)
+    {
+        TabSettings.IsChecked = true;
+        CardGeneral?.BringIntoView();
+    }
+
+    private void NavAi_Click(object sender, RoutedEventArgs e)
+    {
+        TabSettings.IsChecked = true;
+        CardAi?.BringIntoView();
+    }
+
+    private void NavHotkeys_Click(object sender, RoutedEventArgs e)
+    {
+        TabSettings.IsChecked = true;
+        CardHotkeys?.BringIntoView();
+    }
+
+    private void NavHistory_Click(object sender, RoutedEventArgs e)
+    {
+        TabHistory.IsChecked = true;
+    }
+
+    private void NavAbout_Click(object sender, RoutedEventArgs e)
+    {
+        TabSettings.IsChecked = true;
+        CardAbout?.BringIntoView();
+    }
+
+    // --- 历史记录模块 ---
     private void LoadHistory()
     {
         _allHistoryItems.Clear();
@@ -87,15 +124,16 @@ public partial class PreferencesWindow : Window
 
     private void HistoryFilter_Changed(object sender, RoutedEventArgs e)
     {
+        if (!_isReady) return;
         if (sender is RadioButton rb && rb.Content is string text)
         {
             if (text.Contains("全部")) _selectedHistoryFilter = null;
             else if (text.Contains("截图")) _selectedHistoryFilter = HistoryType.Screenshot;
             else if (text.Contains("录屏")) _selectedHistoryFilter = HistoryType.ScreenRecord;
             else if (text.Contains("录音")) _selectedHistoryFilter = HistoryType.AudioRecord;
-            else if (text.Contains("提取文字")) _selectedHistoryFilter = HistoryType.OCR;
+            else if (text.Contains("文字")) _selectedHistoryFilter = HistoryType.OCR;
             else if (text.Contains("翻译")) _selectedHistoryFilter = HistoryType.Translation;
-            else if (text.Contains("复制记录")) _selectedHistoryFilter = HistoryType.Clipboard;
+            else if (text.Contains("剪贴板") || text.Contains("复制")) _selectedHistoryFilter = HistoryType.Clipboard;
 
             RefreshHistoryDisplay();
         }
@@ -103,13 +141,14 @@ public partial class PreferencesWindow : Window
 
     private void TxtHistorySearch_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (!_isReady || TxtHistoryPlaceholder == null || TxtHistorySearch == null) return;
         TxtHistoryPlaceholder.Visibility = string.IsNullOrEmpty(TxtHistorySearch.Text) ? Visibility.Visible : Visibility.Collapsed;
         RefreshHistoryDisplay();
     }
 
     private void RefreshHistoryDisplay()
     {
-        if (TxtHistoryCount == null) return;
+        if (!_isReady || TxtHistoryCount == null || TxtHistorySearch == null) return;
 
         string query = TxtHistorySearch.Text.Trim();
         var items = _allHistoryItems.AsEnumerable();
@@ -133,11 +172,11 @@ public partial class PreferencesWindow : Window
             HistoryType.AudioRecord => "录音",
             HistoryType.OCR => "提取文字",
             HistoryType.Translation => "翻译",
-            HistoryType.Clipboard => "复制记录",
+            HistoryType.Clipboard => "剪贴板",
             _ => "全部"
         };
 
-        TxtHistoryCount.Text = $"{filterName} · {list.Count} 条记录";
+        TxtHistoryCount.Text = $"{filterName} · 共 {list.Count} 条记录";
 
         if (list.Count == 0)
         {
@@ -168,9 +207,13 @@ public partial class PreferencesWindow : Window
     {
         if (sender is Button btn && btn.Tag is HistoryItem item)
         {
-            if (File.Exists(item.FilePath))
+            if (!string.IsNullOrWhiteSpace(item.FilePath) && File.Exists(item.FilePath))
             {
-                Process.Start(new ProcessStartInfo(item.FilePath) { UseShellExecute = true });
+                try
+                {
+                    Process.Start(new ProcessStartInfo(item.FilePath) { UseShellExecute = true });
+                }
+                catch { }
             }
             else
             {
@@ -179,32 +222,46 @@ public partial class PreferencesWindow : Window
         }
     }
 
-    // --- 偏好设置模块 (图 8, 9, 10) ---
+    // --- 偏好设置模块 ---
     private void LoadSettings()
     {
-        ChkAutoStart.IsChecked = PreferencesStore.AutoStart;
+        if (ChkAutoStart != null)
+        {
+            ChkAutoStart.IsChecked = PreferencesStore.AutoStart;
+        }
 
-        TxtSavePath.Text = string.IsNullOrWhiteSpace(PreferencesStore.SaveDir)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")
-            : PreferencesStore.SaveDir;
+        if (TxtSavePath != null)
+        {
+            TxtSavePath.Text = PreferencesStore.GetValidSaveDir();
+        }
 
-        TxtRecordPath.Text = string.IsNullOrWhiteSpace(PreferencesStore.RecordDir)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")
-            : PreferencesStore.RecordDir;
+        if (TxtRecordPath != null)
+        {
+            TxtRecordPath.Text = PreferencesStore.GetValidRecordDir();
+        }
 
-        TxtAudioPath.Text = string.IsNullOrWhiteSpace(PreferencesStore.AudioDir)
-            ? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads")
-            : PreferencesStore.AudioDir;
+        if (TxtAudioPath != null)
+        {
+            TxtAudioPath.Text = PreferencesStore.GetValidAudioDir();
+        }
+
+        if (CmbImageFormat != null)
+        {
+            string fmt = (PreferencesStore.ImageFormat ?? "PNG").ToUpperInvariant();
+            CmbImageFormat.SelectedIndex = fmt == "JPG" ? 1 : (fmt == "WEBP" ? 2 : 0);
+        }
     }
 
     private void ChkAutoStart_Click(object sender, RoutedEventArgs e)
     {
+        if (!_isReady || ChkAutoStart == null) return;
         PreferencesStore.AutoStart = ChkAutoStart.IsChecked == true;
         PreferencesStore.Save();
     }
 
     private void CmbImageFormat_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!_isReady || CmbImageFormat == null) return;
         if (CmbImageFormat.SelectedIndex == 0) PreferencesStore.ImageFormat = "PNG";
         else if (CmbImageFormat.SelectedIndex == 1) PreferencesStore.ImageFormat = "JPG";
         else if (CmbImageFormat.SelectedIndex == 2) PreferencesStore.ImageFormat = "WEBP";
@@ -213,9 +270,12 @@ public partial class PreferencesWindow : Window
 
     private void BtnChangeSavePath_Click(object sender, RoutedEventArgs e)
     {
-        using var dialog = new System.Windows.Forms.FolderBrowserDialog();
-        dialog.Description = "选择截图默认保存路径";
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "选择截图默认保存路径",
+            SelectedPath = PreferencesStore.GetValidSaveDir()
+        };
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
         {
             PreferencesStore.SaveDir = dialog.SelectedPath;
             PreferencesStore.Save();
@@ -230,9 +290,12 @@ public partial class PreferencesWindow : Window
 
     private void BtnChangeRecordPath_Click(object sender, RoutedEventArgs e)
     {
-        using var dialog = new System.Windows.Forms.FolderBrowserDialog();
-        dialog.Description = "选择屏幕录制保存路径";
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "选择屏幕录制保存路径",
+            SelectedPath = PreferencesStore.GetValidRecordDir()
+        };
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
         {
             PreferencesStore.RecordDir = dialog.SelectedPath;
             PreferencesStore.Save();
@@ -247,9 +310,12 @@ public partial class PreferencesWindow : Window
 
     private void BtnChangeAudioPath_Click(object sender, RoutedEventArgs e)
     {
-        using var dialog = new System.Windows.Forms.FolderBrowserDialog();
-        dialog.Description = "选择麦克风录音保存路径";
-        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK)
+        using var dialog = new System.Windows.Forms.FolderBrowserDialog
+        {
+            Description = "选择麦克风录音保存路径",
+            SelectedPath = PreferencesStore.GetValidAudioDir()
+        };
+        if (dialog.ShowDialog() == System.Windows.Forms.DialogResult.OK && !string.IsNullOrWhiteSpace(dialog.SelectedPath))
         {
             PreferencesStore.AudioDir = dialog.SelectedPath;
             PreferencesStore.Save();
@@ -266,8 +332,9 @@ public partial class PreferencesWindow : Window
     {
         try
         {
-            if (!Directory.Exists(path)) Directory.CreateDirectory(path);
-            Process.Start(new ProcessStartInfo("explorer.exe", path) { UseShellExecute = true });
+            string target = string.IsNullOrWhiteSpace(path) ? PreferencesStore.DefaultDownloadsDir : path;
+            if (!Directory.Exists(target)) Directory.CreateDirectory(target);
+            Process.Start(new ProcessStartInfo("explorer.exe", target) { UseShellExecute = true });
         }
         catch (Exception ex)
         {
@@ -282,7 +349,7 @@ public partial class PreferencesWindow : Window
 
     private void BtnRestoreHotkeys_Click(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show("已恢复全部 14 项快捷键为系统默认值。", "ShotX 快捷键", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show("已恢复全部快捷键为系统默认值。", "ShotX 快捷键", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void BtnSupport_Click(object sender, RoutedEventArgs e)
@@ -302,4 +369,3 @@ public partial class PreferencesWindow : Window
         Application.Current.Shutdown();
     }
 }
-

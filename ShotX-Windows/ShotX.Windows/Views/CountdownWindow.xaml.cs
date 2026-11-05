@@ -1,6 +1,8 @@
 using System;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Threading;
+using ShotX.Windows.Core;
 
 namespace ShotX.Windows.Views;
 
@@ -13,6 +15,15 @@ public partial class CountdownWindow : Window
     public CountdownWindow(int seconds, Action onFinished)
     {
         InitializeComponent();
+        WindowStartupLocation = WindowStartupLocation.Manual;
+
+        var screen = ScreenCapture.GetCurrentMouseScreen();
+        var bounds = screen.Bounds;
+        var (scaleX, scaleY) = ScreenCapture.GetMonitorDpiScale(bounds);
+
+        Left = (bounds.Left / scaleX) + ((bounds.Width / scaleX) - Width) / 2.0;
+        Top = (bounds.Top / scaleY) + ((bounds.Height / scaleY) - Height) / 2.0;
+
         _remainingSeconds = seconds;
         _onFinished = onFinished;
         TxtNumber.Text = _remainingSeconds.ToString();
@@ -25,7 +36,7 @@ public partial class CountdownWindow : Window
         _timer.Start();
     }
 
-    private void Timer_Tick(object? sender, EventArgs e)
+    private async void Timer_Tick(object? sender, EventArgs e)
     {
         _remainingSeconds--;
         if (_remainingSeconds > 0)
@@ -35,9 +46,22 @@ public partial class CountdownWindow : Window
         else
         {
             _timer.Stop();
-            Close();
-            _onFinished.Invoke();
+            try
+            {
+                Hide();
+                Close();
+            }
+            catch { }
+
+            await Task.Delay(80);
+            Dispatcher.Invoke(() =>
+            {
+                try
+                {
+                    _onFinished.Invoke();
+                }
+                catch { }
+            });
         }
     }
 }
-

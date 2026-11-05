@@ -1,10 +1,8 @@
 using System;
-using System.IO;
 using System.Net.Http;
 using System.Speech.Synthesis;
 using System.Text.Json;
 using System.Threading;
-using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -12,7 +10,6 @@ using System.Windows.Threading;
 using ShotX.Windows.Core;
 using Application = System.Windows.Application;
 using Clipboard = System.Windows.Clipboard;
-using MessageBox = System.Windows.MessageBox;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace ShotX.Windows.Views;
@@ -23,16 +20,27 @@ public partial class TranslationWindow : Window
     private readonly DispatcherTimer _debounceTimer;
     private CancellationTokenSource? _cts;
     private SpeechSynthesizer? _synth;
+    private bool _isReady = false;
 
     public TranslationWindow()
     {
-        InitializeComponent();
-
         _debounceTimer = new DispatcherTimer
         {
             Interval = TimeSpan.FromMilliseconds(380)
         };
         _debounceTimer.Tick += DebounceTimer_Tick;
+
+        InitializeComponent();
+
+        _isReady = true;
+        Loaded += (_, _) =>
+        {
+            TxtSource?.Focus();
+            if (!string.IsNullOrWhiteSpace(TxtSource?.Text))
+            {
+                TriggerTranslation();
+            }
+        };
     }
 
     public TranslationWindow(string sourceText) : this()
@@ -42,25 +50,36 @@ public partial class TranslationWindow : Window
 
     public void SetSourceText(string text)
     {
-        TxtSource.Text = text;
-        TxtSource.CaretIndex = text.Length;
-        TriggerTranslation();
+        if (TxtSource == null) return;
+        TxtSource.Text = text ?? string.Empty;
+        TxtSource.CaretIndex = TxtSource.Text.Length;
+        if (TxtCharCount != null)
+        {
+            TxtCharCount.Text = $"{TxtSource.Text.Length} 字";
+        }
+        if (IsLoaded)
+        {
+            TriggerTranslation();
+        }
     }
 
     private void TopBar_MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.LeftButton == MouseButtonState.Pressed)
         {
-            DragMove();
+            try { DragMove(); } catch { }
         }
     }
 
     private void BtnPin_Click(object sender, RoutedEventArgs e)
     {
         Topmost = !Topmost;
-        PinPath.Fill = Topmost
-            ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 122, 255))
-            : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(150, 150, 150));
+        if (PinPath != null)
+        {
+            PinPath.Fill = Topmost
+                ? new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(0, 122, 255))
+                : new System.Windows.Media.SolidColorBrush(System.Windows.Media.Color.FromRgb(150, 150, 150));
+        }
     }
 
     private void BtnHistory_Click(object sender, RoutedEventArgs e)
@@ -98,8 +117,13 @@ public partial class TranslationWindow : Window
 
     private void TxtSource_TextChanged(object sender, TextChangedEventArgs e)
     {
+        if (!_isReady || TxtSource == null || _debounceTimer == null) return;
+
         string text = TxtSource.Text;
-        TxtCharCount.Text = $"{text.Length} 字";
+        if (TxtCharCount != null)
+        {
+            TxtCharCount.Text = $"{text.Length} 字";
+        }
 
         _debounceTimer.Stop();
         _debounceTimer.Start();
@@ -113,15 +137,16 @@ public partial class TranslationWindow : Window
 
     private void Lang_SelectionChanged(object sender, SelectionChangedEventArgs e)
     {
+        if (!_isReady || !IsLoaded) return;
         TriggerTranslation();
     }
 
     private void BtnSwap_Click(object sender, RoutedEventArgs e)
     {
+        if (CmbSourceLang == null || CmbTargetLang == null) return;
         int src = CmbSourceLang.SelectedIndex;
         int tgt = CmbTargetLang.SelectedIndex;
 
-        // 仅在非自动时互换
         if (src > 0 && tgt > 0)
         {
             CmbSourceLang.SelectedIndex = tgt;
@@ -130,12 +155,12 @@ public partial class TranslationWindow : Window
         else if (src == 0 && tgt > 0)
         {
             CmbSourceLang.SelectedIndex = tgt;
-            CmbTargetLang.SelectedIndex = 1; // 默认对调
+            CmbTargetLang.SelectedIndex = 1;
         }
         else
         {
-            CmbSourceLang.SelectedIndex = 2; // 中文
-            CmbTargetLang.SelectedIndex = 2; // 英语
+            CmbSourceLang.SelectedIndex = 2;
+            CmbTargetLang.SelectedIndex = 2;
         }
     }
 
@@ -156,6 +181,11 @@ public partial class TranslationWindow : Window
 
     private async void TriggerTranslation()
     {
+        if (!_isReady || TxtSource == null || TxtResult == null || CmbSourceLang == null || CmbTargetLang == null)
+        {
+            return;
+        }
+
         string text = TxtSource.Text.Trim();
         if (string.IsNullOrEmpty(text))
         {
@@ -187,7 +217,7 @@ public partial class TranslationWindow : Window
                     var sb = new System.Text.StringBuilder();
                     foreach (var seg in segs.EnumerateArray())
                     {
-                        if (seg.GetArrayLength() > 0)
+                        if (seg.ValueKind == JsonValueKind.Array && seg.GetArrayLength() > 0)
                         {
                             sb.Append(seg[0].GetString());
                         }
@@ -195,7 +225,6 @@ public partial class TranslationWindow : Window
                     string result = sb.ToString();
                     TxtResult.Text = result;
 
-                    // 记录历史
                     HistoryStore.Add(HistoryType.Translation, text, result);
                     return;
                 }
@@ -204,22 +233,24 @@ public partial class TranslationWindow : Window
         }
         catch (OperationCanceledException)
         {
-            // 取消忽略
         }
         catch
         {
-            TxtResult.Text = "（翻译遇到问题，请检查网络）";
+            if (TxtResult != null)
+            {
+                TxtResult.Text = "（翻译遇到问题，请检查网络）";
+            }
         }
     }
 
     private void BtnSpeakSource_Click(object sender, RoutedEventArgs e)
     {
-        Speak(TxtSource.Text);
+        if (TxtSource != null) Speak(TxtSource.Text);
     }
 
     private void BtnSpeakResult_Click(object sender, RoutedEventArgs e)
     {
-        Speak(TxtResult.Text);
+        if (TxtResult != null) Speak(TxtResult.Text);
     }
 
     private void Speak(string text)
@@ -236,17 +267,29 @@ public partial class TranslationWindow : Window
 
     private void BtnCopySource_Click(object sender, RoutedEventArgs e)
     {
-        if (!string.IsNullOrEmpty(TxtSource.Text))
+        if (TxtSource != null && !string.IsNullOrEmpty(TxtSource.Text))
         {
-            Clipboard.SetText(TxtSource.Text);
+            try { Clipboard.SetText(TxtSource.Text); } catch { }
         }
     }
 
     private void BtnCopyResult_Click(object sender, RoutedEventArgs e)
     {
-        if (!string.IsNullOrEmpty(TxtResult.Text))
+        if (TxtResult != null && !string.IsNullOrEmpty(TxtResult.Text))
         {
-            Clipboard.SetText(TxtResult.Text);
+            try { Clipboard.SetText(TxtResult.Text); } catch { }
         }
+    }
+
+    protected override void OnClosed(EventArgs e)
+    {
+        base.OnClosed(e);
+        try
+        {
+            _debounceTimer?.Stop();
+            _cts?.Cancel();
+            _synth?.Dispose();
+        }
+        catch { }
     }
 }
