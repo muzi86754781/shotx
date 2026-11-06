@@ -149,96 +149,178 @@ public partial class App : Application
 
     private void InitNotifyIcon()
     {
-        var contextMenu = new ContextMenuStrip();
+        var contextMenu = new ContextMenuStrip
+        {
+            Renderer = new TrayMenuHelper.ModernMenuRenderer(),
+            Font = new System.Drawing.Font("Microsoft YaHei UI", 9.25f, System.Drawing.FontStyle.Regular),
+            ShowImageMargin = true,
+            ShowCheckMargin = false,
+            AutoClose = true
+        };
 
-        // 1. 全能截图
-        contextMenu.Items.Add("全能截图", null, (_, _) => Dispatcher.BeginInvoke(ShowAllInOneBar));
+        var textColor = TrayMenuHelper.TextColor;
+        var hotkeys = PreferencesStore.Current.Hotkeys;
+
+        // 1. 全能截图 (macOS 1:1 首项高亮风格)
+        var heroItem = new ToolStripMenuItem("全能截图", TrayMenuHelper.CreateIcon("all_in_one", System.Drawing.Color.White, 16), (_, _) => Dispatcher.BeginInvoke(ShowAllInOneBar))
+        {
+            Tag = "Hero",
+            Font = new System.Drawing.Font("Microsoft YaHei UI", 9.5f, System.Drawing.FontStyle.Bold)
+        };
+        contextMenu.Items.Add(heroItem);
 
         // 2. 区域截图
-        contextMenu.Items.Add("区域截图 (Alt+A)", null, (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Area)));
+        var itemArea = new ToolStripMenuItem("区域截图", TrayMenuHelper.CreateIcon("area", textColor), (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Area)))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("Area", "Alt + A")
+        };
+        contextMenu.Items.Add(itemArea);
 
         // 3. 上次区域截图
-        var itemPrev = contextMenu.Items.Add("上次区域截图 (Alt+R)", null, (_, _) => Dispatcher.BeginInvoke(CapturePreviousArea));
+        var itemPrev = new ToolStripMenuItem("上次区域截图", TrayMenuHelper.CreateIcon("prev_area", textColor), (_, _) => Dispatcher.BeginInvoke(CapturePreviousArea))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("PreviousArea", "Alt + R")
+        };
         contextMenu.Opening += (_, _) => itemPrev.Enabled = LastCaptureStore.HasPrevious;
+        contextMenu.Items.Add(itemPrev);
 
         // 4. 全屏截图
-        contextMenu.Items.Add("全屏截图 (Alt+Shift+A)", null, (_, _) => Dispatcher.BeginInvoke(CaptureFullscreen));
+        var itemFull = new ToolStripMenuItem("全屏截图", TrayMenuHelper.CreateIcon("fullscreen", textColor), (_, _) => Dispatcher.BeginInvoke(CaptureFullscreen))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("Fullscreen", "Alt + Shift + A")
+        };
+        contextMenu.Items.Add(itemFull);
 
         // 5. 窗口截图
-        contextMenu.Items.Add("窗口截图 (Alt+W)", null, (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Window)));
+        var itemWin = new ToolStripMenuItem("窗口截图", TrayMenuHelper.CreateIcon("window", textColor), (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Window)))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("Window", "Alt + W")
+        };
+        contextMenu.Items.Add(itemWin);
 
         // 6. 定时截图
-        var timerMenu = new ToolStripMenuItem("定时截图");
+        var timerMenu = new ToolStripMenuItem("定时截图", TrayMenuHelper.CreateIcon("timer", textColor));
         timerMenu.DropDownItems.Add("3 秒", null, (_, _) => Dispatcher.BeginInvoke(() => StartTimerCapture(3)));
         timerMenu.DropDownItems.Add("5 秒", null, (_, _) => Dispatcher.BeginInvoke(() => StartTimerCapture(5)));
         timerMenu.DropDownItems.Add("10 秒", null, (_, _) => Dispatcher.BeginInvoke(() => StartTimerCapture(10)));
         contextMenu.Items.Add(timerMenu);
 
         // 7. 截图 OCR
-        contextMenu.Items.Add("截图 OCR", null, (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.OCR)));
+        var itemOcr = new ToolStripMenuItem("截图 OCR", TrayMenuHelper.CreateIcon("ocr", textColor), (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.OCR)))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("OCR", "")
+        };
+        contextMenu.Items.Add(itemOcr);
 
         // 8. 从剪贴板贴图
-        contextMenu.Items.Add("从剪贴板贴图 (Alt+F3)", null, (_, _) => Dispatcher.BeginInvoke(PinFromClipboard));
+        var itemPin = new ToolStripMenuItem("从剪贴板贴图", TrayMenuHelper.CreateIcon("pin", textColor), (_, _) => Dispatcher.BeginInvoke(PinFromClipboard))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("Pin", "Alt + F3")
+        };
+        contextMenu.Items.Add(itemPin);
 
         // 9. 改图-打开图片 (直接进入可编辑标注模式)
-        contextMenu.Items.Add("改图-打开图片", null, (_, _) => Dispatcher.BeginInvoke(OpenFileForEdit));
+        var itemOpenImg = new ToolStripMenuItem("改图-打开图片", TrayMenuHelper.CreateIcon("open_image", textColor), (_, _) => Dispatcher.BeginInvoke(OpenFileForEdit));
+        contextMenu.Items.Add(itemOpenImg);
 
         // 10. 改图-从剪贴板打开 (直接进入可编辑标注模式)
-        contextMenu.Items.Add("改图-从剪贴板打开 (Alt+P)", null, (_, _) => Dispatcher.BeginInvoke(EditFromClipboard));
+        var itemEditClip = new ToolStripMenuItem("改图-从剪贴板打开", TrayMenuHelper.CreateIcon("edit_clipboard", textColor), (_, _) => Dispatcher.BeginInvoke(EditFromClipboard))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("EditClipboard", "Alt + P")
+        };
+        contextMenu.Items.Add(itemEditClip);
 
         // 11. 拾色器
-        contextMenu.Items.Add("拾色器 (Alt+Shift+C)", null, (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.ColorPicker)));
+        var itemColor = new ToolStripMenuItem("拾色器", TrayMenuHelper.CreateIcon("color_picker", textColor), (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.ColorPicker)))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("ColorPicker", "Alt + Shift + C")
+        };
+        contextMenu.Items.Add(itemColor);
 
         contextMenu.Items.Add(new ToolStripSeparator());
 
         // 12. 屏幕录制
-        contextMenu.Items.Add("屏幕录制 (Alt+Shift+R)", null, (_, _) => Dispatcher.BeginInvoke(StartScreenRecording));
+        var itemRec = new ToolStripMenuItem("屏幕录制", TrayMenuHelper.CreateIcon("screen_record", textColor), (_, _) => Dispatcher.BeginInvoke(StartScreenRecording))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("ScreenRecord", "Alt + Shift + R")
+        };
+        contextMenu.Items.Add(itemRec);
 
         // 13. 声音录制
-        contextMenu.Items.Add("声音录制", null, (_, _) => Dispatcher.BeginInvoke(StartAudioRecording));
+        var itemAudio = new ToolStripMenuItem("声音录制", TrayMenuHelper.CreateIcon("audio_record", textColor), (_, _) => Dispatcher.BeginInvoke(StartAudioRecording));
+        contextMenu.Items.Add(itemAudio);
 
         contextMenu.Items.Add(new ToolStripSeparator());
 
         // 14. 划词翻译
-        contextMenu.Items.Add("划词翻译 (Alt+Shift+F)", null, (_, _) => Dispatcher.BeginInvoke(TranslateSelection));
+        var itemTransSel = new ToolStripMenuItem("划词翻译", TrayMenuHelper.CreateIcon("translate_selection", textColor), (_, _) => Dispatcher.BeginInvoke(TranslateSelection))
+        {
+            ShortcutKeyDisplayString = "Alt + Shift + F"
+        };
+        contextMenu.Items.Add(itemTransSel);
 
         // 15. 截图翻译
-        contextMenu.Items.Add("截图翻译", null, (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Translate)));
+        var itemTransShot = new ToolStripMenuItem("截图翻译", TrayMenuHelper.CreateIcon("translate_screenshot", textColor), (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Translate)));
+        contextMenu.Items.Add(itemTransShot);
 
         // 16. 输入翻译
-        contextMenu.Items.Add("输入翻译 (Alt+V)", null, (_, _) => Dispatcher.BeginInvoke(ShowTranslationWindow));
+        var itemTransWin = new ToolStripMenuItem("输入翻译", TrayMenuHelper.CreateIcon("translate_input", textColor), (_, _) => Dispatcher.BeginInvoke(ShowTranslationWindow))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("Translation", "Alt + V")
+        };
+        contextMenu.Items.Add(itemTransWin);
 
         contextMenu.Items.Add(new ToolStripSeparator());
 
         // 17. 剪贴板历史
-        contextMenu.Items.Add("剪贴板历史 (Alt+C)", null, (_, _) => Dispatcher.BeginInvoke(ShowClipboardHistoryWindow));
+        var itemClipHist = new ToolStripMenuItem("剪贴板历史", TrayMenuHelper.CreateIcon("clipboard_history", textColor), (_, _) => Dispatcher.BeginInvoke(ShowClipboardHistoryWindow))
+        {
+            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("ClipboardHistory", "Alt + C")
+        };
+        contextMenu.Items.Add(itemClipHist);
 
         contextMenu.Items.Add(new ToolStripSeparator());
 
-        // 18. 隐藏桌面图标
+        // 18. 隐藏/显示桌面图标
         bool isDesktopVisible = DesktopIcons.IsVisible();
-        var itemDesktop = contextMenu.Items.Add(isDesktopVisible ? "隐藏桌面图标" : "显示桌面图标", null, (_, _) => ToggleDesktopIcons());
-        contextMenu.Opening += (_, _) => itemDesktop.Text = DesktopIcons.IsVisible() ? "隐藏桌面图标" : "显示桌面图标";
+        var itemDesktop = new ToolStripMenuItem(
+            isDesktopVisible ? "隐藏桌面图标" : "显示桌面图标",
+            TrayMenuHelper.CreateIcon(isDesktopVisible ? "desktop_icons_slash" : "desktop_icons", textColor),
+            (_, _) => ToggleDesktopIcons()
+        );
+        contextMenu.Opening += (_, _) =>
+        {
+            bool visible = DesktopIcons.IsVisible();
+            itemDesktop.Text = visible ? "隐藏桌面图标" : "显示桌面图标";
+            itemDesktop.Image = TrayMenuHelper.CreateIcon(visible ? "desktop_icons_slash" : "desktop_icons", textColor);
+        };
+        contextMenu.Items.Add(itemDesktop);
 
         // 19. 历史记录
-        contextMenu.Items.Add("历史记录", null, (_, _) => Dispatcher.BeginInvoke(() => ShowPreferences(initialTabIsHistory: true)));
+        var itemHistory = new ToolStripMenuItem("历史记录", TrayMenuHelper.CreateIcon("history", textColor), (_, _) => Dispatcher.BeginInvoke(() => ShowPreferences(initialTabIsHistory: true)));
+        contextMenu.Items.Add(itemHistory);
 
         contextMenu.Items.Add(new ToolStripSeparator());
 
         // 20. 支持作者
-        contextMenu.Items.Add("支持作者", null, (_, _) => Dispatcher.BeginInvoke(ShowSupportAuthorWindow));
+        var itemSupport = new ToolStripMenuItem("支持作者", TrayMenuHelper.CreateIcon("support_author", textColor), (_, _) => Dispatcher.BeginInvoke(ShowSupportAuthorWindow));
+        contextMenu.Items.Add(itemSupport);
 
         // 21. 偏好设置
-        contextMenu.Items.Add("偏好设置", null, (_, _) => Dispatcher.BeginInvoke(() => ShowPreferences(initialTabIsHistory: false)));
+        var itemPrefs = new ToolStripMenuItem("偏好设置", TrayMenuHelper.CreateIcon("preferences", textColor), (_, _) => Dispatcher.BeginInvoke(() => ShowPreferences(initialTabIsHistory: false)));
+        contextMenu.Items.Add(itemPrefs);
 
         // 22. 检查更新
-        contextMenu.Items.Add("检查更新", null, (_, _) => Dispatcher.BeginInvoke(CheckForUpdates));
+        var itemUpdates = new ToolStripMenuItem("检查更新", TrayMenuHelper.CreateIcon("check_update", textColor), (_, _) => Dispatcher.BeginInvoke(CheckForUpdates));
+        contextMenu.Items.Add(itemUpdates);
 
         // 23. 关于 ShotX
-        contextMenu.Items.Add("关于 ShotX", null, (_, _) => Dispatcher.BeginInvoke(() => ShowPreferences(initialTabIsHistory: false)));
+        var itemAbout = new ToolStripMenuItem("关于 ShotX", TrayMenuHelper.CreateIcon("about", textColor), (_, _) => Dispatcher.BeginInvoke(() => ShowPreferences(initialTabIsHistory: false)));
+        contextMenu.Items.Add(itemAbout);
 
         // 24. 退出 ShotX
-        contextMenu.Items.Add("退出 ShotX", null, (_, _) => ExitApp());
+        var itemExit = new ToolStripMenuItem("退出 ShotX", TrayMenuHelper.CreateIcon("exit", textColor), (_, _) => ExitApp());
+        contextMenu.Items.Add(itemExit);
 
         _notifyIcon = new NotifyIcon
         {

@@ -20,6 +20,7 @@ using Brushes = System.Windows.Media.Brushes;
 using Color = System.Windows.Media.Color;
 using Cursors = System.Windows.Input.Cursors;
 using Image = System.Windows.Controls.Image;
+using Path = System.Windows.Shapes.Path;
 using Point = System.Windows.Point;
 using Size = System.Windows.Size;
 
