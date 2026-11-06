@@ -54,14 +54,18 @@ public partial class ScreenRecordingPrepWindow : Window
     private Point _hitStartMouse;
     private Rect _hitStartRect;
 
-    // 录制配置开关
+    // 录制配置开关 (5 项图标：麦克风、系统声音、显示光标、高亮鼠标点击、摄像头(区域左下角))
     public bool EnableMic { get; set; } = false;
-    public bool EnableSpeaker { get; set; } = true;
+    public bool EnableSpeaker { get; set; } = false;
     public bool EnableCursor { get; set; } = true;
-    public bool EnableCountdown { get; set; } = false;
+    public bool EnableClickHighlight { get; set; } = false;
+    public bool EnableWebcam { get; set; } = false;
     public bool RecordAsGif { get; set; } = false;
 
-    private int _hoveredActionIndex = -1; // 0: Mic, 1: Speaker, 2: Cursor, 3: Timer, 4: Snapshot, 5: GIF, 6: Video
+    private WebcamOverlayWindow? _webcamWindow;
+    private bool _handingOffWebcam = false;
+
+    private int _hoveredActionIndex = -1; // 0: 麦克风, 1: 系统声音, 2: 显示光标, 3: 高亮鼠标点击, 4: 摄像头(区域左下角), 5: GIF, 6: Video
 
     public ScreenRecordingPrepWindow()
     {
@@ -103,6 +107,15 @@ public partial class ScreenRecordingPrepWindow : Window
             Activate();
             Focus();
             OverlayCanvas.InvalidateVisual();
+        };
+
+        Closed += (_, _) =>
+        {
+            if (!_handingOffWebcam && _webcamWindow != null)
+            {
+                try { _webcamWindow.Close(); } catch { }
+                _webcamWindow = null;
+            }
         };
     }
 

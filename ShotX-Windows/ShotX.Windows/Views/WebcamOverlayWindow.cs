@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows;
@@ -271,10 +272,17 @@ public class WebcamOverlayWindow : Window
             await _mediaCapture.CapturePhotoToStreamAsync(ImageEncodingProperties.CreateJpeg(), ras);
             ras.Seek(0);
 
+            var bytes = new byte[ras.Size];
+            using (var dr = new DataReader(ras))
+            {
+                await dr.LoadAsync((uint)ras.Size);
+                dr.ReadBytes(bytes);
+            }
+
             var bitmap = new BitmapImage();
             bitmap.BeginInit();
             bitmap.CacheOption = BitmapCacheOption.OnLoad;
-            bitmap.StreamSource = ras.AsStreamForRead();
+            bitmap.StreamSource = new MemoryStream(bytes);
             bitmap.EndInit();
             bitmap.Freeze();
 
