@@ -50,6 +50,11 @@ public partial class AudioRecordingWindow : Window
         _timer.Start();
     }
 
+    private void BtnMinimize_Click(object sender, RoutedEventArgs e)
+    {
+        WindowState = WindowState.Minimized;
+    }
+
     private void BtnCancel_Click(object sender, RoutedEventArgs e)
     {
         _timer.Stop();

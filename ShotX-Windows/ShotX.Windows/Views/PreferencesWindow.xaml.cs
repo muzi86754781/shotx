@@ -6,12 +6,15 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using ShotX.Windows.Core;
 using Application = System.Windows.Application;
 using Button = System.Windows.Controls.Button;
+using Clipboard = System.Windows.Clipboard;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MessageBox = System.Windows.MessageBox;
 using RadioButton = System.Windows.Controls.RadioButton;
+using TextBox = System.Windows.Controls.TextBox;
 
 namespace ShotX.Windows.Views;
 
@@ -21,26 +24,80 @@ public partial class PreferencesWindow : Window
     private readonly List<HistoryItem> _allHistoryItems = new();
     private bool _isReady = false;
 
-    public PreferencesWindow(bool initialTabIsHistory = false)
+    public PreferencesWindow(bool initialTabIsHistory = false, HistoryType? filterType = null)
     {
         InitializeComponent();
         _isReady = true;
 
-        if (initialTabIsHistory)
+        LoadSettings();
+        LoadHotkeysUI();
+        NavigateTo(initialTabIsHistory, filterType);
+    }
+
+    /// <summary>
+    /// 供外部单实例复用时切换标签页并直接过滤指定历史分类 (解决需求 6)
+    /// </summary>
+    public void NavigateTo(bool tabIsHistory, HistoryType? filterType = null)
+    {
+        if (!_isReady) return;
+
+        if (tabIsHistory)
         {
             TabHistory.IsChecked = true;
             ViewHistory.Visibility = Visibility.Visible;
             ViewSettings.Visibility = Visibility.Collapsed;
+
+            if (filterType.HasValue)
+            {
+                _selectedHistoryFilter = filterType.Value;
+                SelectFilterPill(filterType.Value);
+            }
+            LoadHistory();
         }
         else
         {
             TabSettings.IsChecked = true;
             ViewSettings.Visibility = Visibility.Visible;
             ViewHistory.Visibility = Visibility.Collapsed;
+            LoadHistory();
         }
+    }
 
-        LoadSettings();
-        LoadHistory();
+    private void SelectFilterPill(HistoryType? type)
+    {
+        if (!_isReady) return;
+        _isReady = false;
+        try
+        {
+            switch (type)
+            {
+                case null:
+                    if (PillAll != null) PillAll.IsChecked = true;
+                    break;
+                case HistoryType.Screenshot:
+                    if (PillScreenshot != null) PillScreenshot.IsChecked = true;
+                    break;
+                case HistoryType.ScreenRecord:
+                    if (PillRecord != null) PillRecord.IsChecked = true;
+                    break;
+                case HistoryType.AudioRecord:
+                    if (PillAudio != null) PillAudio.IsChecked = true;
+                    break;
+                case HistoryType.OCR:
+                    if (PillOcr != null) PillOcr.IsChecked = true;
+                    break;
+                case HistoryType.Translation:
+                    if (PillTranslation != null) PillTranslation.IsChecked = true;
+                    break;
+                case HistoryType.Clipboard:
+                    if (PillClipboard != null) PillClipboard.IsChecked = true;
+                    break;
+            }
+        }
+        finally
+        {
+            _isReady = true;
+        }
     }
 
     private void TopBar_MouseDown(object sender, MouseButtonEventArgs e)
@@ -74,7 +131,7 @@ public partial class PreferencesWindow : Window
         if (!_isReady || ViewHistory == null || ViewSettings == null) return;
         ViewHistory.Visibility = Visibility.Visible;
         ViewSettings.Visibility = Visibility.Collapsed;
-        RefreshHistoryDisplay();
+        LoadHistory();
     }
 
     private void TabSettings_Checked(object sender, RoutedEventArgs e)
@@ -160,7 +217,9 @@ public partial class PreferencesWindow : Window
 
         if (!string.IsNullOrEmpty(query))
         {
-            items = items.Where(it => it.Content.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0);
+            items = items.Where(it =>
+                (it.Content?.IndexOf(query, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0 ||
+                (it.FilePath?.IndexOf(query, StringComparison.OrdinalIgnoreCase) ?? -1) >= 0);
         }
 
         var list = items.ToList();
@@ -199,7 +258,25 @@ public partial class PreferencesWindow : Window
         {
             PanelEmptyHistory.Visibility = Visibility.Collapsed;
             LstFullHistory.Visibility = Visibility.Visible;
+            LstFullHistory.ItemsSource = null;
             LstFullHistory.ItemsSource = list;
+        }
+    }
+
+    private void BtnCopyHistoryItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is HistoryItem item)
+        {
+            try
+            {
+                string copyText = !string.IsNullOrWhiteSpace(item.Content) ? item.Content : item.FilePath;
+                if (!string.IsNullOrWhiteSpace(copyText))
+                {
+                    Clipboard.SetText(copyText);
+                    MessageBox.Show("已将该条记录内容复制到剪贴板！", "ShotX 历史记录", MessageBoxButton.OK, MessageBoxImage.Information);
+                }
+            }
+            catch { }
         }
     }
 
@@ -217,9 +294,45 @@ public partial class PreferencesWindow : Window
             }
             else
             {
-                MessageBox.Show($"记录内容:\n{item.Content}", "ShotX 历史记录", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show($"记录时间: {item.TimestampString}\n分类: {item.TypeBadgeText}\n\n完整内容:\n{item.Content}", "ShotX 历史记录详情", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
+    }
+
+    private void BtnRevealHistoryItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is HistoryItem item && !string.IsNullOrWhiteSpace(item.FilePath))
+        {
+            try
+            {
+                if (File.Exists(item.FilePath))
+                {
+                    Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{item.FilePath}\"") { UseShellExecute = true });
+                }
+                else
+                {
+                    string? dir = Path.GetDirectoryName(item.FilePath);
+                    if (!string.IsNullOrEmpty(dir)) OpenFolder(dir);
+                }
+            }
+            catch { }
+        }
+    }
+
+    private void BtnDeleteHistoryItem_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is HistoryItem item)
+        {
+            HistoryStore.Delete(item);
+            _allHistoryItems.RemoveAll(i => i.Id == item.Id);
+            RefreshHistoryDisplay();
+        }
+    }
+
+    private void BtnClearCurrentHistory_Click(object sender, RoutedEventArgs e)
+    {
+        HistoryStore.Clear(_selectedHistoryFilter);
+        LoadHistory();
     }
 
     // --- 偏好设置模块 ---
@@ -249,6 +362,115 @@ public partial class PreferencesWindow : Window
         {
             string fmt = (PreferencesStore.ImageFormat ?? "PNG").ToUpperInvariant();
             CmbImageFormat.SelectedIndex = fmt == "JPG" ? 1 : (fmt == "WEBP" ? 2 : 0);
+        }
+    }
+
+    // --- 全局快捷键配置模块 (解决需求 9：单行录键、单行清除、清空非核心热键、恢复默认快捷键全部可用) ---
+    private void LoadHotkeysUI()
+    {
+        if (HotkeysContainer == null) return;
+        foreach (var tb in FindVisualChildren<TextBox>(HotkeysContainer))
+        {
+            if (tb.Tag is string key && !string.IsNullOrWhiteSpace(key))
+            {
+                tb.Text = PreferencesStore.GetHotkey(key);
+            }
+        }
+    }
+
+    private static IEnumerable<T> FindVisualChildren<T>(DependencyObject parent) where T : DependencyObject
+    {
+        int count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            var child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T typed)
+            {
+                yield return typed;
+            }
+            foreach (var sub in FindVisualChildren<T>(child))
+            {
+                yield return sub;
+            }
+        }
+    }
+
+    private void HotkeyBox_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (sender is not TextBox tb || tb.Tag is not string actionKey) return;
+        e.Handled = true;
+
+        Key key = (e.Key == Key.System) ? e.SystemKey : e.Key;
+
+        if (key == Key.Back || key == Key.Delete)
+        {
+            PreferencesStore.ClearSingleHotkey(actionKey);
+            tb.Text = "未设置";
+            NotifyHotkeysReload();
+            return;
+        }
+
+        // 忽略仅按下修饰键本身
+        if (key == Key.LeftCtrl || key == Key.RightCtrl ||
+            key == Key.LeftAlt || key == Key.RightAlt ||
+            key == Key.LeftShift || key == Key.RightShift ||
+            key == Key.LWin || key == Key.RWin)
+        {
+            return;
+        }
+
+        var parts = new List<string>();
+        var mods = Keyboard.Modifiers;
+        if ((mods & ModifierKeys.Control) != 0) parts.Add("Ctrl");
+        if ((mods & ModifierKeys.Alt) != 0) parts.Add("Alt");
+        if ((mods & ModifierKeys.Shift) != 0) parts.Add("Shift");
+        if ((mods & ModifierKeys.Windows) != 0) parts.Add("Win");
+
+        // 若未按任何修饰键且不是功能键 F1~F12，默认加上 Alt 防止占用普通打字键
+        if (parts.Count == 0 && (key < Key.F1 || key > Key.F12))
+        {
+            parts.Add("Alt");
+        }
+
+        parts.Add(key.ToString());
+        string combo = string.Join(" + ", parts);
+
+        PreferencesStore.SetHotkey(actionKey, combo);
+        tb.Text = combo;
+        NotifyHotkeysReload();
+    }
+
+    private void BtnClearSingleHotkey_Click(object sender, RoutedEventArgs e)
+    {
+        if (sender is Button btn && btn.Tag is string actionKey && !string.IsNullOrWhiteSpace(actionKey))
+        {
+            PreferencesStore.ClearSingleHotkey(actionKey);
+            LoadHotkeysUI();
+            NotifyHotkeysReload();
+        }
+    }
+
+    private void BtnClearHotkeys_Click(object sender, RoutedEventArgs e)
+    {
+        PreferencesStore.ClearNonCoreHotkeys();
+        LoadHotkeysUI();
+        NotifyHotkeysReload();
+        MessageBox.Show("已清空非核心快捷键（仅保留 Alt + A 区域截图核心热键）。", "ShotX 快捷键配置", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private void BtnRestoreHotkeys_Click(object sender, RoutedEventArgs e)
+    {
+        PreferencesStore.RestoreDefaultHotkeys();
+        LoadHotkeysUI();
+        NotifyHotkeysReload();
+        MessageBox.Show("已恢复全部快捷键为系统默认值！", "ShotX 快捷键配置", MessageBoxButton.OK, MessageBoxImage.Information);
+    }
+
+    private static void NotifyHotkeysReload()
+    {
+        if (Application.Current is App app)
+        {
+            app.ReloadGlobalHotkeys();
         }
     }
 
@@ -340,16 +562,6 @@ public partial class PreferencesWindow : Window
         {
             MessageBox.Show($"打开目录失败: {ex.Message}", "ShotX", MessageBoxButton.OK, MessageBoxImage.Error);
         }
-    }
-
-    private void BtnClearHotkeys_Click(object sender, RoutedEventArgs e)
-    {
-        MessageBox.Show("已清空非核心快捷键映射。", "ShotX 快捷键", MessageBoxButton.OK, MessageBoxImage.Information);
-    }
-
-    private void BtnRestoreHotkeys_Click(object sender, RoutedEventArgs e)
-    {
-        MessageBox.Show("已恢复全部快捷键为系统默认值。", "ShotX 快捷键", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void BtnSupport_Click(object sender, RoutedEventArgs e)

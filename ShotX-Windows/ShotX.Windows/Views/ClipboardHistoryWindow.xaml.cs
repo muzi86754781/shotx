@@ -2,13 +2,16 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
+using System.Windows.Threading;
 using ShotX.Windows.Core;
 using Application = System.Windows.Application;
-using Clipboard = System.Windows.Clipboard;
 using Button = System.Windows.Controls.Button;
+using Clipboard = System.Windows.Clipboard;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace ShotX.Windows.Views;
@@ -17,6 +20,12 @@ public partial class ClipboardHistoryWindow : Window
 {
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
 
     private const byte VK_CONTROL = 0x11;
     private const byte VK_V = 0x56;
@@ -32,18 +41,53 @@ public partial class ClipboardHistoryWindow : Window
     }
 
     private readonly List<ClipboardItemViewModel> _allItems = new();
+    private readonly DispatcherTimer _toastTimer;
+    private IntPtr _targetExternalHwnd = IntPtr.Zero;
 
-    public ClipboardHistoryWindow()
+    public ClipboardHistoryWindow(IntPtr targetExternalHwnd = default)
     {
+        _targetExternalHwnd = targetExternalHwnd != IntPtr.Zero ? targetExternalHwnd : App.LastExternalForegroundHwnd;
+
+        _toastTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(1800)
+        };
+        _toastTimer.Tick += (_, _) =>
+        {
+            _toastTimer.Stop();
+            if (ToastBanner != null)
+            {
+                ToastBanner.Visibility = Visibility.Collapsed;
+            }
+        };
+
         InitializeComponent();
         LoadData();
+    }
+
+    public void UpdateTargetWindow(IntPtr hwnd)
+    {
+        if (hwnd != IntPtr.Zero)
+        {
+            _targetExternalHwnd = hwnd;
+        }
+        LoadData();
+    }
+
+    private void ShowToast(string message)
+    {
+        if (TxtToastMessage == null || ToastBanner == null) return;
+        TxtToastMessage.Text = message;
+        ToastBanner.Visibility = Visibility.Visible;
+        _toastTimer.Stop();
+        _toastTimer.Start();
     }
 
     private void TopBar_MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.LeftButton == MouseButtonState.Pressed)
         {
-            DragMove();
+            try { DragMove(); } catch { }
         }
     }
 
@@ -67,28 +111,33 @@ public partial class ClipboardHistoryWindow : Window
 
         if (rawList.Count == 0)
         {
-            // 如果历史为空，提供默认或当前剪贴板内容
-            if (Clipboard.ContainsText())
+            try
             {
-                string text = Clipboard.GetText();
-                if (!string.IsNullOrWhiteSpace(text))
+                if (Clipboard.ContainsText())
                 {
-                    HistoryStore.Add(HistoryType.Clipboard, text, text);
-                    rawList = HistoryStore.GetItemsByType(HistoryType.Clipboard);
+                    string text = Clipboard.GetText();
+                    if (!string.IsNullOrWhiteSpace(text))
+                    {
+                        HistoryStore.Add(HistoryType.Clipboard, text, text);
+                        rawList = HistoryStore.GetItemsByType(HistoryType.Clipboard);
+                    }
                 }
             }
+            catch { }
         }
 
         foreach (var it in rawList)
         {
-            string line1 = it.Content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? it.Content;
-            string preview = it.Content.Length > 80 ? it.Content.Substring(0, 80) + "..." : it.Content;
+            string line1 = it.Content.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries).FirstOrDefault()?.Trim() ?? it.Content;
+            string preview = it.Content.Replace("\r\n", " ").Replace("\n", " ").Trim();
+            if (preview.Length > 85) preview = preview[..85] + "...";
+
             _allItems.Add(new ClipboardItemViewModel
             {
                 Title = line1,
                 Snippet = preview,
                 FullText = it.Content,
-                TimeString = it.Timestamp.ToString("HH:mm"),
+                TimeString = it.Timestamp.ToString("MM-dd HH:mm:ss"),
                 RawItem = it
             });
         }
@@ -98,46 +147,90 @@ public partial class ClipboardHistoryWindow : Window
 
     private void RefreshFilteredList()
     {
+        if (TxtSearch == null || LstHistory == null || TxtFooter == null) return;
+
         string query = TxtSearch.Text.Trim();
         var filtered = string.IsNullOrEmpty(query)
-            ? _allItems
+            ? _allItems.ToList()
             : _allItems.Where(i => i.FullText.IndexOf(query, StringComparison.OrdinalIgnoreCase) >= 0).ToList();
 
+        // 强制重新绑定新列表引用，确保删除或清空后 WPF ListBox 立即刷新 (解决需求 8)
+        LstHistory.ItemsSource = null;
         LstHistory.ItemsSource = filtered;
-        TxtFooter.Text = $"双击条目直接在光标处粘贴 (窗口不关闭可连续操作) · {filtered.Count} 条记录";
+
+        if (EmptyStatePanel != null)
+        {
+            EmptyStatePanel.Visibility = filtered.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+        }
+        TxtFooter.Text = $"双击任意记录直接粘贴到光标位置 · 共 {filtered.Count} 条记录";
     }
 
     private void TxtSearch_TextChanged(object sender, TextChangedEventArgs e)
     {
-        TxtPlaceholder.Visibility = string.IsNullOrEmpty(TxtSearch.Text) ? Visibility.Visible : Visibility.Collapsed;
+        if (TxtPlaceholder != null && TxtSearch != null)
+        {
+            TxtPlaceholder.Visibility = string.IsNullOrEmpty(TxtSearch.Text) ? Visibility.Visible : Visibility.Collapsed;
+        }
         RefreshFilteredList();
     }
 
-    private void LstHistory_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private static T? FindVisualParent<T>(DependencyObject? child) where T : DependencyObject
     {
+        while (child != null)
+        {
+            if (child is T matched) return matched;
+            child = VisualTreeHelper.GetParent(child);
+        }
+        return null;
+    }
+
+    private async void LstHistory_MouseDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        // 如果双击在右侧复制/删除按钮上，不触发双击粘贴
+        if (e.OriginalSource is DependencyObject dep && FindVisualParent<Button>(dep) != null)
+        {
+            return;
+        }
+
         if (LstHistory.SelectedItem is ClipboardItemViewModel model)
         {
             try
             {
                 Clipboard.SetText(model.FullText);
+                ShowToast("✓ 已复制并粘贴到光标位置");
 
-                // 模拟 Ctrl+V 粘贴
+                IntPtr targetHwnd = _targetExternalHwnd != IntPtr.Zero
+                    ? _targetExternalHwnd
+                    : App.LastExternalForegroundHwnd;
+
+                if (targetHwnd != IntPtr.Zero)
+                {
+                    SetForegroundWindow(targetHwnd);
+                    await Task.Delay(95);
+                }
+
+                // 模拟 Ctrl+V 快速粘贴到光标所在窗口
                 keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
                 keybd_event(VK_V, 0, 0, UIntPtr.Zero);
                 keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
                 keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
             }
-            catch { }
+            catch
+            {
+                ShowToast("✓ 已复制到剪贴板");
+            }
         }
     }
 
     private void BtnItemCopy_Click(object sender, RoutedEventArgs e)
     {
+        e.Handled = true;
         if (sender is Button btn && btn.Tag is ClipboardItemViewModel model)
         {
             try
             {
                 Clipboard.SetText(model.FullText);
+                ShowToast("✓ 已复制到剪贴板");
             }
             catch { }
         }
@@ -145,6 +238,7 @@ public partial class ClipboardHistoryWindow : Window
 
     private void BtnItemDelete_Click(object sender, RoutedEventArgs e)
     {
+        e.Handled = true;
         if (sender is Button btn && btn.Tag is ClipboardItemViewModel model)
         {
             if (model.RawItem != null)
@@ -153,6 +247,7 @@ public partial class ClipboardHistoryWindow : Window
             }
             _allItems.Remove(model);
             RefreshFilteredList();
+            ShowToast("🗑️ 已删除该条记录");
         }
     }
 
@@ -161,5 +256,6 @@ public partial class ClipboardHistoryWindow : Window
         HistoryStore.Clear(HistoryType.Clipboard);
         _allItems.Clear();
         RefreshFilteredList();
+        ShowToast("🗑️ 已清空全部剪贴板记录");
     }
 }

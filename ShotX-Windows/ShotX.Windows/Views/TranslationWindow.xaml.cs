@@ -53,11 +53,15 @@ public partial class TranslationWindow : Window
         if (TxtSource == null) return;
         TxtSource.Text = text ?? string.Empty;
         TxtSource.CaretIndex = TxtSource.Text.Length;
+        if (TxtSourcePlaceholder != null)
+        {
+            TxtSourcePlaceholder.Visibility = string.IsNullOrEmpty(TxtSource.Text) ? Visibility.Visible : Visibility.Collapsed;
+        }
         if (TxtCharCount != null)
         {
             TxtCharCount.Text = $"{TxtSource.Text.Length} 字";
         }
-        if (IsLoaded)
+        if (IsLoaded && !string.IsNullOrWhiteSpace(TxtSource.Text))
         {
             TriggerTranslation();
         }
@@ -86,7 +90,8 @@ public partial class TranslationWindow : Window
     {
         if (Application.Current is App app)
         {
-            app.ShowPreferences(initialTabIsHistory: true);
+            // 点击翻译窗口右上角历史记录：直接跳转到设置中心的历史记录->翻译分类，且复用已有设置窗口不重复打开 (解决需求 6)
+            app.ShowPreferences(initialTabIsHistory: true, filterType: HistoryType.Translation);
         }
     }
 
@@ -120,6 +125,10 @@ public partial class TranslationWindow : Window
         if (!_isReady || TxtSource == null || _debounceTimer == null) return;
 
         string text = TxtSource.Text;
+        if (TxtSourcePlaceholder != null)
+        {
+            TxtSourcePlaceholder.Visibility = string.IsNullOrEmpty(text) ? Visibility.Visible : Visibility.Collapsed;
+        }
         if (TxtCharCount != null)
         {
             TxtCharCount.Text = $"{text.Length} 字";

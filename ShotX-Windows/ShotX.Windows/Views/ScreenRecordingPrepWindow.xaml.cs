@@ -308,37 +308,46 @@ public partial class ScreenRecordingPrepWindow : Window
         );
         dc.DrawText(ftSize, new Point(sizeBgRect.Left + (sizeBgRect.Width - ftSize.Width) / 2, sizeBgRect.Top + (sizeBgRect.Height - ftSize.Height) / 2));
 
-        // 图标项: 麦克风(0), 扬声器(1), 光标(2), 倒计时(3), 快照(4)
+        // 图标项依次为：麦克风(0), 系统声音(1), 显示光标(2), 高亮鼠标点击(3), 摄像头(区域左下角)(4) (解决需求 4)
         double startX = topRect.Left + 94;
-        string[] icons = { "🎤", "🔊", "🖱️", "⏱️", "📷" };
-        bool[] activeStates = { EnableMic, EnableSpeaker, EnableCursor, EnableCountdown, false };
+        string[] tips = { "麦克风", "系统声音", "显示光标", "高亮鼠标点击", "摄像头(区域左下角)" };
+        bool[] activeStates = { EnableMic, EnableSpeaker, EnableCursor, EnableClickHighlight, EnableWebcam };
 
         for (int i = 0; i < 5; i++)
         {
             var btnR = new Rect(startX + i * 35, topRect.Top + 5, 28, 28);
-            if (activeStates[i] && i == 2)
+            if (activeStates[i])
             {
                 dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(0, 122, 255)), null, btnR, 5, 5);
             }
-            else if (activeStates[i])
-            {
-                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(60, 255, 255, 255)), null, btnR, 5, 5);
-            }
             else if (_hoveredActionIndex == i)
             {
-                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(30, 255, 255, 255)), null, btnR, 5, 5);
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(40, 255, 255, 255)), null, btnR, 5, 5);
             }
 
-            var ftIcon = new FormattedText(
-                icons[i],
+            DrawRecordOptionVectorIcon(dc, i, btnR, activeStates[i] ? Brushes.White : new SolidColorBrush(Color.FromArgb(225, 240, 244, 250)));
+        }
+
+        // 悬停提示气泡
+        if (_hoveredActionIndex >= 0 && _hoveredActionIndex < 5)
+        {
+            var hoverBtnRect = new Rect(startX + _hoveredActionIndex * 35, topRect.Top + 5, 28, 28);
+            var ftTip = new FormattedText(
+                tips[_hoveredActionIndex],
                 CultureInfo.CurrentCulture,
                 FlowDirection.LeftToRight,
-                new Typeface("Segoe UI Emoji"),
-                12,
+                new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.Medium, FontStretches.Normal),
+                11,
                 Brushes.White,
                 VisualTreeHelper.GetDpi(this).PixelsPerDip
             );
-            dc.DrawText(ftIcon, new Point(btnR.Left + (btnR.Width - ftIcon.Width) / 2, btnR.Top + (btnR.Height - ftIcon.Height) / 2));
+            double tw = ftTip.Width + 14;
+            double th = 22;
+            double tx = hoverBtnRect.Left + (hoverBtnRect.Width - tw) / 2.0;
+            double ty = topRect.Top - th - 6;
+            var tipRect = new Rect(tx, ty, tw, th);
+            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(235, 24, 26, 32)), null, tipRect, 4, 4);
+            dc.DrawText(ftTip, new Point(tipRect.Left + 7, tipRect.Top + (th - ftTip.Height) / 2.0));
         }
 
         // --- 第二层：录制类型选择面板 (图 4 紧密复刻) ---
@@ -510,29 +519,90 @@ public partial class ScreenRecordingPrepWindow : Window
         OverlayCanvas.InvalidateVisual();
     }
 
+    private void DrawRecordOptionVectorIcon(DrawingContext dc, int index, Rect btnR, System.Windows.Media.Brush brush)
+    {
+        double cx = btnR.Left + btnR.Width / 2.0;
+        double cy = btnR.Top + btnR.Height / 2.0;
+        var pen = new Pen(brush, 1.6)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round,
+            LineJoin = PenLineJoin.Round
+        };
+
+        dc.PushTransform(new TranslateTransform(cx - 10, cy - 10));
+        switch (index)
+        {
+            case 0: // 麦克风 (mic)
+                dc.DrawRoundedRectangle(null, pen, new Rect(7.5, 3, 5, 8.5), 2.5, 2.5);
+                dc.DrawGeometry(null, pen, Geometry.Parse("M 5,9.5 A 5,5 0 0 0 15,9.5 M 10,14.5 L 10,17 M 7,17 L 13,17"));
+                break;
+
+            case 1: // 系统声音 (speaker.wave.2)
+                dc.DrawGeometry(brush, null, Geometry.Parse("M 3.5,8 L 6.5,8 L 10.5,4.5 L 10.5,15.5 L 6.5,12 L 3.5,12 Z"));
+                dc.DrawGeometry(null, pen, Geometry.Parse("M 13,7.5 A 3.5,3.5 0 0 1 13,12.5 M 15,5.5 A 6.5,6.5 0 0 1 15,14.5"));
+                break;
+
+            case 2: // 显示光标 (cursorarrow)
+                dc.DrawGeometry(brush, null, Geometry.Parse("M 5.5,3.5 L 5.5,15.5 L 8.8,12.5 L 11.2,17 L 13,16.2 L 10.6,11.6 L 15,11.6 Z"));
+                break;
+
+            case 3: // 高亮鼠标点击 (cursorarrow.click)
+                dc.DrawGeometry(null, new Pen(brush, 1.4) { DashStyle = DashStyles.Dot }, Geometry.Parse("M 8.5,3 A 5.5,5.5 0 1 1 3,8.5 A 5.5,5.5 0 0 1 8.5,3"));
+                dc.DrawGeometry(brush, null, Geometry.Parse("M 8,7.5 L 8,16.5 L 10.5,14.2 L 12.4,17.5 L 13.8,16.8 L 11.9,13.5 L 15.2,13.5 Z"));
+                break;
+
+            case 4: // 摄像头(区域左下角) (camera)
+                dc.DrawRoundedRectangle(null, pen, new Rect(3, 6, 14, 10), 2, 2);
+                dc.DrawGeometry(null, pen, Geometry.Parse("M 7,6 L 8.2,4.2 L 11.8,4.2 L 13,6"));
+                dc.DrawEllipse(null, pen, new Point(10, 11), 2.6, 2.6);
+                break;
+        }
+        dc.Pop();
+    }
+
     private void HandleTopAction(int index)
     {
         switch (index)
         {
-            case 0: EnableMic = !EnableMic; break;
-            case 1: EnableSpeaker = !EnableSpeaker; break;
-            case 2: EnableCursor = !EnableCursor; break;
-            case 3: EnableCountdown = !EnableCountdown; break;
-            case 4: TakeSnapshot(); break;
+            case 0:
+                EnableMic = !EnableMic;
+                break;
+            case 1:
+                EnableSpeaker = !EnableSpeaker;
+                break;
+            case 2:
+                EnableCursor = !EnableCursor;
+                break;
+            case 3:
+                EnableClickHighlight = !EnableClickHighlight;
+                break;
+            case 4:
+                EnableWebcam = !EnableWebcam;
+                ToggleWebcamPreview();
+                break;
         }
     }
 
-    private void TakeSnapshot()
+    private void ToggleWebcamPreview()
     {
-        try
+        if (EnableWebcam)
         {
-            Close();
-            if (Application.Current is App app)
+            if (_webcamWindow == null && !_recordRect.IsEmpty)
             {
-                app.CaptureFullscreen();
+                _webcamWindow = new WebcamOverlayWindow(_recordRect, Left, Top);
+                _webcamWindow.Show();
+                Activate();
             }
         }
-        catch { }
+        else
+        {
+            if (_webcamWindow != null)
+            {
+                try { _webcamWindow.Close(); } catch { }
+                _webcamWindow = null;
+            }
+        }
     }
 
     private void StartRecording(bool asGif)
@@ -548,8 +618,24 @@ public partial class ScreenRecordingPrepWindow : Window
         int physH = Math.Max(16, (int)Math.Round(_recordRect.Height * _dpiScaleY));
         var captureBounds = new Rectangle(physX, physY, physW, physH);
 
+        WebcamOverlayWindow? handoffWebcam = null;
+        if (EnableWebcam && _webcamWindow != null)
+        {
+            _handingOffWebcam = true;
+            handoffWebcam = _webcamWindow;
+            _webcamWindow.SetInteractive(false);
+        }
+
         Close();
-        var win = new ScreenRecordingWindow(asGif, captureBounds);
+        var win = new ScreenRecordingWindow(
+            asGif,
+            captureBounds,
+            EnableMic,
+            EnableSpeaker,
+            EnableCursor,
+            EnableClickHighlight,
+            handoffWebcam
+        );
         win.Show();
     }
 

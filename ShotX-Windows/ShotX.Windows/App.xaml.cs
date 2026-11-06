@@ -1,8 +1,10 @@
 using System;
+using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -23,11 +25,30 @@ public partial class App : Application
     private NotifyIcon? _notifyIcon;
     private HotKeyManager? _hotKeyManager;
     private OverlayWindow? _currentOverlay;
+    private PreferencesWindow? _preferencesWindow;
+    private TranslationWindow? _translationWindow;
+    private ClipboardHistoryWindow? _clipboardHistoryWindow;
+
+    public static IntPtr LastExternalForegroundHwnd { get; private set; } = IntPtr.Zero;
 
     [DllImport("user32.dll")]
     private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
 
+    [DllImport("user32.dll")]
+    private static extern IntPtr GetForegroundWindow();
+
+    [DllImport("user32.dll")]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern int GetClassName(IntPtr hWnd, StringBuilder lpClassName, int nMaxCount);
+
+    private const byte VK_SHIFT = 0x10;
     private const byte VK_CONTROL = 0x11;
+    private const byte VK_MENU = 0x12; // Alt
     private const byte VK_C = 0x43;
     private const uint KEYEVENTF_KEYUP = 0x0002;
 
@@ -65,8 +86,44 @@ public partial class App : Application
         // 4. 初始化全局快捷键
         InitGlobalHotkeys();
 
-        // 5. 启动后台剪贴板监听
+        // 5. 启动后台剪贴板与外部焦点窗口监听
         StartClipboardWatcher();
+        StartExternalWindowTracker();
+    }
+
+    private void StartExternalWindowTracker()
+    {
+        uint currentPid = (uint)Environment.ProcessId;
+        var trackerTimer = new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(220)
+        };
+        trackerTimer.Tick += (_, _) =>
+        {
+            try
+            {
+                IntPtr fg = GetForegroundWindow();
+                if (fg == IntPtr.Zero) return;
+                GetWindowThreadProcessId(fg, out uint pid);
+                if (pid == currentPid) return;
+
+                var sb = new StringBuilder(64);
+                GetClassName(fg, sb, sb.Capacity);
+                string cls = sb.ToString();
+                if (cls.Equals("Shell_TrayWnd", StringComparison.OrdinalIgnoreCase) ||
+                    cls.Equals("NotifyIconOverflowWindow", StringComparison.OrdinalIgnoreCase) ||
+                    cls.Equals("Progman", StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+
+                LastExternalForegroundHwnd = fg;
+            }
+            catch
+            {
+            }
+        };
+        trackerTimer.Start();
     }
 
     private static Icon LoadTrayIcon()
@@ -194,58 +251,101 @@ public partial class App : Application
         _notifyIcon.DoubleClick += (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Area));
     }
 
+    public void ReloadGlobalHotkeys()
+    {
+        try
+        {
+            _hotKeyManager?.Dispose();
+            _hotKeyManager = null;
+        }
+        catch { }
+        InitGlobalHotkeys();
+    }
+
     private void InitGlobalHotkeys()
     {
         try
         {
             _hotKeyManager = new HotKeyManager();
 
-            // Alt + A: 区域截图
-            _hotKeyManager.Register(ModifierKeys.Alt, Key.A, () => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Area)));
+            RegisterConfiguredHotkey("AllInOne", () => Dispatcher.BeginInvoke(ShowAllInOneBar));
+            RegisterConfiguredHotkey("Area", () => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Area)));
+            RegisterConfiguredHotkey("PreviousArea", () => Dispatcher.BeginInvoke(CapturePreviousArea));
+            RegisterConfiguredHotkey("Fullscreen", () => Dispatcher.BeginInvoke(CaptureFullscreen));
+            RegisterConfiguredHotkey("Window", () => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Window)));
+            RegisterConfiguredHotkey("OCR", () => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.OCR)));
+            RegisterConfiguredHotkey("Pin", () => Dispatcher.BeginInvoke(PinFromClipboard));
+            RegisterConfiguredHotkey("EditClipboard", () => Dispatcher.BeginInvoke(EditFromClipboard));
+            RegisterConfiguredHotkey("ColorPicker", () => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.ColorPicker)));
+            RegisterConfiguredHotkey("ScreenRecord", () => Dispatcher.BeginInvoke(StartScreenRecording));
+            RegisterConfiguredHotkey("Translation", () => Dispatcher.BeginInvoke(ShowTranslationWindow));
+            RegisterConfiguredHotkey("ClipboardHistory", () => Dispatcher.BeginInvoke(ShowClipboardHistoryWindow));
 
-            // Alt + R: 上次区域截图
-            _hotKeyManager.Register(ModifierKeys.Alt, Key.R, () => Dispatcher.BeginInvoke(CapturePreviousArea));
-
-            // Alt + Shift + A: 全屏截图
-            _hotKeyManager.Register(ModifierKeys.Alt | ModifierKeys.Shift, Key.A, () => Dispatcher.BeginInvoke(CaptureFullscreen));
-
-            // Alt + W: 窗口截图
-            _hotKeyManager.Register(ModifierKeys.Alt, Key.W, () => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Window)));
-
-            // Alt + S: 滚动长截图
-            _hotKeyManager.Register(ModifierKeys.Alt, Key.S, () => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Area)));
-
-            // Alt + P: 改图 (从剪贴板打开并编辑标注)
-            _hotKeyManager.Register(ModifierKeys.Alt, Key.P, () => Dispatcher.BeginInvoke(EditFromClipboard));
-
-            // Alt + F3: 从剪贴板贴图
-            _hotKeyManager.Register(ModifierKeys.Alt, Key.F3, () => Dispatcher.BeginInvoke(PinFromClipboard));
-
-            // Alt + Shift + C: 拾色器
-            _hotKeyManager.Register(ModifierKeys.Alt | ModifierKeys.Shift, Key.C, () => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.ColorPicker)));
-
-            // Alt + Shift + R: 屏幕录制
-            _hotKeyManager.Register(ModifierKeys.Alt | ModifierKeys.Shift, Key.R, () => Dispatcher.BeginInvoke(StartScreenRecording));
-
-            // Alt + Shift + F: 划词翻译
+            // 额外保持 Alt + Shift + F 划词翻译热键
             _hotKeyManager.Register(ModifierKeys.Alt | ModifierKeys.Shift, Key.F, () => Dispatcher.BeginInvoke(TranslateSelection));
-
-            // Alt + V: 呼出翻译窗口
-            _hotKeyManager.Register(ModifierKeys.Alt, Key.V, () => Dispatcher.BeginInvoke(ShowTranslationWindow));
-
-            // Alt + C: 呼出剪贴板历史窗口
-            _hotKeyManager.Register(ModifierKeys.Alt, Key.C, () => Dispatcher.BeginInvoke(ShowClipboardHistoryWindow));
         }
         catch
         {
         }
     }
 
+    private void RegisterConfiguredHotkey(string actionKey, Action callback)
+    {
+        if (_hotKeyManager == null) return;
+        string text = PreferencesStore.GetHotkey(actionKey);
+        if (TryParseShortcut(text, out var mods, out var key))
+        {
+            try
+            {
+                _hotKeyManager.Register(mods, key, callback);
+            }
+            catch { }
+        }
+    }
+
+    public static bool TryParseShortcut(string? shortcutText, out ModifierKeys modifiers, out Key key)
+    {
+        modifiers = ModifierKeys.None;
+        key = Key.None;
+
+        if (string.IsNullOrWhiteSpace(shortcutText) || shortcutText.Contains("未设置"))
+        {
+            return false;
+        }
+
+        string[] parts = shortcutText.Split('+', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        foreach (var part in parts)
+        {
+            if (part.Equals("Alt", StringComparison.OrdinalIgnoreCase))
+            {
+                modifiers |= ModifierKeys.Alt;
+            }
+            else if (part.Equals("Ctrl", StringComparison.OrdinalIgnoreCase) || part.Equals("Control", StringComparison.OrdinalIgnoreCase))
+            {
+                modifiers |= ModifierKeys.Control;
+            }
+            else if (part.Equals("Shift", StringComparison.OrdinalIgnoreCase))
+            {
+                modifiers |= ModifierKeys.Shift;
+            }
+            else if (part.Equals("Win", StringComparison.OrdinalIgnoreCase) || part.Equals("Windows", StringComparison.OrdinalIgnoreCase))
+            {
+                modifiers |= ModifierKeys.Windows;
+            }
+            else if (Enum.TryParse<Key>(part, true, out var parsedKey))
+            {
+                key = parsedKey;
+            }
+        }
+
+        return key != Key.None;
+    }
+
     private void StartClipboardWatcher()
     {
         var timer = new System.Windows.Threading.DispatcherTimer
         {
-            Interval = TimeSpan.FromSeconds(1.5)
+            Interval = TimeSpan.FromSeconds(1.2)
         };
         string lastText = "";
         timer.Tick += (_, _) =>
@@ -300,10 +400,29 @@ public partial class App : Application
         bar.Show();
     }
 
-    public void ShowPreferences(bool initialTabIsHistory = false)
+    /// <summary>
+    /// 打开或激活设置中心单实例，支持直接定位到历史记录对应分类 (解决需求 6)
+    /// </summary>
+    public void ShowPreferences(bool initialTabIsHistory = false, HistoryType? filterType = null)
     {
-        var win = new PreferencesWindow(initialTabIsHistory);
-        win.Show();
+        if (_preferencesWindow != null && _preferencesWindow.IsLoaded)
+        {
+            if (_preferencesWindow.WindowState == WindowState.Minimized)
+            {
+                _preferencesWindow.WindowState = WindowState.Normal;
+            }
+            _preferencesWindow.NavigateTo(initialTabIsHistory, filterType);
+            _preferencesWindow.Topmost = true;
+            _preferencesWindow.Activate();
+            _preferencesWindow.Topmost = false;
+            _preferencesWindow.Focus();
+            return;
+        }
+
+        _preferencesWindow = new PreferencesWindow(initialTabIsHistory, filterType);
+        _preferencesWindow.Closed += (_, _) => _preferencesWindow = null;
+        _preferencesWindow.Show();
+        _preferencesWindow.Activate();
     }
 
     public void StartScreenRecording()
@@ -318,40 +437,90 @@ public partial class App : Application
         audio.Show();
     }
 
-    public void TranslateSelection()
+    /// <summary>
+    /// 划词翻译：自动恢复外部目标窗口焦点、释放修饰键并模拟 Ctrl+C 抓取选中文本放入翻译框 (解决需求 7)
+    /// </summary>
+    public async void TranslateSelection()
     {
         try
         {
+            IntPtr targetHwnd = LastExternalForegroundHwnd;
+            IntPtr currentFg = GetForegroundWindow();
+            GetWindowThreadProcessId(currentFg, out uint fgPid);
+            if (fgPid != (uint)Environment.ProcessId && currentFg != IntPtr.Zero)
+            {
+                var sb = new StringBuilder(64);
+                GetClassName(currentFg, sb, sb.Capacity);
+                string cls = sb.ToString();
+                if (!cls.Equals("Shell_TrayWnd", StringComparison.OrdinalIgnoreCase) &&
+                    !cls.Equals("NotifyIconOverflowWindow", StringComparison.OrdinalIgnoreCase))
+                {
+                    targetHwnd = currentFg;
+                }
+            }
+
+            // 1. 若从托盘菜单点击，先将焦点还给刚才选中文字的外部窗口
+            if (targetHwnd != IntPtr.Zero)
+            {
+                SetForegroundWindow(targetHwnd);
+            }
+
+            await Task.Delay(140);
+
+            // 2. 释放可能仍按下的 Alt / Shift 修饰键，防止干扰 Ctrl+C
+            keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+            keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+
+            // 3. 发送 Ctrl+C 复制选中文本
             keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
             keybd_event(VK_C, 0, 0, UIntPtr.Zero);
             keybd_event(VK_C, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
             keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
 
-            Task.Delay(150).ContinueWith(_ =>
+            // 4. 等待目标应用将选中文字写入系统剪贴板
+            await Task.Delay(240);
+
+            string text = "";
+            try
             {
-                Dispatcher.Invoke(() =>
+                if (System.Windows.Clipboard.ContainsText())
                 {
-                    string text = "";
-                    try
-                    {
-                        if (System.Windows.Clipboard.ContainsText())
-                        {
-                            text = System.Windows.Clipboard.GetText().Trim();
-                        }
-                    }
-                    catch { }
-                    var win = new TranslationWindow();
-                    win.Show();
-                    if (!string.IsNullOrEmpty(text))
-                    {
-                        win.SetSourceText(text);
-                    }
-                });
-            });
+                    text = System.Windows.Clipboard.GetText().Trim();
+                }
+            }
+            catch { }
+
+            OpenOrUpdateTranslationWindow(text);
         }
         catch
         {
             ShowTranslationWindow();
+        }
+    }
+
+    private void OpenOrUpdateTranslationWindow(string? sourceText)
+    {
+        if (_translationWindow != null && _translationWindow.IsLoaded)
+        {
+            if (_translationWindow.WindowState == WindowState.Minimized)
+            {
+                _translationWindow.WindowState = WindowState.Normal;
+            }
+            _translationWindow.Activate();
+            if (!string.IsNullOrWhiteSpace(sourceText))
+            {
+                _translationWindow.SetSourceText(sourceText);
+            }
+            return;
+        }
+
+        _translationWindow = new TranslationWindow();
+        _translationWindow.Closed += (_, _) => _translationWindow = null;
+        _translationWindow.Show();
+        _translationWindow.Activate();
+        if (!string.IsNullOrWhiteSpace(sourceText))
+        {
+            _translationWindow.SetSourceText(sourceText);
         }
     }
 
@@ -570,14 +739,23 @@ public partial class App : Application
 
     public void ShowTranslationWindow()
     {
-        var win = new TranslationWindow();
-        win.Show();
+        OpenOrUpdateTranslationWindow(null);
     }
 
     public void ShowClipboardHistoryWindow()
     {
-        var win = new ClipboardHistoryWindow();
-        win.Show();
+        IntPtr target = LastExternalForegroundHwnd;
+        if (_clipboardHistoryWindow != null && _clipboardHistoryWindow.IsLoaded)
+        {
+            _clipboardHistoryWindow.UpdateTargetWindow(target);
+            _clipboardHistoryWindow.Activate();
+            return;
+        }
+
+        _clipboardHistoryWindow = new ClipboardHistoryWindow(target);
+        _clipboardHistoryWindow.Closed += (_, _) => _clipboardHistoryWindow = null;
+        _clipboardHistoryWindow.Show();
+        _clipboardHistoryWindow.Activate();
     }
 
     public void ShowSettings()

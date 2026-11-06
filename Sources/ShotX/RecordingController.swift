@@ -7,6 +7,7 @@ final class RecordingController {
 
     private var selectionController: RecordingSelectionController?
     private var optionsPanel: NSPanel?
+    private var optionsModel: RecordingOptionsModel?
     private var optionsOutsideToken: EventMonitorToken?
     private var optionsKeyLocalToken: EventMonitorToken?
     private var optionsKeyGlobalToken: EventMonitorToken?
@@ -23,6 +24,7 @@ final class RecordingController {
     private var webcam: WebcamWindow?
 
     private var currentRect: CGRect?
+    private var currentScreen: NSScreen?
 
     private enum RecordingMode { case video, gif }
     private var pendingMode: RecordingMode = .video
@@ -36,35 +38,57 @@ final class RecordingController {
 
         let controller = RecordingSelectionController()
         selectionController = controller
-        controller.begin { [weak self] rect, screen in
-            self?.selectionController = nil
-            guard let rect = rect, let screen = screen else { return }
-            self?.currentRect = rect
-            self?.frameOverlay.show(rect: rect, recording: false)
-            self?.showOptions(rect: rect, screen: screen)
-        }
+        controller.begin(
+            onUpdate: { [weak self] rect, screen in
+                guard let self = self else { return }
+                self.currentRect = rect
+                self.currentScreen = screen
+                if self.optionsPanel == nil {
+                    self.showOptions(rect: rect, screen: screen)
+                } else {
+                    self.optionsModel?.dimensions = rect.size
+                }
+            },
+            onCancel: { [weak self] in
+                self?.cancelOptions()
+            }
+        )
     }
 
     // MARK: - Options panel
 
     private func showOptions(rect: CGRect, screen: NSScreen) {
+        let model = RecordingOptionsModel(dimensions: rect.size)
+        self.optionsModel = model
+
         let view = RecordingOptionsView(
-            dimensions: rect.size,
+            model: model,
             onRecordVideo: { [weak self] options in
-                self?.pendingMode = .video
-                self?.tearDownOptionsPanel()
-                self?.frameOverlay.setRecording(true)
-                self?.beginRecording(rect: rect, screen: screen, options: options)
+                guard let self = self,
+                      let activeRect = self.currentRect,
+                      let activeScreen = self.currentScreen else { return }
+                self.pendingMode = .video
+                self.selectionController?.dismiss()
+                self.selectionController = nil
+                self.tearDownOptionsPanel()
+                self.frameOverlay.show(rect: activeRect, recording: true)
+                self.beginRecording(rect: activeRect, screen: activeScreen, options: options)
             },
             onRecordGIF: { [weak self] options in
-                self?.pendingMode = .gif
-                self?.tearDownOptionsPanel()
-                self?.frameOverlay.setRecording(true)
-                self?.beginRecording(rect: rect, screen: screen, options: options)
+                guard let self = self,
+                      let activeRect = self.currentRect,
+                      let activeScreen = self.currentScreen else { return }
+                self.pendingMode = .gif
+                self.selectionController?.dismiss()
+                self.selectionController = nil
+                self.tearDownOptionsPanel()
+                self.frameOverlay.show(rect: activeRect, recording: true)
+                self.beginRecording(rect: activeRect, screen: activeScreen, options: options)
             },
             onCancel: { [weak self] in self?.cancelOptions() },
             onWebcamToggle: { [weak self] enabled in
-                self?.handleWebcamToggle(enabled, rect: rect)
+                guard let self = self else { return }
+                self.handleWebcamToggle(enabled, rect: self.currentRect ?? rect)
             }
         )
 
@@ -95,10 +119,6 @@ final class RecordingController {
         CaptureExclusions.register(panel)
         optionsPanel = panel
 
-        optionsOutsideToken = EventMonitorToken(global: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-            self?.handleOutsideClick(at: NSEvent.mouseLocation)
-        }
-
         optionsKeyLocalToken = EventMonitorToken(local: .keyDown) { [weak self] event in
             if event.keyCode == 53 { // Escape
                 self?.cancelOptions()
@@ -116,20 +136,16 @@ final class RecordingController {
         }
     }
 
-    private func handleOutsideClick(at point: NSPoint) {
-        // Don't dismiss if user is interacting with the recording region.
-        if let rect = currentRect, rect.contains(point) {
-            return
-        }
-        cancelOptions()
-    }
-
     private func cancelOptions() {
+        selectionController?.dismiss()
+        selectionController = nil
+        optionsModel = nil
         tearDownOptionsPanel()
         frameOverlay.dismiss()
         webcam?.dismiss()
         webcam = nil
         currentRect = nil
+        currentScreen = nil
     }
 
     /// Called from the options view when the user toggles the camera.

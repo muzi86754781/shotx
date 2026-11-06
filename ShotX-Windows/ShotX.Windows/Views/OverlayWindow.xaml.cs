@@ -335,7 +335,10 @@ public partial class OverlayWindow : Window
                 dc.DrawLine(crossPen, new Point(_currentMouse.X, 0), new Point(_currentMouse.X, Height));
 
                 DrawLoupe(dc, _currentMouse);
-                DrawQuickHelpCard(dc);
+                if (_overlayMode != OverlayMode.ColorPicker)
+                {
+                    DrawQuickHelpCard(dc);
+                }
             }
         }
         else if (_mode == CaptureMode.Annotating)
@@ -687,9 +690,10 @@ public partial class OverlayWindow : Window
         double h = 42;
         double x = Math.Max(10, Math.Min(Width - w - 10, _selectionRect.Left + (_selectionRect.Width - w) / 2));
         double y = _selectionRect.Bottom + 12;
-        if (y + h > Height - 10)
+        double subExtra = (_isSubToolbarVisible && _mode != CaptureMode.Scrolling && _currentTool != ToolbarTool.None) ? 48 : 0;
+        if (y + h + subExtra > Height - 10)
         {
-            y = _selectionRect.Bottom - h - 12;
+            y = Math.Max(10, _selectionRect.Bottom - h - subExtra - 12);
         }
         return new Rect(x, y, w, h);
     }
@@ -709,7 +713,7 @@ public partial class OverlayWindow : Window
         new(ToolbarTool.Pin, "钉", "贴图置顶 (F3)"),
         new(ToolbarTool.Undo, "↩", "上一步撤销 (Ctrl+Z)"),
         new(ToolbarTool.Redo, "↪", "下一步重做 (Ctrl+Y)"),
-        new(ToolbarTool.OCR, "识", "离线文字识别 OCR"),
+        new(ToolbarTool.OCR, "识", "文字识别 OCR"),
         new(ToolbarTool.Scrolling, "长", "滚动长截图"),
         new(ToolbarTool.Cancel, "✖", "退出 (Esc)"),
         new(ToolbarTool.Save, "存", "保存文件 (Ctrl+S)"),
@@ -766,17 +770,15 @@ public partial class OverlayWindow : Window
                 continue;
             }
 
-            var brush = isSelected ? new SolidColorBrush(Color.FromRgb(0, 122, 255)) : (tools[i].Tool == ToolbarTool.Copy ? Brushes.Green : new SolidColorBrush(Color.FromRgb(60, 60, 67)));
-            var ft = new FormattedText(
-                tools[i].Label,
-                System.Globalization.CultureInfo.CurrentCulture,
-                System.Windows.FlowDirection.LeftToRight,
-                new Typeface("Segoe UI Semibold"),
-                13,
-                brush,
-                VisualTreeHelper.GetDpi(this).PixelsPerDip
-            );
-            dc.DrawText(ft, new Point(btnRect.Left + (btnRect.Width - ft.Width) / 2, btnRect.Top + (btnRect.Height - ft.Height) / 2));
+            var brush = isSelected
+                ? new SolidColorBrush(Color.FromRgb(0, 122, 255))
+                : (tools[i].Tool == ToolbarTool.Copy
+                    ? new SolidColorBrush(Color.FromRgb(22, 163, 74))
+                    : (tools[i].Tool == ToolbarTool.Cancel
+                        ? new SolidColorBrush(Color.FromRgb(220, 38, 38))
+                        : new SolidColorBrush(Color.FromRgb(50, 52, 60))));
+
+            DrawToolVectorIcon(dc, tools[i].Tool, btnRect, brush);
         }
 
         // 悬停提示气泡
@@ -784,6 +786,136 @@ public partial class OverlayWindow : Window
         {
             var btnRect = new Rect(r.Left + 8 + _hoveredButtonIndex * 33, r.Top + 6, 30, 30);
             DrawTooltipBubble(dc, tools[_hoveredButtonIndex].Tip, btnRect);
+        }
+    }
+
+    private void DrawToolVectorIcon(DrawingContext dc, ToolbarTool tool, Rect btnRect, Brush brush)
+    {
+        double cx = btnRect.Left + btnRect.Width / 2.0;
+        double cy = btnRect.Top + btnRect.Height / 2.0;
+        var pen = new Pen(brush, 1.8)
+        {
+            StartLineCap = PenLineCap.Round,
+            EndLineCap = PenLineCap.Round,
+            LineJoin = PenLineJoin.Round
+        };
+
+        switch (tool)
+        {
+            case ToolbarTool.Rectangle:
+                // 矩形图标
+                dc.DrawRoundedRectangle(null, pen, new Rect(cx - 7.5, cy - 5.5, 15, 11), 1.5, 1.5);
+                break;
+
+            case ToolbarTool.Ellipse:
+                // 椭圆/圆形图标
+                dc.DrawEllipse(null, pen, new Point(cx, cy), 7.2, 6.2);
+                break;
+
+            case ToolbarTool.Line:
+                // 直线图标 (带两端点)
+                dc.DrawLine(pen, new Point(cx - 6.5, cy + 6.5), new Point(cx + 6.5, cy - 6.5));
+                dc.DrawEllipse(brush, null, new Point(cx - 6.5, cy + 6.5), 1.8, 1.8);
+                dc.DrawEllipse(brush, null, new Point(cx + 6.5, cy - 6.5), 1.8, 1.8);
+                break;
+
+            case ToolbarTool.Arrow:
+                // 箭头图标
+                dc.DrawLine(pen, new Point(cx - 6.5, cy + 6.5), new Point(cx + 6.5, cy - 6.5));
+                dc.DrawLine(pen, new Point(cx + 0.5, cy - 6.5), new Point(cx + 6.5, cy - 6.5));
+                dc.DrawLine(pen, new Point(cx + 6.5, cy - 6.5), new Point(cx + 6.5, cy - 0.5));
+                break;
+
+            case ToolbarTool.Brush:
+                // 画笔图标
+                dc.PushTransform(new TranslateTransform(cx - 10, cy - 10));
+                dc.DrawGeometry(null, pen, Geometry.Parse("M 13.5,3.5 L 16.5,6.5 L 7.5,15.5 L 3.5,16.5 L 4.5,12.5 Z M 11.5,5.5 L 14.5,8.5"));
+                dc.Pop();
+                break;
+
+            case ToolbarTool.Mosaic:
+                // 马赛克网格图标
+                var gridRect = new Rect(cx - 7.5, cy - 7.5, 15, 15);
+                dc.DrawRoundedRectangle(null, new Pen(brush, 1.4), gridRect, 2, 2);
+                double cell = 15.0 / 3.0;
+                for (int r = 0; r < 3; r++)
+                {
+                    for (int c = 0; c < 3; c++)
+                    {
+                        if ((r + c) % 2 == 0)
+                        {
+                            dc.DrawRectangle(brush, null, new Rect(gridRect.Left + c * cell + 0.8, gridRect.Top + r * cell + 0.8, cell - 1.6, cell - 1.6));
+                        }
+                    }
+                }
+                break;
+
+            case ToolbarTool.Text:
+                // 文字 T 图标
+                dc.DrawLine(pen, new Point(cx - 6, cy - 6.5), new Point(cx + 6, cy - 6.5));
+                dc.DrawLine(pen, new Point(cx - 6, cy - 6.5), new Point(cx - 6, cy - 4.2));
+                dc.DrawLine(pen, new Point(cx + 6, cy - 6.5), new Point(cx + 6, cy - 4.2));
+                dc.DrawLine(pen, new Point(cx, cy - 6.5), new Point(cx, cy + 6.5));
+                dc.DrawLine(pen, new Point(cx - 3, cy + 6.5), new Point(cx + 3, cy + 6.5));
+                break;
+
+            case ToolbarTool.Step:
+                // 步骤序号圆圈①图标
+                dc.DrawEllipse(null, new Pen(brush, 1.6), new Point(cx, cy), 7.5, 7.5);
+                var stepPen = new Pen(brush, 1.6) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                dc.DrawLine(stepPen, new Point(cx - 1.5, cy - 2.2), new Point(cx + 0.5, cy - 4.0));
+                dc.DrawLine(stepPen, new Point(cx + 0.5, cy - 4.0), new Point(cx + 0.5, cy + 3.8));
+                dc.DrawLine(stepPen, new Point(cx - 2.0, cy + 3.8), new Point(cx + 2.8, cy + 3.8));
+                break;
+
+            case ToolbarTool.Pin:
+                // 图钉置顶图标
+                dc.PushTransform(new TranslateTransform(cx - 10, cy - 10));
+                dc.DrawGeometry(brush, null, Geometry.Parse("M 7,3 L 13,3 L 13,4.8 L 11.8,6 L 11.8,10.2 L 14.5,12.5 L 14.5,14 L 10.8,14 L 10.8,18 L 9.2,18 L 9.2,14 L 5.5,14 L 5.5,12.5 L 8.2,10.2 L 8.2,6 L 7,4.8 Z"));
+                dc.Pop();
+                break;
+
+            case ToolbarTool.Undo:
+                // 撤销图标
+                dc.PushTransform(new TranslateTransform(cx - 10, cy - 10));
+                dc.DrawGeometry(null, pen, Geometry.Parse("M 8,6 L 4,10 L 8,14 M 4.5,10 L 12,10 A 4,4 0 0 1 16,14 L 16,15"));
+                dc.Pop();
+                break;
+
+            case ToolbarTool.Redo:
+                // 重做图标
+                dc.PushTransform(new TranslateTransform(cx - 10, cy - 10));
+                dc.DrawGeometry(null, pen, Geometry.Parse("M 12,6 L 16,10 L 12,14 M 15.5,10 L 8,10 A 4,4 0 0 0 4,14 L 4,15"));
+                dc.Pop();
+                break;
+
+            case ToolbarTool.Scrolling:
+                // 长截图图标 (长框 + 上下双向滚动箭头)
+                dc.PushTransform(new TranslateTransform(cx - 10, cy - 10));
+                dc.DrawGeometry(null, new Pen(brush, 1.5) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round },
+                    Geometry.Parse("M 5,6 L 5,3.5 L 15,3.5 L 15,6 M 5,14 L 5,16.5 L 15,16.5 L 15,14 M 10,6.5 L 10,13.5 M 7.8,8.7 L 10,6.3 L 12.2,8.7 M 7.8,11.3 L 10,13.7 L 12.2,11.3"));
+                dc.Pop();
+                break;
+
+            case ToolbarTool.Cancel:
+                // 取消 ✕ 图标
+                dc.DrawLine(pen, new Point(cx - 5.5, cy - 5.5), new Point(cx + 5.5, cy + 5.5));
+                dc.DrawLine(pen, new Point(cx + 5.5, cy - 5.5), new Point(cx - 5.5, cy + 5.5));
+                break;
+
+            case ToolbarTool.Save:
+                // 保存下载图标 (向下箭头 + 托盘底座)
+                dc.PushTransform(new TranslateTransform(cx - 10, cy - 10));
+                dc.DrawGeometry(null, pen, Geometry.Parse("M 10,3.5 L 10,12.5 M 6.8,9.5 L 10,12.8 L 13.2,9.5 M 4.5,13.5 L 4.5,16.2 L 15.5,16.2 L 15.5,13.5"));
+                dc.Pop();
+                break;
+
+            case ToolbarTool.Copy:
+                // 完成复制 ✓ 图标
+                var checkPen = new Pen(brush, 2.2) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+                dc.DrawLine(checkPen, new Point(cx - 6.0, cy + 0.5), new Point(cx - 1.5, cy + 5.0));
+                dc.DrawLine(checkPen, new Point(cx - 1.5, cy + 5.0), new Point(cx + 6.5, cy - 4.5));
+                break;
         }
     }
 
@@ -816,10 +948,11 @@ public partial class OverlayWindow : Window
         double w = (_currentTool == ToolbarTool.Mosaic) ? 180 : 520;
         double h = 38;
         double x = Math.Max(10, Math.Min(Width - w - 10, tb.Left + (tb.Width - w) / 2));
-        double y = tb.Top - h - 8;
-        if (y < 8)
+        // 子工具栏始终弹在主工具栏下方 (解决需求 1)
+        double y = tb.Bottom + 8;
+        if (y + h > Height - 6)
         {
-            y = tb.Bottom + 8;
+            y = Math.Max(8, tb.Top - h - 8);
         }
         return new Rect(x, y, w, h);
     }
@@ -2020,17 +2153,34 @@ public partial class OverlayWindow : Window
 
     private async void PerformOCR()
     {
+        ShowToast("正在提取选区文字 (OCR)...");
         var bmp = GetCroppedSelectionBitmap();
         string text = await OcrHelper.RecognizeTextAsync(bmp);
         bmp.Dispose();
-        System.Windows.Clipboard.SetText(text);
+
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            System.Windows.MessageBox.Show(
+                "未在框选区域内识别到清晰文字，请尝试框选包含清晰文字的区域重试。",
+                "ShotX 文字识别 (OCR)",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        try
+        {
+            System.Windows.Clipboard.SetText(text);
+        }
+        catch { }
         HistoryStore.AddOcr(text);
-        System.Windows.MessageBox.Show(text, "ShotX 文字识别 (已复制到剪贴板)", MessageBoxButton.OK, MessageBoxImage.Information);
+        System.Windows.MessageBox.Show(text, "ShotX 文字识别 (已自动复制到剪贴板)", MessageBoxButton.OK, MessageBoxImage.Information);
         Close();
     }
 
     private async void PerformTranslate()
     {
+        ShowToast("正在识别文字并翻译...");
         var bmp = GetCroppedSelectionBitmap();
         string text = await OcrHelper.RecognizeTextAsync(bmp);
         bmp.Dispose();

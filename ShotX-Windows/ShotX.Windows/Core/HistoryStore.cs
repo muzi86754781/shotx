@@ -25,7 +25,7 @@ public class HistoryItem
     public string Content { get; set; } = string.Empty;
     public string FilePath { get; set; } = string.Empty;
     public DateTime Timestamp { get; set; } = DateTime.Now;
-    public string TimestampString => Timestamp.ToString("MM-dd HH:mm");
+    public string TimestampString => Timestamp.ToString("yyyy-MM-dd HH:mm:ss");
     public string Icon => Type switch
     {
         HistoryType.Screenshot => "🖼️",
@@ -36,6 +36,74 @@ public class HistoryItem
         HistoryType.Clipboard => "📋",
         _ => "📄"
     };
+
+    public string TypeBadgeText => Type switch
+    {
+        HistoryType.Screenshot => "截图",
+        HistoryType.ScreenRecord => "录屏",
+        HistoryType.AudioRecord => "录音",
+        HistoryType.OCR => "提取文字",
+        HistoryType.Translation => "翻译",
+        HistoryType.Clipboard => "剪贴板",
+        _ => "记录"
+    };
+
+    public string BadgeBackground => Type switch
+    {
+        HistoryType.Screenshot => "#E0F2FE",
+        HistoryType.ScreenRecord => "#FEE2E2",
+        HistoryType.AudioRecord => "#FEF3C7",
+        HistoryType.OCR => "#DCFCE7",
+        HistoryType.Translation => "#F3E8FF",
+        HistoryType.Clipboard => "#F1F5F9",
+        _ => "#F1F5F9"
+    };
+
+    public string BadgeForeground => Type switch
+    {
+        HistoryType.Screenshot => "#0284C7",
+        HistoryType.ScreenRecord => "#DC2626",
+        HistoryType.AudioRecord => "#D97706",
+        HistoryType.OCR => "#16A34A",
+        HistoryType.Translation => "#7C3AED",
+        HistoryType.Clipboard => "#475569",
+        _ => "#475569"
+    };
+
+    public bool HasFile => !string.IsNullOrWhiteSpace(FilePath) && File.Exists(FilePath);
+
+    public System.Windows.Visibility FileActionVisibility =>
+        HasFile ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+    public string DisplayTitle
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(Content))
+            {
+                string oneLine = Content.Replace("\r\n", " ").Replace("\n", " ").Trim();
+                return oneLine.Length > 90 ? oneLine[..90] + "..." : oneLine;
+            }
+            if (!string.IsNullOrWhiteSpace(FilePath))
+            {
+                return Path.GetFileName(FilePath);
+            }
+            return TypeBadgeText;
+        }
+    }
+
+    public string DisplaySubtitle
+    {
+        get
+        {
+            if (!string.IsNullOrWhiteSpace(FilePath))
+            {
+                return $"文件路径: {FilePath}";
+            }
+            string clean = (Content ?? "").Replace("\r\n", "  ").Replace("\n", "  ").Trim();
+            return clean.Length > 140 ? clean[..140] + "..." : clean;
+        }
+    }
 }
 
 public class HistoryEntry
@@ -121,11 +189,29 @@ public static class HistoryStore
         {
             try
             {
+                bool isFile = !string.IsNullOrWhiteSpace(filePathOrText) && File.Exists(filePathOrText);
+                string finalContent = string.IsNullOrEmpty(content) ? filePathOrText : content;
+                if (type == HistoryType.Translation && !isFile && !string.IsNullOrWhiteSpace(filePathOrText) && filePathOrText != content)
+                {
+                    finalContent = $"{filePathOrText.Trim()}  ➔  {content.Trim()}";
+                }
+
+                // 剪贴板或翻译连续重复内容自动去重更新时间
+                if ((type == HistoryType.Clipboard || type == HistoryType.Translation) &&
+                    _items.Count > 0 &&
+                    _items[0].Type == type &&
+                    _items[0].Content == finalContent)
+                {
+                    _items[0].Timestamp = DateTime.Now;
+                    Save();
+                    return;
+                }
+
                 var item = new HistoryItem
                 {
                     Type = type,
-                    FilePath = File.Exists(filePathOrText) ? filePathOrText : "",
-                    Content = string.IsNullOrEmpty(content) ? filePathOrText : content,
+                    FilePath = isFile ? filePathOrText : "",
+                    Content = finalContent,
                     Timestamp = DateTime.Now
                 };
                 _items.Insert(0, item);
@@ -144,9 +230,13 @@ public static class HistoryStore
             {
                 if (!string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath))
                 {
-                    File.Delete(item.FilePath);
+                    try { File.Delete(item.FilePath); } catch { }
                 }
-                _items.RemoveAll(i => i.Id == item.Id);
+                int removed = _items.RemoveAll(i => i.Id == item.Id);
+                if (removed == 0)
+                {
+                    _items.RemoveAll(i => i.Type == item.Type && i.Content == item.Content && i.Timestamp == item.Timestamp);
+                }
                 Save();
             }
             catch { }

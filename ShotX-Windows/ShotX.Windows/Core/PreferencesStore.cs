@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using Microsoft.Win32;
@@ -20,6 +21,8 @@ public class AppPreferences
     public string ScrollingShortcut { get; set; } = "Alt+S";
     public string ClipboardShortcut { get; set; } = "Alt+C";
     public string TranslationShortcut { get; set; } = "Alt+V";
+
+    public Dictionary<string, string> Hotkeys { get; set; } = PreferencesStore.CreateDefaultHotkeys();
 }
 
 public static class PreferencesStore
@@ -33,6 +36,22 @@ public static class PreferencesStore
     private static readonly string ConfigFile = Path.Combine(ConfigDir, "config.json");
 
     private static AppPreferences? _current;
+
+    public static Dictionary<string, string> CreateDefaultHotkeys() => new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["AllInOne"] = "未设置",
+        ["Area"] = "Alt + A",
+        ["PreviousArea"] = "Alt + R",
+        ["Fullscreen"] = "Alt + Shift + A",
+        ["Window"] = "Alt + W",
+        ["OCR"] = "未设置",
+        ["Pin"] = "Alt + F3",
+        ["EditClipboard"] = "Alt + P",
+        ["ColorPicker"] = "Alt + Shift + C",
+        ["ScreenRecord"] = "Alt + Shift + R",
+        ["Translation"] = "Alt + V",
+        ["ClipboardHistory"] = "Alt + C"
+    };
 
     public static AppPreferences Current
     {
@@ -74,6 +93,67 @@ public static class PreferencesStore
     {
         get => Current.ImageFormat;
         set => Current.ImageFormat = value;
+    }
+
+    public static string GetHotkey(string actionKey)
+    {
+        EnsureHotkeysInitialized();
+        if (Current.Hotkeys.TryGetValue(actionKey, out string? val) && !string.IsNullOrWhiteSpace(val))
+        {
+            return val;
+        }
+        return "未设置";
+    }
+
+    public static void SetHotkey(string actionKey, string shortcutText)
+    {
+        EnsureHotkeysInitialized();
+        Current.Hotkeys[actionKey] = string.IsNullOrWhiteSpace(shortcutText) ? "未设置" : shortcutText;
+        Save();
+    }
+
+    public static void ClearSingleHotkey(string actionKey)
+    {
+        EnsureHotkeysInitialized();
+        Current.Hotkeys[actionKey] = "未设置";
+        Save();
+    }
+
+    public static void ClearNonCoreHotkeys()
+    {
+        EnsureHotkeysInitialized();
+        var keys = new List<string>(Current.Hotkeys.Keys);
+        foreach (var k in keys)
+        {
+            Current.Hotkeys[k] = string.Equals(k, "Area", StringComparison.OrdinalIgnoreCase)
+                ? "Alt + A"
+                : "未设置";
+        }
+        Save();
+    }
+
+    public static void RestoreDefaultHotkeys()
+    {
+        Current.Hotkeys = CreateDefaultHotkeys();
+        Save();
+    }
+
+    private static void EnsureHotkeysInitialized()
+    {
+        if (Current.Hotkeys == null || Current.Hotkeys.Count == 0)
+        {
+            Current.Hotkeys = CreateDefaultHotkeys();
+            return;
+        }
+
+        var defaults = CreateDefaultHotkeys();
+        foreach (var kv in defaults)
+        {
+            if (!Current.Hotkeys.ContainsKey(kv.Key))
+            {
+                Current.Hotkeys[kv.Key] = kv.Value;
+            }
+        }
     }
 
     public static string GetValidSaveDir() => EnsureDirectory(Current.SavePath);
@@ -136,6 +216,11 @@ public static class PreferencesStore
                 if (ShouldMigrateLegacyPath(_current.AudioPath))
                 {
                     _current.AudioPath = DefaultDownloadsDir;
+                    migrated = true;
+                }
+                if (_current.Hotkeys == null || _current.Hotkeys.Count == 0)
+                {
+                    _current.Hotkeys = CreateDefaultHotkeys();
                     migrated = true;
                 }
                 if (migrated)

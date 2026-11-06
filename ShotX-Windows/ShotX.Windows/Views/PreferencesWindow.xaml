@@ -409,53 +409,56 @@
                 <!-- 右侧主内容区 -->
                 <Grid Grid.Column="1">
                     <!-- ================= TAB 1: 历史记录管理器 ================= -->
-                    <Grid x:Name="ViewHistory" Visibility="Collapsed" Margin="20,16,20,16">
+                    <Grid x:Name="ViewHistory" Visibility="Collapsed" Margin="20,14,20,16">
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="44"/> <!-- 过滤胶囊与搜索框 -->
-                            <RowDefinition Height="30"/> <!-- 统计说明条 -->
-                            <RowDefinition Height="*"/>  <!-- 列表/空状态 -->
+                            <RowDefinition Height="38"/> <!-- 第 1 行：分类过滤胶囊选项卡 -->
+                            <RowDefinition Height="44"/> <!-- 第 2 行：独立搜索框与统计条 (解决需求 9 搜索框挡住选项卡问题) -->
+                            <RowDefinition Height="*"/>  <!-- 第 3 行：美化卡片列表 / 空状态 -->
                         </Grid.RowDefinitions>
 
-                        <!-- 过滤栏 -->
+                        <!-- 第 1 行：分类过滤胶囊选项卡 -->
                         <Grid Grid.Row="0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*"/>
-                                <ColumnDefinition Width="180"/>
-                            </Grid.ColumnDefinitions>
-
-                            <!-- 左侧分类过滤胶囊 -->
-                            <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                                <RadioButton Content="⊞ 全部" Style="{StaticResource FilterPillStyle}" Margin="0,0,5,0" Checked="HistoryFilter_Changed"/>
-                                <RadioButton Content="🖼️ 截图" Style="{StaticResource FilterPillStyle}" Margin="0,0,5,0" Checked="HistoryFilter_Changed"/>
-                                <RadioButton x:Name="PillRecord" Content="📹 录屏" Style="{StaticResource FilterPillStyle}" Margin="0,0,5,0" IsChecked="True" Checked="HistoryFilter_Changed"/>
-                                <RadioButton Content="🎙️ 录音" Style="{StaticResource FilterPillStyle}" Margin="0,0,5,0" Checked="HistoryFilter_Changed"/>
-                                <RadioButton Content="🔤 文字" Style="{StaticResource FilterPillStyle}" Margin="0,0,5,0" Checked="HistoryFilter_Changed"/>
-                                <RadioButton Content="🌐 翻译" Style="{StaticResource FilterPillStyle}" Margin="0,0,5,0" Checked="HistoryFilter_Changed"/>
-                                <RadioButton Content="📋 剪贴板" Style="{StaticResource FilterPillStyle}" Checked="HistoryFilter_Changed"/>
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" HorizontalAlignment="Left">
+                                <RadioButton x:Name="PillAll" Content="⊞ 全部" Style="{StaticResource FilterPillStyle}" Margin="0,0,6,0" Checked="HistoryFilter_Changed"/>
+                                <RadioButton x:Name="PillScreenshot" Content="🖼️ 截图" Style="{StaticResource FilterPillStyle}" Margin="0,0,6,0" Checked="HistoryFilter_Changed"/>
+                                <RadioButton x:Name="PillRecord" Content="📹 录屏" Style="{StaticResource FilterPillStyle}" Margin="0,0,6,0" IsChecked="True" Checked="HistoryFilter_Changed"/>
+                                <RadioButton x:Name="PillAudio" Content="🎙️ 录音" Style="{StaticResource FilterPillStyle}" Margin="0,0,6,0" Checked="HistoryFilter_Changed"/>
+                                <RadioButton x:Name="PillOcr" Content="🔤 提取文字" Style="{StaticResource FilterPillStyle}" Margin="0,0,6,0" Checked="HistoryFilter_Changed"/>
+                                <RadioButton x:Name="PillTranslation" Content="🌐 翻译" Style="{StaticResource FilterPillStyle}" Margin="0,0,6,0" Checked="HistoryFilter_Changed"/>
+                                <RadioButton x:Name="PillClipboard" Content="📋 剪贴板" Style="{StaticResource FilterPillStyle}" Checked="HistoryFilter_Changed"/>
                             </StackPanel>
 
-                            <!-- 右侧搜索框 -->
-                            <Border Grid.Column="1" Background="#FFFFFF" CornerRadius="8" BorderBrush="#CBD5E1" BorderThickness="1" Height="30" Padding="10,0">
+                            <Button Content="🗑️ 清空当前分类" Style="{StaticResource SmallBtnStyle}" HorizontalAlignment="Right" VerticalAlignment="Center"
+                                    Click="BtnClearCurrentHistory_Click"/>
+                        </Grid>
+
+                        <!-- 第 2 行：独立搜索框与记录数统计 (单独放一行，宽敞直观) -->
+                        <Grid Grid.Row="1" Margin="0,6,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*"/>
+                                <ColumnDefinition Width="Auto"/>
+                            </Grid.ColumnDefinitions>
+
+                            <Border Grid.Column="0" Background="#FFFFFF" CornerRadius="8" BorderBrush="#CBD5E1" BorderThickness="1" Height="32" Padding="12,0">
                                 <Grid VerticalAlignment="Center">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="Auto"/>
                                         <ColumnDefinition Width="*"/>
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Grid.Column="0" Text="🔍" FontSize="10.5" Foreground="#64748B" Margin="0,0,6,0" VerticalAlignment="Center"/>
+                                    <TextBlock Grid.Column="0" Text="🔍" FontSize="11.5" Foreground="#64748B" Margin="0,0,8,0" VerticalAlignment="Center"/>
                                     <TextBox x:Name="TxtHistorySearch" Grid.Column="1" BorderThickness="0" Background="Transparent"
-                                             FontSize="12" Foreground="#0F172A" VerticalAlignment="Center" TextChanged="TxtHistorySearch_TextChanged"/>
-                                    <TextBlock x:Name="TxtHistoryPlaceholder" Grid.Column="1" Text="搜索历史记录..." FontSize="11.5" Foreground="#94A3B8"
+                                             FontSize="12.5" Foreground="#0F172A" VerticalAlignment="Center" TextChanged="TxtHistorySearch_TextChanged"/>
+                                    <TextBlock x:Name="TxtHistoryPlaceholder" Grid.Column="1" Text="输入关键词搜索截图、录屏、录音、OCR 文字、翻译或剪贴板记录..." FontSize="12" Foreground="#94A3B8"
                                                IsHitTestVisible="False" VerticalAlignment="Center"/>
                                 </Grid>
                             </Border>
+
+                            <Border Grid.Column="1" Background="#EEF2F8" CornerRadius="8" Padding="12,0" Height="32" Margin="10,0,0,0">
+                                <TextBlock x:Name="TxtHistoryCount" Text="录屏 · 共 0 条记录" FontSize="12" FontWeight="SemiBold" Foreground="#475569" VerticalAlignment="Center"/>
+                            </Border>
                         </Grid>
 
-                        <!-- 统计条 -->
-                        <Border Grid.Row="1" BorderBrush="#E2E8F0" BorderThickness="0,1,0,0" Margin="0,4,0,0">
-                            <TextBlock x:Name="TxtHistoryCount" Text="录屏 · 0 条记录" FontSize="11.5" FontWeight="Medium" Foreground="#64748B" VerticalAlignment="Center"/>
-                        </Border>
-
-                        <!-- 内容展示区 -->
+                        <!-- 第 3 行：内容展示区 (重新布局美化卡片列表) -->
                         <Grid Grid.Row="2" Margin="0,6,0,0">
                             <!-- 空状态展示 -->
                             <Border x:Name="PanelEmptyHistory" Background="#FFFFFF" CornerRadius="12" BorderBrush="#E2E8F0" BorderThickness="1">
@@ -468,26 +471,61 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- 有数据时的列表 -->
+                            <!-- 有数据时的现代化卡片列表 -->
                             <ListBox x:Name="LstFullHistory" Visibility="Collapsed" Background="Transparent" BorderThickness="0"
                                      ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemContainerStyle>
+                                    <Style TargetType="ListBoxItem">
+                                        <Setter Property="HorizontalContentAlignment" Value="Stretch"/>
+                                        <Setter Property="Padding" Value="0"/>
+                                        <Setter Property="Margin" Value="0,0,0,10"/>
+                                        <Setter Property="Template">
+                                            <Setter.Value>
+                                                <ControlTemplate TargetType="ListBoxItem">
+                                                    <ContentPresenter/>
+                                                </ControlTemplate>
+                                            </Setter.Value>
+                                        </Setter>
+                                    </Style>
+                                </ListBox.ItemContainerStyle>
                                 <ListBox.ItemTemplate>
                                     <DataTemplate>
-                                        <Border Style="{StaticResource CardBorderStyle}" Margin="0,0,0,8" Padding="14,12">
+                                        <Border Background="#FFFFFF" CornerRadius="10" BorderBrush="#E2E8F0" BorderThickness="1" Padding="14,12">
+                                            <Border.Effect>
+                                                <DropShadowEffect BlurRadius="8" ShadowDepth="1" Opacity="0.04" Color="#0F172A"/>
+                                            </Border.Effect>
                                             <Grid>
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="40"/>
+                                                    <ColumnDefinition Width="48"/>
                                                     <ColumnDefinition Width="*"/>
                                                     <ColumnDefinition Width="Auto"/>
                                                 </Grid.ColumnDefinitions>
-                                                <Border Grid.Column="0" Background="#EFF6FF" CornerRadius="8" Width="34" Height="34" HorizontalAlignment="Left">
-                                                    <TextBlock Text="{Binding Icon}" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+
+                                                <!-- 左侧彩色分类徽标 -->
+                                                <Border Grid.Column="0" Background="{Binding BadgeBackground}" CornerRadius="10" Width="40" Height="40" HorizontalAlignment="Left" VerticalAlignment="Center">
+                                                    <TextBlock Text="{Binding Icon}" FontSize="18" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                                 </Border>
-                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0,12,0">
-                                                    <TextBlock Text="{Binding Content}" FontSize="13" FontWeight="SemiBold" Foreground="#0F172A" TextTrimming="CharacterEllipsis"/>
-                                                    <TextBlock Text="{Binding TimestampString}" FontSize="11" Foreground="#64748B" Margin="0,3,0,0"/>
+
+                                                <!-- 中间结构化标题、摘要与时间戳 -->
+                                                <StackPanel Grid.Column="1" VerticalAlignment="Center" Margin="6,0,14,0">
+                                                    <DockPanel LastChildFill="True">
+                                                        <Border DockPanel.Dock="Left" Background="{Binding BadgeBackground}" CornerRadius="4" Padding="6,2" Margin="0,0,8,0" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding TypeBadgeText}" FontSize="10.5" FontWeight="Bold" Foreground="{Binding BadgeForeground}"/>
+                                                        </Border>
+                                                        <TextBlock DockPanel.Dock="Right" Text="{Binding TimestampString}" FontSize="11" Foreground="#94A3B8" VerticalAlignment="Center" Margin="8,0,0,0"/>
+                                                        <TextBlock Text="{Binding DisplayTitle}" FontSize="13" FontWeight="Bold" Foreground="#0F172A" TextTrimming="CharacterEllipsis" VerticalAlignment="Center"/>
+                                                    </DockPanel>
+
+                                                    <TextBlock Text="{Binding DisplaySubtitle}" FontSize="11.5" Foreground="#64748B" TextTrimming="CharacterEllipsis" Margin="0,5,0,0"/>
                                                 </StackPanel>
-                                                <Button Grid.Column="2" Content="查看 / 打开" Style="{StaticResource AccentBtnStyle}" Tag="{Binding}" Click="BtnOpenHistoryItem_Click"/>
+
+                                                <!-- 右侧操作按钮组 -->
+                                                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                                                    <Button Content="复制" Style="{StaticResource SmallBtnStyle}" Padding="10,4" Margin="0,0,6,0" Tag="{Binding}" Click="BtnCopyHistoryItem_Click" ToolTip="复制记录文本或路径"/>
+                                                    <Button Content="打开" Style="{StaticResource AccentBtnStyle}" Padding="10,4" Margin="0,0,6,0" Tag="{Binding}" Click="BtnOpenHistoryItem_Click" ToolTip="打开文件或查看完整内容"/>
+                                                    <Button Content="目录" Visibility="{Binding FileActionVisibility}" Style="{StaticResource SmallBtnStyle}" Padding="10,4" Margin="0,0,6,0" Tag="{Binding}" Click="BtnRevealHistoryItem_Click" ToolTip="打开所在文件夹"/>
+                                                    <Button Content="删除" Style="{StaticResource SmallBtnStyle}" Foreground="#DC2626" BorderBrush="#FECACA" Padding="10,4" Tag="{Binding}" Click="BtnDeleteHistoryItem_Click" ToolTip="删除此条记录"/>
+                                                </StackPanel>
                                             </Grid>
                                         </Border>
                                     </DataTemplate>
@@ -691,8 +729,8 @@
                                                 <TextBlock Text="呼出底部全能截图悬浮快捷条（区域、全屏、窗口、上一区域、定时、录屏）" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="未设置" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="AllInOne" Text="未设置" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="AllInOne" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -702,8 +740,8 @@
                                                 <TextBlock Text="在当前鼠标所在显示器框选任意区域，支持四角再拖动、16 项标注与长截图" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="Alt + A" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="Area" Text="Alt + A" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="Area" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -713,8 +751,8 @@
                                                 <TextBlock Text="快速复用上一次框选的屏幕区域坐标，无需重复手动框选" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="Alt + R" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="PreviousArea" Text="Alt + R" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="PreviousArea" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -724,8 +762,8 @@
                                                 <TextBlock Text="一键截取当前鼠标所在显示器的全屏画面并保存到下载目录" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="Alt + Shift + A" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="Fullscreen" Text="Alt + Shift + A" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="Fullscreen" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -735,8 +773,8 @@
                                                 <TextBlock Text="自动跟随鼠标智能识别并高亮窗口轮廓，鼠标左键点击即可截图" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="Alt + W" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="Window" Text="Alt + W" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="Window" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -746,8 +784,8 @@
                                                 <TextBlock Text="框选屏幕区域后直接提取文字并自动复制到剪贴板" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="未设置" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="OCR" Text="未设置" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="OCR" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -757,8 +795,8 @@
                                                 <TextBlock Text="将剪贴板中的图像作为置顶悬浮窗固定在屏幕上" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="Alt + F3" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="Pin" Text="Alt + F3" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="Pin" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -768,8 +806,8 @@
                                                 <TextBlock Text="将剪贴板图片直接载入全功能标注编辑器，支持画笔、箭头、文字、马赛克编辑" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="Alt + P" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="EditClipboard" Text="Alt + P" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="EditClipboard" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -779,8 +817,8 @@
                                                 <TextBlock Text="9×9 像素级放大镜精准取色，支持一键拷贝 HEX / RGB 颜色代码" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="Alt + Shift + C" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="ColorPicker" Text="Alt + Shift + C" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="ColorPicker" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -790,8 +828,8 @@
                                                 <TextBlock Text="自由框选区域并支持四角拖动调整，一键录制高清 MP4 视频或 GIF 动图" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="Alt + Shift + R" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="ScreenRecord" Text="Alt + Shift + R" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="ScreenRecord" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -801,8 +839,8 @@
                                                 <TextBlock Text="选中任意文字按 Alt+Shift+F 划词翻译，或按 Alt+V 呼出独立翻译窗口" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="Alt + V" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="Translation" Text="Alt + V" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="Translation" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
 
@@ -812,15 +850,15 @@
                                                 <TextBlock Text="呼出剪贴板历史管理器，支持关键词检索与双击快速粘贴" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                                <TextBox Text="Alt + C" Style="{StaticResource KeycapBoxStyle}"/>
-                                                <Button Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0"/>
+                                                <TextBox Tag="ClipboardHistory" Text="Alt + C" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="ClipboardHistory" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
                                             </StackPanel>
                                         </Grid>
                                     </StackPanel>
 
                                     <Separator Background="#F1F5F9" Margin="0,12,0,10"/>
                                     <Grid>
-                                        <TextBlock Text="提示：所有全局热键在后台静默生效。" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center"/>
+                                        <TextBlock Text="提示：点击任一快捷键框直接按下新组合键即可修改，后台实时生效。" FontSize="11.5" Foreground="#64748B" VerticalAlignment="Center"/>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
                                             <Button Content="清空非核心热键" Style="{StaticResource SmallBtnStyle}" Margin="0,0,8,0" Click="BtnClearHotkeys_Click"/>
                                             <Button Content="恢复默认快捷键" Style="{StaticResource AccentBtnStyle}" Click="BtnRestoreHotkeys_Click"/>
@@ -829,7 +867,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- 卡片 6: 关于 ShotX -->
+                            <!-- 卡片 6: 关于 ShotX (去掉检查更新左侧的“支持作者”按钮，去掉“与macOS端1:1完整同步”文案，解决需求 9) -->
                             <Border x:Name="CardAbout" Style="{StaticResource CardBorderStyle}" Margin="0,0,0,4">
                                 <StackPanel>
                                     <Grid Margin="0,0,0,14">
@@ -841,14 +879,13 @@
                                             </StackPanel>
                                         </StackPanel>
                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
-                                            <Button Content="☕ 支持作者" Style="{StaticResource PrimaryPillBtnStyle}" Margin="0,0,8,0" Click="BtnSupport_Click"/>
                                             <Button Content="检查更新" Style="{StaticResource SmallBtnStyle}" Click="BtnCheckUpdate_Click"/>
                                         </StackPanel>
                                     </Grid>
 
                                     <Separator Background="#F1F5F9" Margin="0,0,0,12"/>
 
-                                    <TextBlock Text="核心功能特性 (与 macOS 端 1:1 完整同步):" FontSize="12.5" FontWeight="Bold" Foreground="#1E293B" Margin="0,0,0,8"/>
+                                    <TextBlock Text="核心功能特性:" FontSize="12.5" FontWeight="Bold" Foreground="#1E293B" Margin="0,0,0,8"/>
                                     <TextBlock LineHeight="22" FontSize="11.5" Foreground="#475569" TextWrapping="Wrap">
                                         · 区域 / 窗口 / 全屏 / 定时截图：智能锁定当前鼠标所在显示器，支持四角自由拖拽微调、圆角与阴影。<LineBreak/>
                                         · 改图与 16 项专业标注：支持打开本地图片或剪贴板图片直接标注（矩形、椭圆、箭头、画笔、马赛克/毛玻璃、文字、序号）。<LineBreak/>

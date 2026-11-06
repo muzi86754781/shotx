@@ -10,8 +10,15 @@ struct RecordingOptions {
     var recordWebcam: Bool = false
 }
 
+final class RecordingOptionsModel: ObservableObject {
+    @Published var dimensions: CGSize
+    init(dimensions: CGSize) {
+        self.dimensions = dimensions
+    }
+}
+
 struct RecordingOptionsView: View {
-    let dimensions: CGSize
+    @ObservedObject var model: RecordingOptionsModel
     let onRecordVideo: (RecordingOptions) -> Void
     let onRecordGIF: (RecordingOptions) -> Void
     let onCancel: () -> Void
@@ -146,7 +153,7 @@ struct RecordingOptionsView: View {
 
     private var settingsStrip: some View {
         HStack(spacing: 10) {
-            DimensionDisplay(width: Int(dimensions.width), height: Int(dimensions.height))
+            DimensionDisplay(width: Int(model.dimensions.width), height: Int(model.dimensions.height))
             Spacer(minLength: 6)
             HStack(spacing: 2) {
                 CompactToggle(icon: "mic", binding: $captureMicrophone, enabled: true, tooltip: "麦克风")
