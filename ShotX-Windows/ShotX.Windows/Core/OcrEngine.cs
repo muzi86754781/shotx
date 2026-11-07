@@ -5,6 +5,7 @@ using System.Drawing.Imaging;
 using System.IO;
 using System.Linq;
 using System.Net.Http;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -29,7 +30,40 @@ public static class OcrEngine
             return string.Empty;
         }
 
-        // 1. 优先使用增强预处理后的 Windows 原生离线 OCR (支持 2x~3x 放大与留白边，大幅提升小字号与中英文混合识别率)
+        string engine = PreferencesStore.ActiveOcrEngine ?? "System";
+
+        // 1. 若选择并配置了【百度智能云 OCR】
+        if (engine.Equals("Baidu", StringComparison.OrdinalIgnoreCase) &&
+            !string.IsNullOrWhiteSpace(PreferencesStore.BaiduOcrApiKey) &&
+            !string.IsNullOrWhiteSpace(PreferencesStore.BaiduOcrSecretKey))
+        {
+            try
+            {
+                string baiduResult = await RecognizeWithBaiduAsync(croppedBitmap, PreferencesStore.BaiduOcrApiKey, PreferencesStore.BaiduOcrSecretKey);
+                if (!string.IsNullOrWhiteSpace(baiduResult))
+                {
+                    return baiduResult.Trim();
+                }
+            }
+            catch { }
+        }
+        // 2. 若选择并配置了【有道智云 OCR】
+        else if (engine.Equals("Youdao", StringComparison.OrdinalIgnoreCase) &&
+                 !string.IsNullOrWhiteSpace(PreferencesStore.YoudaoOcrAppKey) &&
+                 !string.IsNullOrWhiteSpace(PreferencesStore.YoudaoOcrAppSecret))
+        {
+            try
+            {
+                string youdaoResult = await RecognizeWithYoudaoAsync(croppedBitmap, PreferencesStore.YoudaoOcrAppKey, PreferencesStore.YoudaoOcrAppSecret);
+                if (!string.IsNullOrWhiteSpace(youdaoResult))
+                {
+                    return youdaoResult.Trim();
+                }
+            }
+            catch { }
+        }
+
+        // 3. 增强预处理后的 Windows 原生离线 OCR (系统离线模式或云端异常后的离线兜底)
         try
         {
             using var enhanced = CreatePreprocessedBitmap(croppedBitmap);
@@ -50,7 +84,7 @@ public static class OcrEngine
         {
         }
 
-        // 2. 自动云端高精度 OCR 兜底 (解决部分精简版 Windows 未安装中文 OCR 语言包导致识别为空的问题)
+        // 4. 自动云端高精度 OCR 兜底 (解决部分精简版 Windows 未安装中文 OCR 语言包导致识别为空的问题)
         try
         {
             string cloudResult = await RecognizeWithCloudFallbackAsync(croppedBitmap);
@@ -63,6 +97,125 @@ public static class OcrEngine
         {
         }
 
+        return string.Empty;
+    }
+
+    public static async Task<string> RecognizeWithBaiduAsync(Bitmap bmp, string apiKey, string secretKey)
+    {
+        string token = await GetBaiduOcrTokenAsync(apiKey, secretKey);
+        if (string.IsNullOrWhiteSpace(token)) return string.Empty;
+
+        using var ms = new MemoryStream();
+        bmp.Save(ms, ImageFormat.Png);
+        string base64 = Convert.ToBase64String(ms.ToArray());
+
+        string url = $"https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic?access_token={token}";
+        var content = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("image", base64)
+        });
+
+        var resp = await _httpClient.PostAsync(url, content);
+        if (!resp.IsSuccessStatusCode) return string.Empty;
+
+        string json = await resp.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.TryGetProperty("words_result", out var results) && results.ValueKind == JsonValueKind.Array)
+        {
+            var sb = new StringBuilder();
+            foreach (var item in results.EnumerateArray())
+            {
+                if (item.TryGetProperty("words", out var w))
+                {
+                    sb.AppendLine(w.GetString());
+                }
+            }
+            return sb.ToString().TrimEnd();
+        }
+        return string.Empty;
+    }
+
+    public static async Task<string> GetBaiduOcrTokenAsync(string apiKey, string secretKey)
+    {
+        string tokenUrl = $"https://aip.baidubce.com/oauth/2.0/token?grant_type=client_credentials&client_id={apiKey.Trim()}&client_secret={secretKey.Trim()}";
+        var resp = await _httpClient.PostAsync(tokenUrl, null);
+        if (!resp.IsSuccessStatusCode) return string.Empty;
+
+        string json = await resp.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.TryGetProperty("access_token", out var tok))
+        {
+            return tok.GetString() ?? string.Empty;
+        }
+        return string.Empty;
+    }
+
+    public static async Task<(bool ok, string msg)> VerifyBaiduOcrAsync(string apiKey, string secretKey)
+    {
+        try
+        {
+            string token = await GetBaiduOcrTokenAsync(apiKey, secretKey);
+            if (!string.IsNullOrWhiteSpace(token))
+            {
+                return (true, "验证成功！百度智能云 OCR 通信正常");
+            }
+            return (false, "验证失败：API Key 或 Secret Key 无效，请核对。");
+        }
+        catch (Exception ex)
+        {
+            return (false, $"连接失败: {ex.Message}");
+        }
+    }
+
+    public static async Task<string> RecognizeWithYoudaoAsync(Bitmap bmp, string appKey, string appSecret)
+    {
+        using var ms = new MemoryStream();
+        bmp.Save(ms, ImageFormat.Png);
+        string base64 = Convert.ToBase64String(ms.ToArray());
+        string salt = Guid.NewGuid().ToString("N");
+        string curtime = DateTimeOffset.UtcNow.ToUnixTimeSeconds().ToString();
+        string signStr = appKey.Trim() + (base64.Length <= 20 ? base64 : (base64.Substring(0, 10) + base64.Length + base64.Substring(base64.Length - 10))) + salt + curtime + appSecret.Trim();
+        using var sha256 = SHA256.Create();
+        byte[] hash = sha256.ComputeHash(Encoding.UTF8.GetBytes(signStr));
+        var sbSign = new StringBuilder();
+        foreach (byte b in hash) sbSign.Append(b.ToString("x2"));
+        string sign = sbSign.ToString();
+
+        var form = new FormUrlEncodedContent(new[]
+        {
+            new KeyValuePair<string, string>("img", base64),
+            new KeyValuePair<string, string>("langType", "auto"),
+            new KeyValuePair<string, string>("detectType", "10012"),
+            new KeyValuePair<string, string>("imageType", "1"),
+            new KeyValuePair<string, string>("appKey", appKey.Trim()),
+            new KeyValuePair<string, string>("salt", salt),
+            new KeyValuePair<string, string>("sign", sign),
+            new KeyValuePair<string, string>("signType", "v3"),
+            new KeyValuePair<string, string>("curtime", curtime)
+        });
+
+        var resp = await _httpClient.PostAsync("https://openapi.youdao.com/ocrapi", form);
+        if (!resp.IsSuccessStatusCode) return string.Empty;
+        string json = await resp.Content.ReadAsStringAsync();
+        using var doc = JsonDocument.Parse(json);
+        if (doc.RootElement.TryGetProperty("Result", out var resObj) && resObj.TryGetProperty("regions", out var regions))
+        {
+            var sb = new StringBuilder();
+            foreach (var reg in regions.EnumerateArray())
+            {
+                if (reg.TryGetProperty("lines", out var lines))
+                {
+                    foreach (var line in lines.EnumerateArray())
+                    {
+                        if (line.TryGetProperty("text", out var t))
+                        {
+                            sb.AppendLine(t.GetString());
+                        }
+                    }
+                }
+            }
+            return sb.ToString().TrimEnd();
+        }
         return string.Empty;
     }
 

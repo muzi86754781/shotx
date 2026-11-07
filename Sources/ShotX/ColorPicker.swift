@@ -110,6 +110,7 @@ final class ColorPickerOverlayController {
                 backing: .buffered,
                 defer: false
             )
+            win.isReleasedWhenClosed = false
             win.level = .floating
             win.backgroundColor = .clear
             win.isOpaque = false
@@ -176,14 +177,14 @@ final class ColorPickerOverlayController {
         pb.clearContents()
         pb.setString(formattedColor, forType: .string)
 
-        dismiss()
-
         SoundEffect.shared.playShutter()
         ToastController.shared.show(
             message: "已复制 \(formattedColor)",
-            icon: "eyedropper.halffull",
+            icon: "eyedropper",
             tint: color
         )
+
+        dismiss()
     }
 
     func dismiss() {
@@ -191,14 +192,21 @@ final class ColorPickerOverlayController {
             NSEvent.removeMonitor(monitor)
             keyMonitor = nil
         }
-        for w in windows {
-            CaptureExclusions.unregister(w)
-            w.orderOut(nil)
-            w.contentView = nil
-            w.close()
-        }
+        let closingWindows = windows
         windows.removeAll()
         overlayViews.removeAll()
+
+        for w in closingWindows {
+            CaptureExclusions.unregister(w)
+            w.orderOut(nil)
+        }
+
+        DispatchQueue.main.async {
+            for w in closingWindows {
+                w.contentView = nil
+                w.close()
+            }
+        }
     }
 }
 
@@ -266,6 +274,7 @@ private final class ColorPickerOverlayView: NSView {
     }
 
     override func mouseDown(with event: NSEvent) {
+        currentMousePoint = convert(event.locationInWindow, from: nil)
         confirmCurrentColor()
     }
 
@@ -292,9 +301,13 @@ private final class ColorPickerOverlayView: NSView {
             return (0, 0, 0, 1.0, .black)
         }
 
+        let totalLen = CFDataGetLength(data)
         let bpr = screenshot.bytesPerRow
         let bpp = screenshot.bitsPerPixel / 8
         let offset = py * bpr + px * bpp
+        guard offset >= 0 && offset + 4 <= totalLen else {
+            return (0, 0, 0, 1.0, .black)
+        }
 
         var r = 0, g = 0, b = 0, a = 255
         if bpp >= 4 {

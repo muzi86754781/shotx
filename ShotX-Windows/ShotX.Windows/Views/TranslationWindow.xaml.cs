@@ -36,12 +36,31 @@ public partial class TranslationWindow : Window
         _isReady = true;
         Loaded += (_, _) =>
         {
+            UpdateActiveEngineBadge();
             TxtSource?.Focus();
             if (!string.IsNullOrWhiteSpace(TxtSource?.Text))
             {
                 TriggerTranslation();
             }
         };
+    }
+
+    private void UpdateActiveEngineBadge()
+    {
+        string engine = PreferencesStore.ActiveTranslationEngine ?? "BuiltIn";
+        string displayName = engine switch
+        {
+            "Baidu" => "百度翻译",
+            "BuiltIn" => "内置免密",
+            "Google" => "谷歌翻译",
+            "DeepL" => "DeepL",
+            "OpenAI" => "OpenAI",
+            _ => engine
+        };
+        if (TxtActiveEngineBadge != null)
+        {
+            TxtActiveEngineBadge.Text = displayName;
+        }
     }
 
     public TranslationWindow(string sourceText) : this()

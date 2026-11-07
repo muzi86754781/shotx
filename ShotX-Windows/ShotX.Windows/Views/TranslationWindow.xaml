@@ -188,6 +188,9 @@
                               Data="M 9,2 L 15,2 L 15,4 L 13,4 L 13,9 L 16,12 L 16,14 L 13,14 L 13,21 L 11,21 L 11,14 L 8,14 L 8,12 L 11,9 L 11,4 L 9,4 Z"/>
                     </Button>
                     <TextBlock Text="ShotX 智能翻译" FontSize="12.5" FontWeight="Bold" Foreground="#334155" VerticalAlignment="Center" Margin="6,0,0,0"/>
+                    <Border Background="#EFF6FF" BorderBrush="#BFDBFE" BorderThickness="1" CornerRadius="4" Padding="6,1" Margin="8,0,0,0" VerticalAlignment="Center">
+                        <TextBlock x:Name="TxtActiveEngineBadge" Text="百度翻译" FontSize="10.5" FontWeight="SemiBold" Foreground="#2563EB"/>
+                    </Border>
                 </StackPanel>
 
                 <!-- 右侧：历史、设置、关闭 -->

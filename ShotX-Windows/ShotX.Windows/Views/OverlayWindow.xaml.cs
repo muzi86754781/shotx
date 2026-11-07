@@ -116,6 +116,8 @@ public partial class OverlayWindow : Window
     private static extern IntPtr WindowFromPoint(System.Drawing.Point Point);
     [DllImport("user32.dll")]
     private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(uint dwFlags, uint dx, uint dy, int dwData, UIntPtr dwExtraInfo);
 
     private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     private const uint SWP_SHOWWINDOW = 0x0040;
@@ -123,6 +125,7 @@ public partial class OverlayWindow : Window
     private const int WS_EX_TRANSPARENT = 0x00000020;
     private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
     private const uint WM_MOUSEWHEEL = 0x020A;
+    private const uint MOUSEEVENTF_WHEEL = 0x0800;
     private bool _isStitchingInProgress = false;
 
     // 8 Sub-Toolbar Preset Colors
@@ -1794,68 +1797,72 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private async void Window_MouseWheel(object sender, MouseWheelEventArgs e)
+    private void Window_MouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (_mode == CaptureMode.Scrolling)
         {
-            var p = e.GetPosition(this);
-            if (_selectionRect.Contains(p))
+            e.Handled = true;
+            _ = TriggerHardwareScrollStepAsync(e.Delta);
+        }
+    }
+
+    private async Task TriggerHardwareScrollStepAsync(int delta)
+    {
+        if (_isStitchingInProgress) return;
+        _isStitchingInProgress = true;
+
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            int oldExStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+
+            // 1. 穿透覆层，让系统硬件级滚轮事件直达底层真实应用 (Chrome/Edge/Word/PDF)
+            SetWindowLong(hwnd, GWL_EXSTYLE, oldExStyle | WS_EX_TRANSPARENT);
+
+            mouse_event(MOUSEEVENTF_WHEEL, 0, 0, delta, UIntPtr.Zero);
+
+            // 2. 同时向底层窗口句柄派发原生 WM_MOUSEWHEEL 双重保险
+            var screenPt = System.Windows.Forms.Cursor.Position;
+            IntPtr targetHwnd = WindowFromPoint(new System.Drawing.Point(screenPt.X, screenPt.Y));
+            if (targetHwnd != IntPtr.Zero && targetHwnd != hwnd)
             {
-                e.Handled = true;
-                if (_isStitchingInProgress) return;
-                _isStitchingInProgress = true;
+                IntPtr wParam = (IntPtr)((delta << 16) & 0xFFFFFFFF);
+                IntPtr lParam = (IntPtr)((screenPt.Y << 16) | (screenPt.X & 0xFFFF));
+                PostMessage(targetHwnd, WM_MOUSEWHEEL, wParam, lParam);
+            }
 
-                try
+            // 3. 适当延时等待目标应用完成画面滚动与重新渲染
+            await System.Threading.Tasks.Task.Delay(85);
+
+            SetWindowLong(hwnd, GWL_EXSTYLE, oldExStyle);
+
+            // 4. 抓取选区最新的 live 画面切片并无缝垂直拼接
+            var fresh = CaptureCurrentSelectionLive();
+            if (fresh != null)
+            {
+                var res = _stitcher.AppendSlice(fresh);
+                fresh.Dispose();
+                if (res.ReachedLimit)
                 {
-                    var screenPt = System.Windows.Forms.Cursor.Position;
-                    var hwnd = new WindowInteropHelper(this).Handle;
-
-                    // 1. 穿透获取光标下方真实目标窗口句柄 (Chrome/Edge/Word/PDF)
-                    int oldExStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
-                    SetWindowLong(hwnd, GWL_EXSTYLE, oldExStyle | WS_EX_TRANSPARENT);
-
-                    IntPtr targetHwnd = WindowFromPoint(new System.Drawing.Point(screenPt.X, screenPt.Y));
-
-                    SetWindowLong(hwnd, GWL_EXSTYLE, oldExStyle);
-
-                    if (targetHwnd == IntPtr.Zero || targetHwnd == hwnd)
-                    {
-                        targetHwnd = App.LastExternalForegroundHwnd;
-                    }
-
-                    // 2. 向目标底层窗口发送原生 WM_MOUSEWHEEL 滚轮消息让页面真实滚动
-                    if (targetHwnd != IntPtr.Zero)
-                    {
-                        IntPtr wParam = (IntPtr)(e.Delta << 16);
-                        IntPtr lParam = (IntPtr)((screenPt.Y << 16) | (screenPt.X & 0xFFFF));
-                        PostMessage(targetHwnd, WM_MOUSEWHEEL, wParam, lParam);
-                    }
-
-                    // 3. 等待底层页面渲染滚动位移 (55ms)
-                    await System.Threading.Tasks.Task.Delay(55);
-
-                    // 4. 从屏幕设备上下文抓取选区最新的 live 画面切片并拼接 (解决需求 5)
-                    var fresh = CaptureCurrentSelectionLive();
-                    if (fresh != null)
-                    {
-                        var res = _stitcher.AppendSlice(fresh);
-                        try { fresh.Dispose(); } catch { }
-                        if (res.ReachedLimit)
-                        {
-                            ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
-                        }
-                        else if (res.DidStitch)
-                        {
-                            Render();
-                        }
-                    }
+                    ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
                 }
-                catch { }
-                finally
+                else if (res.DidStitch)
                 {
-                    _isStitchingInProgress = false;
+                    Render();
                 }
             }
+        }
+        catch { }
+        finally
+        {
+            try
+            {
+                var hwnd = new WindowInteropHelper(this).Handle;
+                int oldExStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+                SetWindowLong(hwnd, GWL_EXSTYLE, oldExStyle & ~WS_EX_TRANSPARENT);
+            }
+            catch { }
+            _isStitchingInProgress = false;
         }
     }
 
@@ -2303,7 +2310,7 @@ public partial class OverlayWindow : Window
         var initial = CaptureCurrentSelectionLive() ?? GetCroppedSelectionBitmap();
         _stitcher.Initialize(initial);
         Render();
-        ModernToast.ShowInfo("已开启长截图：在框选区域内滚动滚轮即可拼接，点击对勾保存。");
+        ModernToast.ShowInfo("长截图已开启：滚动鼠标滚轮或按 ↓ 键即可向下滚动拼接，点击对勾保存。");
     }
 
     private Bitmap? CaptureCurrentSelectionLive()
@@ -2403,6 +2410,28 @@ public partial class OverlayWindow : Window
         {
             Close();
             return;
+        }
+
+        if (_mode == CaptureMode.Scrolling)
+        {
+            if (e.Key == Key.Down || e.Key == Key.PageDown || e.Key == Key.Space)
+            {
+                e.Handled = true;
+                _ = TriggerHardwareScrollStepAsync(-120);
+                return;
+            }
+            if (e.Key == Key.Up || e.Key == Key.PageUp)
+            {
+                e.Handled = true;
+                _ = TriggerHardwareScrollStepAsync(120);
+                return;
+            }
+            if (e.Key == Key.Enter)
+            {
+                e.Handled = true;
+                FinishAndCopy();
+                return;
+            }
         }
 
         // Tab / C / 空格键循环切换颜色格式 (HEX, RGB, HSL, HEXA) - 解决需求 2

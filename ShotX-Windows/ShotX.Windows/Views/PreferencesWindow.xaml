@@ -331,7 +331,7 @@
                         <Image Source="pack://application:,,,/Resources/icon.png" Width="22" Height="22" RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,10,0"/>
                         <TextBlock Text="ShotX 设置中心" FontSize="13.5" FontWeight="Bold" Foreground="#0F172A" VerticalAlignment="Center"/>
                         <Border Background="#E0F2FE" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="v1.9.26" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7"/>
+                            <TextBlock Text="v1.9.27" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7"/>
                         </Border>
                     </StackPanel>
 
@@ -827,14 +827,22 @@
                                                 <!-- 百度翻译配置 -->
                                                 <StackPanel x:Name="PnlCfgTransBaidu" Visibility="Visible">
                                                     <Grid Margin="0,0,0,10">
-                                                        <TextBlock Text="APP ID:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <Border Margin="85,0,0,0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="APP ID:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
                                                             <TextBox x:Name="TxtBaiduAppId" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" TextChanged="TransConfig_TextChanged"/>
                                                         </Border>
                                                     </Grid>
                                                     <Grid Margin="0,0,0,12">
-                                                        <TextBlock Text="Secret Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <Border Margin="85,0,0,0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="Secret Key:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
                                                             <Grid>
                                                                 <PasswordBox x:Name="PwdBaiduSecret" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" PasswordChanged="BaiduSecret_PasswordChanged"/>
                                                                 <TextBox x:Name="TxtBaiduSecret" Visibility="Collapsed" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" TextChanged="TransConfig_TextChanged"/>
@@ -871,8 +879,12 @@
                                                 <!-- 谷歌翻译配置 -->
                                                 <StackPanel x:Name="PnlCfgTransGoogle" Visibility="Collapsed">
                                                     <Grid Margin="0,0,0,12">
-                                                        <TextBlock Text="API Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <Border Margin="85,0,0,0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="API Key:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
                                                             <Grid>
                                                                 <PasswordBox x:Name="PwdGoogleKey" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" PasswordChanged="GoogleKey_PasswordChanged"/>
                                                                 <TextBox x:Name="TxtGoogleKey" Visibility="Collapsed" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" TextChanged="TransConfig_TextChanged"/>
@@ -894,8 +906,12 @@
                                                 <!-- DeepL 翻译配置 -->
                                                 <StackPanel x:Name="PnlCfgTransDeepL" Visibility="Collapsed">
                                                     <Grid Margin="0,0,0,12">
-                                                        <TextBlock Text="Auth Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <Border Margin="85,0,0,0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="Auth Key:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
                                                             <Grid>
                                                                 <PasswordBox x:Name="PwdDeepLKey" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" PasswordChanged="DeepLKey_PasswordChanged"/>
                                                                 <TextBox x:Name="TxtDeepLKey" Visibility="Collapsed" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" TextChanged="TransConfig_TextChanged"/>
@@ -917,8 +933,12 @@
                                                 <!-- OpenAI 翻译配置 -->
                                                 <StackPanel x:Name="PnlCfgTransOpenAI" Visibility="Collapsed">
                                                     <Grid Margin="0,0,0,8">
-                                                        <TextBlock Text="API Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <Border Margin="85,0,0,0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="API Key:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
                                                             <Grid>
                                                                 <PasswordBox x:Name="PwdOpenAIKey" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" PasswordChanged="OpenAIKey_PasswordChanged"/>
                                                                 <TextBox x:Name="TxtOpenAIKey" Visibility="Collapsed" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" TextChanged="TransConfig_TextChanged"/>
@@ -927,12 +947,24 @@
                                                         </Border>
                                                     </Grid>
                                                     <Grid Margin="0,0,0,8">
-                                                        <TextBlock Text="Base URL:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <TextBox x:Name="TxtOpenAIBaseUrl" Margin="85,0,0,0" Text="https://api.openai.com/v1" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" TextChanged="TransConfig_TextChanged"/>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="Base URL:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <TextBox x:Name="TxtOpenAIBaseUrl" BorderThickness="0" Background="Transparent" Text="https://api.openai.com/v1" VerticalAlignment="Center" Padding="8,0" FontSize="11.5" TextChanged="TransConfig_TextChanged"/>
+                                                        </Border>
                                                     </Grid>
                                                     <Grid Margin="0,0,0,10">
-                                                        <TextBlock Text="Model:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <TextBox x:Name="TxtOpenAIModel" Margin="85,0,0,0" Text="gpt-4o-mini" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" TextChanged="TransConfig_TextChanged"/>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="Model:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <TextBox x:Name="TxtOpenAIModel" BorderThickness="0" Background="Transparent" Text="gpt-4o-mini" VerticalAlignment="Center" Padding="8,0" FontSize="11.5" TextChanged="TransConfig_TextChanged"/>
+                                                        </Border>
                                                     </Grid>
                                                     <Grid>
                                                         <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" HorizontalAlignment="Left" Click="BtnVerifyOpenAITrans_Click"/>
@@ -1035,12 +1067,24 @@
                                                 <!-- 百度智能云 OCR 配置 -->
                                                 <StackPanel x:Name="PnlCfgOcrBaidu" Visibility="Collapsed">
                                                     <Grid Margin="0,0,0,8">
-                                                        <TextBlock Text="API Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <TextBox x:Name="TxtBaiduOcrKey" Margin="85,0,0,0" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" TextChanged="OcrConfig_TextChanged"/>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="API Key:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <TextBox x:Name="TxtBaiduOcrKey" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="11.5" TextChanged="OcrConfig_TextChanged"/>
+                                                        </Border>
                                                     </Grid>
                                                     <Grid Margin="0,0,0,10">
-                                                        <TextBlock Text="Secret Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <PasswordBox x:Name="PwdBaiduOcrSecret" Margin="85,0,0,0" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" PasswordChanged="BaiduOcrSecret_PasswordChanged"/>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="Secret Key:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <PasswordBox x:Name="PwdBaiduOcrSecret" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="11.5" PasswordChanged="BaiduOcrSecret_PasswordChanged"/>
+                                                        </Border>
                                                     </Grid>
                                                     <Grid>
                                                         <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" HorizontalAlignment="Left" Click="BtnVerifyBaiduOcr_Click"/>
@@ -1053,12 +1097,24 @@
                                                 <!-- 有道智云 OCR 配置 -->
                                                 <StackPanel x:Name="PnlCfgOcrYoudao" Visibility="Collapsed">
                                                     <Grid Margin="0,0,0,8">
-                                                        <TextBlock Text="App Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <TextBox x:Name="TxtYoudaoOcrKey" Margin="85,0,0,0" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" TextChanged="OcrConfig_TextChanged"/>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="App Key:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <TextBox x:Name="TxtYoudaoOcrKey" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="11.5" TextChanged="OcrConfig_TextChanged"/>
+                                                        </Border>
                                                     </Grid>
                                                     <Grid Margin="0,0,0,10">
-                                                        <TextBlock Text="App Secret:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
-                                                        <PasswordBox x:Name="PwdYoudaoOcrSecret" Margin="85,0,0,0" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" PasswordChanged="YoudaoOcrSecret_PasswordChanged"/>
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="80"/>
+                                                            <ColumnDefinition Width="*"/>
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Grid.Column="0" Text="App Secret:" HorizontalAlignment="Left" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Grid.Column="1" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <PasswordBox x:Name="PwdYoudaoOcrSecret" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="11.5" PasswordChanged="YoudaoOcrSecret_PasswordChanged"/>
+                                                        </Border>
                                                     </Grid>
                                                     <Grid>
                                                         <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" HorizontalAlignment="Left" Click="BtnVerifyYoudaoOcr_Click"/>
@@ -1250,7 +1306,7 @@
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                             <Image Source="pack://application:,,,/Resources/icon.png" Width="48" Height="48" RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,14,0"/>
                                             <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="ShotX for Windows  v1.9.26" FontSize="16" FontWeight="Bold" Foreground="#0F172A"/>
+                                                <TextBlock Text="ShotX for Windows  v1.9.27" FontSize="16" FontWeight="Bold" Foreground="#0F172A"/>
                                                 <TextBlock Text="开发者: @muzi86754781  ·  github.com/muzi86754781/shotx  ·  QQ: 285351298" FontSize="11.5" Foreground="#64748B" Margin="0,4,0,0"/>
                                             </StackPanel>
                                         </StackPanel>

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.26)'
+        description: 'Release version (e.g. 1.9.27)'
         required: false
-        default: '1.9.26'
+        default: '1.9.27'
 
 concurrency:
   group: release
@@ -41,7 +41,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.26"
+            VERSION="1.9.27"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -76,12 +76,12 @@ jobs:
             - **Windows 绿色便携版 (Portable)**: [ShotX-Windows-${{ env.VERSION }}-Portable.zip](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-Windows-${{ env.VERSION }}-Portable.zip)
             - **macOS 安装包 (DMG)**: [ShotX-${{ env.VERSION }}.dmg](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-${{ env.VERSION }}.dmg)
 
-            #### 🚀 本次更新亮点与修复 (v1.9.26)
-            1. **macOS 麦克风权限假弹窗与卡死彻底根治 (macOS)**：去除 NSSound 加载 CoreAudio 驱动组件，改用 AudioServicesPlaySystemSound(1108) 系统声音守护服务播放快门音，纯系统输出不触碰音频输入设备；拾色器覆盖窗体支持窗口焦点与本地事件监听，Tab/C/Space 切换颜色格式流畅响应且绝不死锁。
-            2. **现代化 Fluent 悬浮提示框与快捷键解耦 (Windows)**：全面替代原生系统 MessageBox 阻塞弹窗，全域采用深色微透圆角 Toast 悬浮卡片，平滑淡入淡出，自动静默关闭，零系统叮咚声打扰；偏好设置中将“划词翻译”与“输入翻译”快捷键完全分离，支持独立自定义设置。
-            3. **OCR 与翻译多平台引擎可配置与凭证持久化 (Windows & macOS)**：1:1 还原参考设计图布局，左侧引擎列表高亮选中与状态标，右侧配置 APP ID、Secret Key 等凭据，支持密码显示/隐藏切换、在线一键连通性验证与控制台快速申请链接。
-            4. **修复保存图片时误触发“访问麦克风” (macOS)**：彻底根除保存截图或改图时调用底层 CoreAudio 引起的 TCC 麦克风权限误触发。
-            5. **长截图滚轮穿透滚动与实时切片拼接 (Windows)**：长截图状态下滚轮消息自动穿透覆层并向底层实际窗口转发原生 WM_MOUSEWHEEL 滚轮消息，同时从实时屏幕设备上下文动态抓取最新滚动画面并自动无缝拼接。
+            #### 🚀 本次更新亮点与修复 (v1.9.27)
+            1. **macOS 拾色器点击闪退根除 (macOS)**：修复拾色器在鼠标点击确认时窗口被同步过早销毁导致的 TouchBar 悬垂指针 EXC_BAD_ACCESS 崩溃；完善异步安全窗口关闭与像素提取边界保护，点击取色立即复制并展示居中 Toast。
+            2. **Windows 长截图滚轮穿透滚动与实时拼接彻底打通 (Windows)**：改用 Windows 硬件级注入真实滚轮事件，无论 Chrome、Edge、Word、微信还是 PDF，都能 100% 真实滚动页面并实时无缝拼接；新增方向下键、PageDown、空格键等辅助滚动热键支持。
+            3. **偏好设置多平台配置文本框标题完整展示 (Windows)**：彻底重构多语言机器翻译平台与 OCR 识别引擎的输入网格布局，采用双列绝对栅格分割，标题文本永不被输入框白色背景覆盖遮挡。
+            4. **OCR 与翻译平台选择后全局真正生效 (Windows)**：打通平台切换与识别/翻译业务调度链路，选择百度/有道/微软原生即刻全局生效；百度云 OCR 增加实时 OAuth Token 连通性测试。
+            5. **独立翻译窗口实时标识当前激活引擎 (Windows)**：顶栏清晰标注当前生效的翻译引擎（如【百度翻译】、【谷歌翻译】、【内置免密】等），方便直观掌控。
           draft: false
           prerelease: false
           files: dist/ShotX-*.dmg

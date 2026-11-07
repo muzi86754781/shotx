@@ -626,6 +626,16 @@ public partial class PreferencesWindow : Window
         {
             PreferencesStore.ActiveTranslationEngine = engine;
             PreferencesStore.Save();
+            string name = engine switch
+            {
+                "Baidu" => "百度翻译",
+                "BuiltIn" => "内置免密翻译",
+                "Google" => "谷歌翻译",
+                "DeepL" => "DeepL 翻译",
+                "OpenAI" => "OpenAI / 兼容大模型",
+                _ => engine
+            };
+            ModernToast.ShowSuccess($"已生效：当前机器翻译使用【{name}】");
         }
 
         // 重置所有翻译行样式
@@ -658,6 +668,14 @@ public partial class PreferencesWindow : Window
         {
             PreferencesStore.ActiveOcrEngine = engine;
             PreferencesStore.Save();
+            string name = engine switch
+            {
+                "System" => "Windows 原生离线 OCR",
+                "Baidu" => "百度智能云 OCR",
+                "Youdao" => "有道智云 OCR",
+                _ => engine
+            };
+            ModernToast.ShowSuccess($"已生效：当前文字识别使用【{name}】");
         }
 
         if (RowOcrSystem != null) { RowOcrSystem.Background = engine == "System" ? SelectedRowBrush : TransparentBrush; ChkOcrSystem.IsChecked = engine == "System"; TxtTitleOcrSystem.Foreground = engine == "System" ? WhiteTextBrush : DarkTextBrush; }
@@ -865,14 +883,16 @@ public partial class PreferencesWindow : Window
         ModernToast.ShowSuccess("Windows 原生 OCR 引擎已就绪，支持离线高速识别！");
     }
 
-    private void BtnVerifyBaiduOcr_Click(object sender, RoutedEventArgs e)
+    private async void BtnVerifyBaiduOcr_Click(object sender, RoutedEventArgs e)
     {
         if (string.IsNullOrWhiteSpace(PreferencesStore.BaiduOcrApiKey) || string.IsNullOrWhiteSpace(PreferencesStore.BaiduOcrSecretKey))
         {
             ModernToast.ShowWarning("请先输入百度智能云 OCR 的 API Key 与 Secret Key");
             return;
         }
-        ModernToast.ShowSuccess("百度智能云 OCR 配置已保存并就绪！");
+        var (ok, msg) = await OcrEngine.VerifyBaiduOcrAsync(PreferencesStore.BaiduOcrApiKey, PreferencesStore.BaiduOcrSecretKey);
+        if (ok) ModernToast.ShowSuccess(msg);
+        else ModernToast.ShowError(msg);
     }
 
     private void BtnVerifyYoudaoOcr_Click(object sender, RoutedEventArgs e)
