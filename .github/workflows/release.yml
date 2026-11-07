@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.24)'
+        description: 'Release version (e.g. 1.9.25)'
         required: false
-        default: '1.9.24'
+        default: '1.9.25'
 
 concurrency:
   group: release
@@ -41,7 +41,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.24"
+            VERSION="1.9.25"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -76,16 +76,14 @@ jobs:
             - **Windows 绿色便携版 (Portable)**: [ShotX-Windows-${{ env.VERSION }}-Portable.zip](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-Windows-${{ env.VERSION }}-Portable.zip)
             - **macOS 安装包 (DMG)**: [ShotX-${{ env.VERSION }}.dmg](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-${{ env.VERSION }}.dmg)
 
-            #### 🚀 本次更新亮点与修复
-            1. **Windows 区域截图标注工具栏**：9 个标注工具采用矢量几何图标，展开子工具栏统一下移至主工具栏下方，长截图与保存图标化，增强 OCR 识别与空结果友好提示。
-            2. **Windows 拾色器优化**：进入拾色器模式自动隐藏引导卡片，界面纯净。
-            3. **macOS 屏幕录制**：框选区域后无需点击确定/取消，直接显示录屏工具栏，保留 4 角拖拽手柄。
-            4. **Windows 屏幕录制 5 大功能**：支持麦克风、系统声音、光标捕获、左右键点击波纹高亮、左下角圆形可拖拽摄像头预览。
-            5. **Windows 声音录制**：窗体高度适中无遮挡，新增最小化功能。
-            6. **Windows 翻译与划词**：划词翻译自动唤醒并提取选中文本，下拉框药丸美化与行对齐，右上角历史记录单例唤起设置中心对应项。
-            7. **Windows 剪贴板历史**：双击记录直接粘贴至光标处，悬浮显隐操作图标，修复删除刷新与操作提示。
-            8. **Windows 偏好设置中心**：全局快捷键设置/清除/恢复全面生效，移除多余按钮文案，独立搜索行并美化历史卡片。
-            9. **Windows 托盘右键菜单**：1:1 对标 macOS，全项矢量图标，首项“全能截图”高亮蓝色药丸，快捷键精准靠右对齐。
+            #### 🚀 本次更新亮点与修复 (v1.9.25)
+            1. **声音录制自主控制 (Windows & macOS)**：启动声音录制后进入准备就绪状态，由用户自主点击“开始录制”、“暂停/继续”与“停止并保存”，不再自动强行录音。
+            2. **拾色器 9×9 放大镜与格式切换 (Windows & macOS)**：macOS 端实现 9×9 像素网格、准星及颜色卡片预览；两端均支持通过快捷键（Tab / C / Space）循环切换 HEX、RGB、HSL、HEXA 格式。
+            3. **翻译双向智能检测与结果互换 (Windows)**：自动检测中文翻译为英文、检测英文翻译为中文；点击互换按钮将译文框内容置入输入框并立即触发反向翻译。
+            4. **剪贴板历史双击直接粘贴 (Windows)**：双击任意剪贴板历史记录直接模拟粘贴至记事本等当前外部软件光标所在处，带重试与修饰键释放保护。
+            5. **设置中心分类选项卡无遮挡 (Windows)**：历史记录分类选项卡独占首行宽敞排列，“清空当前分类”移至搜索统计同行，彻底避免遮挡。
+            6. **托盘右键菜单纯净展示 (Windows)**：全局快捷键默认全部留空供用户自主定义，未设置快捷键项不再显示“未设置”文本，视觉更干净统一。
+            7. **历史记录卡片 1:1 对标 macOS (Windows)**：新增截图多媒体缩略图与视频角标，翻译记录支持中英文双语对照展示并可一键打开独立翻译窗口。
           draft: false
           prerelease: false
           files: dist/ShotX-*.dmg

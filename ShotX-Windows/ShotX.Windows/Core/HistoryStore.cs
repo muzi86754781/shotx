@@ -72,6 +72,60 @@ public class HistoryItem
 
     public bool HasFile => !string.IsNullOrWhiteSpace(FilePath) && File.Exists(FilePath);
 
+    public bool HasImageThumbnail => !string.IsNullOrWhiteSpace(FilePath) &&
+                                     File.Exists(FilePath) &&
+                                     (FilePath.EndsWith(".png", StringComparison.OrdinalIgnoreCase) ||
+                                      FilePath.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase) ||
+                                      FilePath.EndsWith(".jpeg", StringComparison.OrdinalIgnoreCase) ||
+                                      FilePath.EndsWith(".bmp", StringComparison.OrdinalIgnoreCase));
+
+    public bool IsMedia => Type == HistoryType.ScreenRecord;
+
+    public bool IsAudio => Type == HistoryType.AudioRecord;
+
+    public bool IsTranslation => Type == HistoryType.Translation;
+
+    public System.Windows.Visibility ImageThumbnailVisibility =>
+        HasImageThumbnail ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+    public System.Windows.Visibility PlaceholderBadgeVisibility =>
+        HasImageThumbnail ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+
+    public System.Windows.Visibility MediaBadgeVisibility =>
+        IsMedia ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+    public System.Windows.Visibility TranslationCardVisibility =>
+        IsTranslation ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
+
+    public System.Windows.Visibility StandardCardVisibility =>
+        IsTranslation ? System.Windows.Visibility.Collapsed : System.Windows.Visibility.Visible;
+
+    public string TranslationSource
+    {
+        get
+        {
+            if (Type != HistoryType.Translation || string.IsNullOrEmpty(Content)) return Content ?? "";
+            int idx = Content.IndexOf("  ➔  ", StringComparison.Ordinal);
+            if (idx >= 0) return Content[..idx].Trim();
+            int idx2 = Content.IndexOf(" -> ", StringComparison.Ordinal);
+            if (idx2 >= 0) return Content[..idx2].Trim();
+            return Content;
+        }
+    }
+
+    public string TranslationTarget
+    {
+        get
+        {
+            if (Type != HistoryType.Translation || string.IsNullOrEmpty(Content)) return "";
+            int idx = Content.IndexOf("  ➔  ", StringComparison.Ordinal);
+            if (idx >= 0) return Content[(idx + 5)..].Trim();
+            int idx2 = Content.IndexOf(" -> ", StringComparison.Ordinal);
+            if (idx2 >= 0) return Content[(idx2 + 4)..].Trim();
+            return "";
+        }
+    }
+
     public System.Windows.Visibility FileActionVisibility =>
         HasFile ? System.Windows.Visibility.Visible : System.Windows.Visibility.Collapsed;
 

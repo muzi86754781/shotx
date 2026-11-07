@@ -36,7 +36,7 @@ public partial class AboutWindow : Window
             using var doc = JsonDocument.Parse(json);
             string tagName = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
 
-            if (!string.IsNullOrEmpty(tagName) && tagName != "v1.9.24")
+            if (!string.IsNullOrEmpty(tagName) && tagName != "v1.9.25")
             {
                 if (MessageBox.Show($"发现新版本 {tagName}，是否前往 GitHub 下载最新版？", "检查更新", MessageBoxButton.YesNo, MessageBoxImage.Information) == MessageBoxResult.Yes)
                 {
@@ -45,12 +45,12 @@ public partial class AboutWindow : Window
             }
             else
             {
-                MessageBox.Show("当前已是最新版本 (v1.9.24)。", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+                MessageBox.Show("当前已是最新版本 (v1.9.25)。", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
             }
         }
         catch
         {
-            MessageBox.Show("当前已是最新版本 (v1.9.24)。", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+            MessageBox.Show("当前已是最新版本 (v1.9.25)。", "检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
         }
     }
 

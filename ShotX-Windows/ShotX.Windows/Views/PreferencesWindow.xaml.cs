@@ -284,6 +284,14 @@ public partial class PreferencesWindow : Window
     {
         if (sender is Button btn && btn.Tag is HistoryItem item)
         {
+            // 翻译记录：直接唤起翻译窗口并显示原文与译文 (解决需求 7)
+            if (item.Type == HistoryType.Translation)
+            {
+                var app = (App)System.Windows.Application.Current;
+                app.OpenOrUpdateTranslationWindowWithResult(item.TranslationSource, item.TranslationTarget);
+                return;
+            }
+
             if (!string.IsNullOrWhiteSpace(item.FilePath) && File.Exists(item.FilePath))
             {
                 try
@@ -573,7 +581,7 @@ public partial class PreferencesWindow : Window
 
     private void BtnCheckUpdate_Click(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show("当前已是最新版本 ShotX v1.9.24！", "ShotX 检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show("当前已是最新版本 ShotX v1.9.25！", "ShotX 检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void BtnExit_Click(object sender, RoutedEventArgs e)

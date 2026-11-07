@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.24)'
+        description: 'Release version (e.g. 1.9.25)'
         required: false
-        default: '1.9.24'
+        default: '1.9.25'
 
 concurrency:
   group: release-windows
@@ -42,7 +42,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.24"
+            VERSION="1.9.25"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV

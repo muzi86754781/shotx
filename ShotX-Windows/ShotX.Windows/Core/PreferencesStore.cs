@@ -39,18 +39,18 @@ public static class PreferencesStore
 
     public static Dictionary<string, string> CreateDefaultHotkeys() => new(StringComparer.OrdinalIgnoreCase)
     {
-        ["AllInOne"] = "未设置",
-        ["Area"] = "Alt + A",
-        ["PreviousArea"] = "Alt + R",
-        ["Fullscreen"] = "Alt + Shift + A",
-        ["Window"] = "Alt + W",
-        ["OCR"] = "未设置",
-        ["Pin"] = "Alt + F3",
-        ["EditClipboard"] = "Alt + P",
-        ["ColorPicker"] = "Alt + Shift + C",
-        ["ScreenRecord"] = "Alt + Shift + R",
-        ["Translation"] = "Alt + V",
-        ["ClipboardHistory"] = "Alt + C"
+        ["AllInOne"] = "",
+        ["Area"] = "",
+        ["PreviousArea"] = "",
+        ["Fullscreen"] = "",
+        ["Window"] = "",
+        ["OCR"] = "",
+        ["Pin"] = "",
+        ["EditClipboard"] = "",
+        ["ColorPicker"] = "",
+        ["ScreenRecord"] = "",
+        ["Translation"] = "",
+        ["ClipboardHistory"] = ""
     };
 
     public static AppPreferences Current
@@ -98,24 +98,24 @@ public static class PreferencesStore
     public static string GetHotkey(string actionKey)
     {
         EnsureHotkeysInitialized();
-        if (Current.Hotkeys.TryGetValue(actionKey, out string? val) && !string.IsNullOrWhiteSpace(val))
+        if (Current.Hotkeys.TryGetValue(actionKey, out string? val) && !string.IsNullOrWhiteSpace(val) && !val.Contains("未设置"))
         {
-            return val;
+            return val.Trim();
         }
-        return "未设置";
+        return string.Empty;
     }
 
     public static void SetHotkey(string actionKey, string shortcutText)
     {
         EnsureHotkeysInitialized();
-        Current.Hotkeys[actionKey] = string.IsNullOrWhiteSpace(shortcutText) ? "未设置" : shortcutText;
+        Current.Hotkeys[actionKey] = (string.IsNullOrWhiteSpace(shortcutText) || shortcutText.Contains("未设置")) ? string.Empty : shortcutText.Trim();
         Save();
     }
 
     public static void ClearSingleHotkey(string actionKey)
     {
         EnsureHotkeysInitialized();
-        Current.Hotkeys[actionKey] = "未设置";
+        Current.Hotkeys[actionKey] = string.Empty;
         Save();
     }
 
@@ -125,9 +125,7 @@ public static class PreferencesStore
         var keys = new List<string>(Current.Hotkeys.Keys);
         foreach (var k in keys)
         {
-            Current.Hotkeys[k] = string.Equals(k, "Area", StringComparison.OrdinalIgnoreCase)
-                ? "Alt + A"
-                : "未设置";
+            Current.Hotkeys[k] = string.Empty;
         }
         Save();
     }

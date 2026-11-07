@@ -492,13 +492,36 @@ public partial class OverlayWindow : Window
         dc.DrawText(shadowFt, new Point(r.Left + 188, r.Top + (r.Height - shadowFt.Height) / 2));
     }
 
+    private int _colorFormatMode = 0; // 0: HEX, 1: RGB, 2: HSL, 3: HEXA (解决需求 2 快捷键切换颜色类型)
+
+    private static string RgbToHslString(byte r, byte g, byte b)
+    {
+        double rf = r / 255.0;
+        double gf = g / 255.0;
+        double bf = b / 255.0;
+        double max = Math.Max(rf, Math.Max(gf, bf));
+        double min = Math.Min(rf, Math.Min(gf, bf));
+        double delta = max - min;
+        double h = 0.0, s = 0.0, l = (max + min) / 2.0;
+
+        if (delta > 0.00001)
+        {
+            s = l > 0.5 ? delta / (2.0 - max - min) : delta / (max + min);
+            if (max == rf) h = ((gf - bf) / delta) + (gf < bf ? 6.0 : 0.0);
+            else if (max == gf) h = ((bf - rf) / delta) + 2.0;
+            else h = ((rf - gf) / delta) + 4.0;
+            h *= 60.0;
+        }
+        return $"hsl({(int)Math.Round(h)}, {(int)Math.Round(s * 100)}%, {(int)Math.Round(l * 100)}%)";
+    }
+
     private void DrawLoupe(DrawingContext dc, Point p)
     {
         double loupeSize = 136;
         double x = p.X + 22;
         double y = p.Y + 22;
         if (x + loupeSize > Width) x = p.X - loupeSize - 22;
-        if (y + loupeSize + 46 > Height) y = p.Y - loupeSize - 46;
+        if (y + loupeSize + 48 > Height) y = p.Y - loupeSize - 48;
 
         int px = Math.Max(0, Math.Min(_fullSnapshot.Width - 1, (int)p.X));
         int py = Math.Max(0, Math.Min(_fullSnapshot.Height - 1, (int)p.Y));
@@ -530,36 +553,49 @@ public partial class OverlayWindow : Window
         dc.DrawRectangle(null, new Pen(Brushes.Red, 1.5), centerCell);
 
         // 底部颜色信息标签卡片
-        var infoRect = new Rect(x, y + loupeSize + 4, loupeSize, 40);
+        var infoRect = new Rect(x, y + loupeSize + 4, loupeSize, 44);
         dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(235, 25, 27, 32)), null, infoRect, 6, 6);
 
         // 当前颜色方块
         var colorBox = new Rect(infoRect.Left + 8, infoRect.Top + 8, 14, 14);
         dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(c.R, c.G, c.B)), new Pen(Brushes.White, 1), colorBox, 2, 2);
 
-        string hex = $"#{c.R:X2}{c.G:X2}{c.B:X2}";
-        string colorName = GetColorName(c);
-        var ftHex = new FormattedText(
-            $"{hex} {colorName}",
+        string formattedValue = _colorFormatMode switch
+        {
+            1 => $"rgb({c.R}, {c.G}, {c.B})",
+            2 => RgbToHslString(c.R, c.G, c.B),
+            3 => $"#{c.R:X2}{c.G:X2}{c.B:X2}FF",
+            _ => $"#{c.R:X2}{c.G:X2}{c.B:X2}"
+        };
+        string formatName = _colorFormatMode switch
+        {
+            1 => "RGB",
+            2 => "HSL",
+            3 => "HEXA",
+            _ => "HEX"
+        };
+
+        var ftColor = new FormattedText(
+            $"{formatName}: {formattedValue}",
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
             new Typeface(new FontFamily("Consolas, Microsoft YaHei"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
-            10.5,
+            10.0,
             Brushes.White,
             VisualTreeHelper.GetDpi(this).PixelsPerDip
         );
-        dc.DrawText(ftHex, new Point(infoRect.Left + 26, infoRect.Top + 7));
+        dc.DrawText(ftColor, new Point(infoRect.Left + 26, infoRect.Top + 7));
 
-        var ftRgb = new FormattedText(
-            $"RGB: ({c.R}, {c.G}, {c.B})",
+        var ftTip = new FormattedText(
+            "[Tab/C] 切换格式 · 点击复制",
             System.Globalization.CultureInfo.CurrentCulture,
             FlowDirection.LeftToRight,
-            new Typeface("Consolas"),
-            9.5,
+            new Typeface("Consolas, Microsoft YaHei"),
+            9.0,
             new SolidColorBrush(Color.FromRgb(180, 185, 195)),
             VisualTreeHelper.GetDpi(this).PixelsPerDip
         );
-        dc.DrawText(ftRgb, new Point(infoRect.Left + 8, infoRect.Top + 24));
+        dc.DrawText(ftTip, new Point(infoRect.Left + 8, infoRect.Top + 25));
     }
 
     private void DrawQuickHelpCard(DrawingContext dc)
@@ -2030,9 +2066,15 @@ public partial class OverlayWindow : Window
             int px = Math.Max(0, Math.Min(_virtualBounds.Width - 1, (int)Math.Round(_currentMouse.X * scaleX)));
             int py = Math.Max(0, Math.Min(_virtualBounds.Height - 1, (int)Math.Round(_currentMouse.Y * scaleY)));
             var col = _fullSnapshot.GetPixel(px, py);
-            string hex = $"#{col.R:X2}{col.G:X2}{col.B:X2}";
-            System.Windows.Clipboard.SetText(hex);
-            System.Windows.MessageBox.Show($"已复制颜色代码: {hex}", "ShotX 拾色器", MessageBoxButton.OK, MessageBoxImage.Information);
+            string formattedColor = _colorFormatMode switch
+            {
+                1 => $"rgb({col.R}, {col.G}, {col.B})",
+                2 => RgbToHslString(col.R, col.G, col.B),
+                3 => $"#{col.R:X2}{col.G:X2}{col.B:X2}FF",
+                _ => $"#{col.R:X2}{col.G:X2}{col.B:X2}"
+            };
+            System.Windows.Clipboard.SetText(formattedColor);
+            System.Windows.MessageBox.Show($"已复制颜色代码: {formattedColor}", "ShotX 拾色器", MessageBoxButton.OK, MessageBoxImage.Information);
         }
         catch
         {
@@ -2266,6 +2308,24 @@ public partial class OverlayWindow : Window
         if (e.Key == Key.Escape)
         {
             Close();
+            return;
+        }
+
+        // Tab / C / 空格键循环切换颜色格式 (HEX, RGB, HSL, HEXA) - 解决需求 2
+        if ((_overlayMode == OverlayMode.ColorPicker || _mode == CaptureMode.Selecting) &&
+            (e.Key == Key.Tab || e.Key == Key.C || e.Key == Key.Space))
+        {
+            _colorFormatMode = (_colorFormatMode + 1) % 4;
+            string formatName = _colorFormatMode switch
+            {
+                1 => "RGB",
+                2 => "HSL",
+                3 => "HEXA",
+                _ => "HEX"
+            };
+            ShowToast($"取色格式已切换为: {formatName}");
+            Render();
+            e.Handled = true;
             return;
         }
 

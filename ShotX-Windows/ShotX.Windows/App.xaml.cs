@@ -159,7 +159,16 @@ public partial class App : Application
         };
 
         var textColor = TrayMenuHelper.TextColor;
-        var hotkeys = PreferencesStore.Current.Hotkeys;
+
+        string GetShortcutDisplay(string key)
+        {
+            var curHotkeys = PreferencesStore.Current.Hotkeys;
+            if (curHotkeys.TryGetValue(key, out var val) && !string.IsNullOrWhiteSpace(val) && !val.Contains("未设置"))
+            {
+                return val.Trim();
+            }
+            return string.Empty;
+        }
 
         // 1. 全能截图 (macOS 1:1 首项高亮风格)
         var heroItem = new ToolStripMenuItem("全能截图", TrayMenuHelper.CreateIcon("all_in_one", System.Drawing.Color.White, 16), (_, _) => Dispatcher.BeginInvoke(ShowAllInOneBar))
@@ -172,14 +181,14 @@ public partial class App : Application
         // 2. 区域截图
         var itemArea = new ToolStripMenuItem("区域截图", TrayMenuHelper.CreateIcon("area", textColor), (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Area)))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("Area", "Alt + A")
+            ShortcutKeyDisplayString = GetShortcutDisplay("Area")
         };
         contextMenu.Items.Add(itemArea);
 
         // 3. 上次区域截图
         var itemPrev = new ToolStripMenuItem("上次区域截图", TrayMenuHelper.CreateIcon("prev_area", textColor), (_, _) => Dispatcher.BeginInvoke(CapturePreviousArea))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("PreviousArea", "Alt + R")
+            ShortcutKeyDisplayString = GetShortcutDisplay("PreviousArea")
         };
         contextMenu.Opening += (_, _) => itemPrev.Enabled = LastCaptureStore.HasPrevious;
         contextMenu.Items.Add(itemPrev);
@@ -187,14 +196,14 @@ public partial class App : Application
         // 4. 全屏截图
         var itemFull = new ToolStripMenuItem("全屏截图", TrayMenuHelper.CreateIcon("fullscreen", textColor), (_, _) => Dispatcher.BeginInvoke(CaptureFullscreen))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("Fullscreen", "Alt + Shift + A")
+            ShortcutKeyDisplayString = GetShortcutDisplay("Fullscreen")
         };
         contextMenu.Items.Add(itemFull);
 
         // 5. 窗口截图
         var itemWin = new ToolStripMenuItem("窗口截图", TrayMenuHelper.CreateIcon("window", textColor), (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.Window)))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("Window", "Alt + W")
+            ShortcutKeyDisplayString = GetShortcutDisplay("Window")
         };
         contextMenu.Items.Add(itemWin);
 
@@ -208,14 +217,14 @@ public partial class App : Application
         // 7. 截图 OCR
         var itemOcr = new ToolStripMenuItem("截图 OCR", TrayMenuHelper.CreateIcon("ocr", textColor), (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.OCR)))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("OCR", "")
+            ShortcutKeyDisplayString = GetShortcutDisplay("OCR")
         };
         contextMenu.Items.Add(itemOcr);
 
         // 8. 从剪贴板贴图
         var itemPin = new ToolStripMenuItem("从剪贴板贴图", TrayMenuHelper.CreateIcon("pin", textColor), (_, _) => Dispatcher.BeginInvoke(PinFromClipboard))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("Pin", "Alt + F3")
+            ShortcutKeyDisplayString = GetShortcutDisplay("Pin")
         };
         contextMenu.Items.Add(itemPin);
 
@@ -226,14 +235,14 @@ public partial class App : Application
         // 10. 改图-从剪贴板打开 (直接进入可编辑标注模式)
         var itemEditClip = new ToolStripMenuItem("改图-从剪贴板打开", TrayMenuHelper.CreateIcon("edit_clipboard", textColor), (_, _) => Dispatcher.BeginInvoke(EditFromClipboard))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("EditClipboard", "Alt + P")
+            ShortcutKeyDisplayString = GetShortcutDisplay("EditClipboard")
         };
         contextMenu.Items.Add(itemEditClip);
 
         // 11. 拾色器
         var itemColor = new ToolStripMenuItem("拾色器", TrayMenuHelper.CreateIcon("color_picker", textColor), (_, _) => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.ColorPicker)))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("ColorPicker", "Alt + Shift + C")
+            ShortcutKeyDisplayString = GetShortcutDisplay("ColorPicker")
         };
         contextMenu.Items.Add(itemColor);
 
@@ -242,7 +251,7 @@ public partial class App : Application
         // 12. 屏幕录制
         var itemRec = new ToolStripMenuItem("屏幕录制", TrayMenuHelper.CreateIcon("screen_record", textColor), (_, _) => Dispatcher.BeginInvoke(StartScreenRecording))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("ScreenRecord", "Alt + Shift + R")
+            ShortcutKeyDisplayString = GetShortcutDisplay("ScreenRecord")
         };
         contextMenu.Items.Add(itemRec);
 
@@ -255,7 +264,7 @@ public partial class App : Application
         // 14. 划词翻译
         var itemTransSel = new ToolStripMenuItem("划词翻译", TrayMenuHelper.CreateIcon("translate_selection", textColor), (_, _) => Dispatcher.BeginInvoke(TranslateSelection))
         {
-            ShortcutKeyDisplayString = "Alt + Shift + F"
+            ShortcutKeyDisplayString = GetShortcutDisplay("SelectionTranslation")
         };
         contextMenu.Items.Add(itemTransSel);
 
@@ -266,7 +275,7 @@ public partial class App : Application
         // 16. 输入翻译
         var itemTransWin = new ToolStripMenuItem("输入翻译", TrayMenuHelper.CreateIcon("translate_input", textColor), (_, _) => Dispatcher.BeginInvoke(ShowTranslationWindow))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("Translation", "Alt + V")
+            ShortcutKeyDisplayString = GetShortcutDisplay("Translation")
         };
         contextMenu.Items.Add(itemTransWin);
 
@@ -275,7 +284,7 @@ public partial class App : Application
         // 17. 剪贴板历史
         var itemClipHist = new ToolStripMenuItem("剪贴板历史", TrayMenuHelper.CreateIcon("clipboard_history", textColor), (_, _) => Dispatcher.BeginInvoke(ShowClipboardHistoryWindow))
         {
-            ShortcutKeyDisplayString = hotkeys.GetValueOrDefault("ClipboardHistory", "Alt + C")
+            ShortcutKeyDisplayString = GetShortcutDisplay("ClipboardHistory")
         };
         contextMenu.Items.Add(itemClipHist);
 
@@ -580,6 +589,26 @@ public partial class App : Application
         }
     }
 
+    public void OpenOrUpdateTranslationWindowWithResult(string source, string? result)
+    {
+        if (_translationWindow != null && _translationWindow.IsLoaded)
+        {
+            if (_translationWindow.WindowState == WindowState.Minimized)
+            {
+                _translationWindow.WindowState = WindowState.Normal;
+            }
+            _translationWindow.Activate();
+            _translationWindow.SetSourceAndResult(source, result);
+            return;
+        }
+
+        _translationWindow = new TranslationWindow();
+        _translationWindow.Closed += (_, _) => _translationWindow = null;
+        _translationWindow.Show();
+        _translationWindow.Activate();
+        _translationWindow.SetSourceAndResult(source, result);
+    }
+
     private void OpenOrUpdateTranslationWindow(string? sourceText)
     {
         if (_translationWindow != null && _translationWindow.IsLoaded)
@@ -826,10 +855,15 @@ public partial class App : Application
 
     public void ShowClipboardHistoryWindow()
     {
-        IntPtr target = LastExternalForegroundHwnd;
+        IntPtr fg = GetForegroundWindow();
+        GetWindowThreadProcessId(fg, out uint pid);
+        uint currentPid = (uint)Process.GetCurrentProcess().Id;
+        IntPtr target = (pid != currentPid && fg != IntPtr.Zero) ? fg : LastExternalForegroundHwnd;
+
         if (_clipboardHistoryWindow != null && _clipboardHistoryWindow.IsLoaded)
         {
             _clipboardHistoryWindow.UpdateTargetWindow(target);
+            _clipboardHistoryWindow.Show();
             _clipboardHistoryWindow.Activate();
             return;
         }

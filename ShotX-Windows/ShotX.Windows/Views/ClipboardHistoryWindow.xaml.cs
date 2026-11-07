@@ -27,7 +27,21 @@ public partial class ClipboardHistoryWindow : Window
     [DllImport("user32.dll")]
     private static extern IntPtr GetForegroundWindow();
 
+    [DllImport("user32.dll")]
+    private static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+
+    [DllImport("kernel32.dll")]
+    private static extern uint GetCurrentThreadId();
+
+    [DllImport("user32.dll")]
+    private static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr SetFocus(IntPtr hWnd);
+
+    private const byte VK_SHIFT = 0x10;
     private const byte VK_CONTROL = 0x11;
+    private const byte VK_MENU = 0x12; // Alt
     private const byte VK_V = 0x56;
     private const uint KEYEVENTF_KEYUP = 0x0002;
 
@@ -196,20 +210,48 @@ public partial class ClipboardHistoryWindow : Window
         {
             try
             {
-                Clipboard.SetText(model.FullText);
-                ShowToast("✓ 已复制并粘贴到光标位置");
+                // 1. 设置剪贴板内容（带重试机制，防止被系统安全软件临时占用）
+                for (int retry = 0; retry < 5; retry++)
+                {
+                    try
+                    {
+                        Clipboard.SetDataObject(model.FullText, true);
+                        break;
+                    }
+                    catch
+                    {
+                        await Task.Delay(25);
+                    }
+                }
 
                 IntPtr targetHwnd = _targetExternalHwnd != IntPtr.Zero
                     ? _targetExternalHwnd
                     : App.LastExternalForegroundHwnd;
 
+                // 2. 隐藏剪贴板窗口，使外部目标窗口（如记事本、VS Code、浏览器）恢复原本输入焦点 (解决需求 4)
+                Hide();
+
+                // 3. 强力激活目标窗口与输入线程
                 if (targetHwnd != IntPtr.Zero)
                 {
+                    uint currentThreadId = GetCurrentThreadId();
+                    uint targetThreadId = GetWindowThreadProcessId(targetHwnd, out _);
+
+                    AttachThreadInput(currentThreadId, targetThreadId, true);
                     SetForegroundWindow(targetHwnd);
-                    await Task.Delay(95);
+                    SetFocus(targetHwnd);
+                    AttachThreadInput(currentThreadId, targetThreadId, false);
+
+                    await Task.Delay(100);
                 }
 
-                // 模拟 Ctrl+V 快速粘贴到光标所在窗口
+                // 4. 彻底释放修饰键 (Alt / Shift / Ctrl) 防止快捷键状态冲突
+                keybd_event(VK_MENU, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                keybd_event(VK_SHIFT, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                keybd_event(VK_CONTROL, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+                await Task.Delay(25);
+
+                // 5. 模拟 Ctrl+V 快速粘贴到光标所在窗口
                 keybd_event(VK_CONTROL, 0, 0, UIntPtr.Zero);
                 keybd_event(VK_V, 0, 0, UIntPtr.Zero);
                 keybd_event(VK_V, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
@@ -217,7 +259,7 @@ public partial class ClipboardHistoryWindow : Window
             }
             catch
             {
-                ShowToast("✓ 已复制到剪贴板");
+                try { Clipboard.SetText(model.FullText); } catch { }
             }
         }
     }

@@ -2,9 +2,16 @@ import Cocoa
 import AVFoundation
 import SwiftUI
 
+enum AudioRecordState {
+    case ready
+    case recording
+    case paused
+}
+
 final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorderDelegate {
     static let shared = AudioRecorderController()
 
+    @Published private(set) var state: AudioRecordState = .ready
     @Published private(set) var isRecording = false
     @Published private(set) var duration: TimeInterval = 0
 
@@ -14,15 +21,33 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
     private var floatingPanel: NSPanel?
 
     func toggleRecording() {
-        if isRecording {
-            stopRecording()
+        if floatingPanel != nil {
+            if state == .recording {
+                pauseRecording()
+            } else if state == .paused {
+                resumeRecording()
+            } else {
+                dismissFloatingPill()
+            }
         } else {
-            startRecording()
+            presentRecorder()
         }
     }
 
+    /// 打开声音录制悬浮窗（不自动开始录音，等待用户自主点击“开始”）
+    func presentRecorder() {
+        if let panel = floatingPanel {
+            panel.orderFrontRegardless()
+            return
+        }
+        self.state = .ready
+        self.isRecording = false
+        self.duration = 0
+        showFloatingPill()
+    }
+
     func startRecording() {
-        guard !isRecording else { return }
+        guard state == .ready else { return }
 
         if #available(macOS 10.14, *) {
             let status = AVCaptureDevice.authorizationStatus(for: .audio)
@@ -66,15 +91,12 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
             rec.delegate = self
             rec.record()
             self.recorder = rec
+            self.state = .recording
             self.isRecording = true
             self.duration = 0
 
-            timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                guard let self = self else { return }
-                self.duration += 1.0
-            }
+            startTimer()
 
-            showFloatingPill()
             ToastController.shared.show(
                 message: "正在录音中…",
                 icon: "mic.fill",
@@ -92,14 +114,46 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
         }
     }
 
-    func stopRecording() {
-        guard isRecording else { return }
+    func pauseRecording() {
+        guard state == .recording else { return }
+        recorder?.pause()
+        stopTimer()
+        state = .paused
         isRecording = false
-        timer?.invalidate()
-        timer = nil
+    }
 
+    func resumeRecording() {
+        guard state == .paused else { return }
+        recorder?.record()
+        startTimer()
+        state = .recording
+        isRecording = true
+    }
+
+    func cancelRecorder() {
+        stopTimer()
         recorder?.stop()
         recorder = nil
+        isRecording = false
+        state = .ready
+        if let fileURL = currentFileURL, FileManager.default.fileExists(atPath: fileURL.path) {
+            try? FileManager.default.removeItem(at: fileURL)
+        }
+        currentFileURL = nil
+        dismissFloatingPill()
+    }
+
+    func stopRecording() {
+        guard state == .recording || state == .paused else {
+            dismissFloatingPill()
+            return
+        }
+
+        stopTimer()
+        recorder?.stop()
+        recorder = nil
+        isRecording = false
+        state = .ready
         dismissFloatingPill()
 
         if let fileURL = currentFileURL, FileManager.default.fileExists(atPath: fileURL.path) {
@@ -114,6 +168,19 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
                 position: .center
             )
         }
+    }
+
+    private func startTimer() {
+        stopTimer()
+        timer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.duration += 1.0
+        }
+    }
+
+    private func stopTimer() {
+        timer?.invalidate()
+        timer = nil
     }
 
     private func showMicDeniedAlert() {
@@ -135,14 +202,9 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
     private func showFloatingPill() {
         dismissFloatingPill()
 
-        let pillView = AudioRecordingPillView(
-            recorder: self,
-            onStop: { [weak self] in
-                self?.stopRecording()
-            }
-        )
+        let pillView = AudioRecordingPillView(recorder: self)
         let hosting = NSHostingController(rootView: pillView)
-        let pillSize = NSSize(width: 170, height: 42)
+        let pillSize = NSSize(width: 255, height: 44)
         hosting.view.frame = NSRect(origin: .zero, size: pillSize)
 
         let panel = NSPanel(
@@ -184,42 +246,107 @@ final class AudioRecorderController: NSObject, ObservableObject, AVAudioRecorder
 
 private struct AudioRecordingPillView: View {
     @ObservedObject var recorder: AudioRecorderController
-    let onStop: () -> Void
 
     var body: some View {
-        HStack(spacing: 9) {
-            Circle()
-                .fill(Color.red)
-                .frame(width: 10, height: 10)
-                .overlay(
+        HStack(spacing: 8) {
+            // 状态指示圆点
+            Group {
+                switch recorder.state {
+                case .ready:
                     Circle()
-                        .stroke(Color.white.opacity(0.8), lineWidth: 1.5)
-                )
+                        .fill(Color.gray)
+                        .frame(width: 9, height: 9)
+                case .recording:
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 9, height: 9)
+                        .overlay(
+                            Circle()
+                                .stroke(Color.white.opacity(0.8), lineWidth: 1.5)
+                        )
+                case .paused:
+                    Circle()
+                        .fill(Color.orange)
+                        .frame(width: 9, height: 9)
+                }
+            }
 
+            // 计时显示
             Text(formatDuration(recorder.duration))
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
                 .foregroundStyle(.white)
 
             Spacer(minLength: 4)
 
-            Button(action: onStop) {
-                HStack(spacing: 4) {
-                    Image(systemName: "stop.fill")
-                        .font(.system(size: 9, weight: .bold))
-                    Text("停止")
-                        .font(.system(size: 11, weight: .semibold))
+            // 操作控制按钮组 (开始、暂停/继续、停止)
+            if recorder.state == .ready {
+                Button(action: { recorder.startRecording() }) {
+                    HStack(spacing: 4) {
+                        Image(systemName: "record.circle.fill")
+                            .font(.system(size: 11, weight: .bold))
+                        Text("开始")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .padding(.horizontal, 9)
+                    .padding(.vertical, 4)
+                    .background(Color.red.opacity(0.9))
+                    .clipShape(Capsule())
                 }
-                .padding(.horizontal, 8)
-                .padding(.vertical, 4)
-                .background(Color.red.opacity(0.85))
-                .clipShape(Capsule())
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+
+                Button(action: { recorder.cancelRecorder() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 10, weight: .semibold))
+                        .padding(5)
+                        .background(Color.white.opacity(0.15))
+                        .clipShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+            } else {
+                // 暂停 / 继续
+                Button(action: {
+                    if recorder.state == .recording {
+                        recorder.pauseRecording()
+                    } else {
+                        recorder.resumeRecording()
+                    }
+                }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: recorder.state == .recording ? "pause.fill" : "play.fill")
+                            .font(.system(size: 9, weight: .bold))
+                        Text(recorder.state == .recording ? "暂停" : "继续")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.white.opacity(0.2))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
+
+                // 停止并保存
+                Button(action: { recorder.stopRecording() }) {
+                    HStack(spacing: 3) {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 9, weight: .bold))
+                        Text("停止")
+                            .font(.system(size: 11, weight: .semibold))
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 4)
+                    .background(Color.red.opacity(0.85))
+                    .clipShape(Capsule())
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(.white)
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(.white)
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(Color.black.opacity(0.82))
+        .background(Color.black.opacity(0.85))
         .clipShape(Capsule())
         .overlay(
             Capsule().strokeBorder(Color.white.opacity(0.18), lineWidth: 1)
@@ -234,4 +361,3 @@ private struct AudioRecordingPillView: View {
         return String(format: "%02d:%02d", m, s)
     }
 }
-

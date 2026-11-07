@@ -67,6 +67,29 @@ public partial class TranslationWindow : Window
         }
     }
 
+    public void SetSourceAndResult(string source, string? result)
+    {
+        if (TxtSource == null) return;
+        TxtSource.Text = source ?? string.Empty;
+        TxtSource.CaretIndex = TxtSource.Text.Length;
+        if (TxtSourcePlaceholder != null)
+        {
+            TxtSourcePlaceholder.Visibility = string.IsNullOrEmpty(TxtSource.Text) ? Visibility.Visible : Visibility.Collapsed;
+        }
+        if (TxtCharCount != null)
+        {
+            TxtCharCount.Text = $"{TxtSource.Text.Length} 字";
+        }
+        if (!string.IsNullOrWhiteSpace(result))
+        {
+            TxtResult.Text = result;
+        }
+        else if (IsLoaded && !string.IsNullOrWhiteSpace(TxtSource.Text))
+        {
+            TriggerTranslation();
+        }
+    }
+
     private void TopBar_MouseDown(object sender, MouseButtonEventArgs e)
     {
         if (e.LeftButton == MouseButtonState.Pressed)
@@ -153,30 +176,71 @@ public partial class TranslationWindow : Window
     private void BtnSwap_Click(object sender, RoutedEventArgs e)
     {
         if (CmbSourceLang == null || CmbTargetLang == null) return;
-        int src = CmbSourceLang.SelectedIndex;
-        int tgt = CmbTargetLang.SelectedIndex;
 
-        if (src > 0 && tgt > 0)
+        // 1. 将译文框内容替换到输入框后并翻译 (解决需求 3)
+        string currentResult = TxtResult.Text.Trim();
+        bool hasValidResult = !string.IsNullOrEmpty(currentResult) &&
+                              currentResult != "正在翻译中..." &&
+                              !currentResult.StartsWith("（网络翻译接口繁忙");
+
+        if (hasValidResult)
         {
-            CmbSourceLang.SelectedIndex = tgt;
-            CmbTargetLang.SelectedIndex = src;
+            TxtSource.Text = currentResult;
+            TxtSource.CaretIndex = TxtSource.Text.Length;
         }
-        else if (src == 0 && tgt > 0)
-        {
-            CmbSourceLang.SelectedIndex = tgt;
-            CmbTargetLang.SelectedIndex = 1;
-        }
-        else
-        {
-            CmbSourceLang.SelectedIndex = 2;
-            CmbTargetLang.SelectedIndex = 2;
-        }
+
+        // 2. 互换语言选项
+        string? srcName = (CmbSourceLang.SelectedItem as ComboBoxItem)?.Content?.ToString();
+        string? tgtName = (CmbTargetLang.SelectedItem as ComboBoxItem)?.Content?.ToString();
+
+        SelectLanguageInCombo(CmbSourceLang, tgtName, currentResult, true);
+        SelectLanguageInCombo(CmbTargetLang, srcName, currentResult, false);
+
+        // 3. 立即翻译
+        TriggerTranslation();
     }
 
-    private string GetLangCode(string? langName, bool isSource)
+    private void SelectLanguageInCombo(ComboBox combo, string? targetLangName, string sampleText, bool isSource)
     {
-        if (string.IsNullOrWhiteSpace(langName)) return isSource ? "auto" : "zh-CN";
-        if (langName.Contains("自动")) return isSource ? "auto" : "zh-CN";
+        if (string.IsNullOrWhiteSpace(targetLangName) || targetLangName.Contains("自动"))
+        {
+            bool hasChinese = sampleText.Any(c => (c >= 0x4e00 && c <= 0x9fff) || (c >= 0x3400 && c <= 0x4dbf));
+            string preferred = isSource ? (hasChinese ? "中文" : "英语") : (hasChinese ? "英语" : "中文");
+            MatchComboItem(combo, preferred);
+            return;
+        }
+
+        MatchComboItem(combo, targetLangName);
+    }
+
+    private static void MatchComboItem(ComboBox combo, string langKeyword)
+    {
+        for (int i = 0; i < combo.Items.Count; i++)
+        {
+            if (combo.Items[i] is ComboBoxItem item && item.Content != null)
+            {
+                string text = item.Content.ToString() ?? "";
+                if (text.Contains(langKeyword.Replace(" (简体)", "").Trim(), StringComparison.OrdinalIgnoreCase))
+                {
+                    combo.SelectedIndex = i;
+                    return;
+                }
+            }
+        }
+        if (combo.Items.Count > 0) combo.SelectedIndex = 0;
+    }
+
+    private string GetLangCode(string? langName, bool isSource, string text = "")
+    {
+        if (string.IsNullOrWhiteSpace(langName) || langName.Contains("自动"))
+        {
+            if (isSource) return "auto";
+
+            // 检测到中文自动翻译为英文，检测到英文自动翻译为中文 (解决需求 3)
+            bool hasChinese = !string.IsNullOrEmpty(text) && text.Any(c => (c >= 0x4e00 && c <= 0x9fff) || (c >= 0x3400 && c <= 0x4dbf));
+            return hasChinese ? "en" : "zh-CN";
+        }
+
         if (langName.Contains("中文")) return "zh-CN";
         if (langName.Contains("英语")) return "en";
         if (langName.Contains("日语")) return "ja";
@@ -206,8 +270,13 @@ public partial class TranslationWindow : Window
         _cts = new CancellationTokenSource();
         var ct = _cts.Token;
 
-        string sl = GetLangCode((CmbSourceLang.SelectedItem as ComboBoxItem)?.Content?.ToString(), true);
-        string tl = GetLangCode((CmbTargetLang.SelectedItem as ComboBoxItem)?.Content?.ToString(), false);
+        string sl = GetLangCode((CmbSourceLang.SelectedItem as ComboBoxItem)?.Content?.ToString(), true, text);
+        string tl = GetLangCode((CmbTargetLang.SelectedItem as ComboBoxItem)?.Content?.ToString(), false, text);
+
+        if (sl == tl && sl != "auto")
+        {
+            tl = (sl == "zh-CN") ? "en" : "zh-CN";
+        }
 
         TxtResult.Text = "正在翻译中...";
 
