@@ -16,6 +16,8 @@ using MessageBox = System.Windows.MessageBox;
 using RadioButton = System.Windows.Controls.RadioButton;
 using TextBox = System.Windows.Controls.TextBox;
 using Brushes = System.Windows.Media.Brushes;
+using Color = System.Windows.Media.Color;
+using ColorConverter = System.Windows.Media.ColorConverter;
 
 namespace ShotX.Windows.Views;
 

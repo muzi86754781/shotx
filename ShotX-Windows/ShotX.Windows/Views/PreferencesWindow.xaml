@@ -845,7 +845,7 @@
                                                     <Grid Margin="0,4,0,0">
                                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                                             <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" Click="BtnVerifyBaiduTrans_Click"/>
-                                                            <TextBlock x:Name="TxtVerifyTransStatus" Text="" FontSize="11.5" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                                            <TextBlock x:Name="TxtVerifyBaiduStatus" Text="" FontSize="11.5" VerticalAlignment="Center" Margin="10,0,0,0"/>
                                                         </StackPanel>
                                                         <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
                                                             <Hyperlink Click="LnkApplyBaiduTrans_Click" Foreground="#0284C7" TextDecorations="None">如何申请？</Hyperlink>
@@ -862,7 +862,10 @@
                                                                        FontSize="11.5" Foreground="#047857" TextWrapping="Wrap" LineHeight="18"/>
                                                         </StackPanel>
                                                     </Border>
-                                                    <Button Content="测试翻译" Style="{StaticResource SmallBtnStyle}" HorizontalAlignment="Left" Width="76" Height="28" Click="BtnVerifyBuiltInTrans_Click"/>
+                                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,0">
+                                                        <Button Content="测试翻译" Style="{StaticResource SmallBtnStyle}" HorizontalAlignment="Left" Width="76" Height="28" Click="BtnVerifyBuiltInTrans_Click"/>
+                                                        <TextBlock x:Name="TxtVerifyBuiltInStatus" Text="" FontSize="11.5" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                                    </StackPanel>
                                                 </StackPanel>
 
                                                 <!-- 谷歌翻译配置 -->

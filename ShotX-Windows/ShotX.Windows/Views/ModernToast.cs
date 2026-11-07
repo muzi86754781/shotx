@@ -9,6 +9,7 @@ using System.Windows.Threading;
 using Application = System.Windows.Application;
 using Color = System.Windows.Media.Color;
 using Point = System.Windows.Point;
+using Brushes = System.Windows.Media.Brushes;
 
 namespace ShotX.Windows.Views;
 
