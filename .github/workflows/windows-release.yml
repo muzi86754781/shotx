@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.23)'
+        description: 'Release version (e.g. 1.9.24)'
         required: false
-        default: '1.9.23'
+        default: '1.9.24'
 
 concurrency:
   group: release-windows
@@ -42,7 +42,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.23"
+            VERSION="1.9.24"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -80,6 +80,11 @@ jobs:
           $portable = "ShotX-Windows-${{ env.VERSION }}-Portable.zip"
           Write-Host "Checking artifacts exist: $installer and $portable"
           if ((Test-Path $installer) -and (Test-Path $portable)) {
+            $viewResult = gh release view ${{ env.TAG }} 2>&1
+            if ($LASTEXITCODE -ne 0) {
+              Write-Host "Release ${{ env.TAG }} not found, creating it..."
+              gh release create ${{ env.TAG }} --title "ShotX ${{ env.TAG }} (Windows & macOS)" --notes "ShotX ${{ env.TAG }} 发布"
+            }
             gh release upload ${{ env.TAG }} $installer $portable --clobber
           } else {
             Write-Error "Release artifacts not found!"

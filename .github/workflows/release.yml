@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.23)'
+        description: 'Release version (e.g. 1.9.24)'
         required: false
-        default: '1.9.23'
+        default: '1.9.24'
 
 concurrency:
   group: release
@@ -41,7 +41,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.23"
+            VERSION="1.9.24"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -69,25 +69,23 @@ jobs:
           tag_name: ${{ env.TAG }}
           name: ShotX ${{ env.TAG }}
           body: |
-            ### ShotX ${{ env.TAG }}
+            ### ShotX ${{ env.TAG }} (Windows & macOS)
 
-            #### 本次更新亮点与修复
-            1. **长截图重叠与反向滚动问题彻底修复**：
-               - 重构核心匹配算法，改用长图累计底沿与新帧全高度特征比对；
-               - 严格过滤向上反向滚动，反向或静止时绝对不误增切片；
-               - 消除文字段落误匹配导致的叠影与行重复，拼接严密平滑。
-            2. **失焦置顶窗口第 1 次点击直接响应关闭**：
-               - 修复翻译窗口与剪贴板历史窗口在失焦置顶时需点 2 次才关闭的 AppKit 激活点击问题；
-               - 实现点击即响应，无需多余激活点击。
-            3. **截图标注区新增取消撤销（重做 / 下一步）与悬停提示**：
-               - 在撤销按钮（上一步）后新增“下一步（重做）”按钮（支持 ⇧⌘Z 快捷键）；
-               - 鼠标悬停在标注工具上方时实时展示工具名称及快捷键气泡（挪开或点击后自动隐藏）。
-            4. **截图标注区前 8 个工具展开子工具栏**：
-               - 矩形、椭圆、直线、箭头、画笔、马赛克、文字、步骤序号支持展开专属子工具面板；
-               - 支持常用调色盘（6个高频色+色环）、大小滑块、不透明度滑块及工具专属选项（实心/圆角/曲线箭头/荧光笔/毛玻璃/字体样式等）。
+            #### 📦 安装包下载
+            - **Windows 安装包 (Setup)**: [ShotX-Windows-Setup-${{ env.VERSION }}.exe](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-Windows-Setup-${{ env.VERSION }}.exe)
+            - **Windows 绿色便携版 (Portable)**: [ShotX-Windows-${{ env.VERSION }}-Portable.zip](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-Windows-${{ env.VERSION }}-Portable.zip)
+            - **macOS 安装包 (DMG)**: [ShotX-${{ env.VERSION }}.dmg](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-${{ env.VERSION }}.dmg)
 
-            #### 下载安装
-            下载下方的 `ShotX-${{ env.VERSION }}.dmg` 文件，双击打开并将 ShotX 拖入 Applications（应用程序）文件夹即可。
+            #### 🚀 本次更新亮点与修复
+            1. **Windows 区域截图标注工具栏**：9 个标注工具采用矢量几何图标，展开子工具栏统一下移至主工具栏下方，长截图与保存图标化，增强 OCR 识别与空结果友好提示。
+            2. **Windows 拾色器优化**：进入拾色器模式自动隐藏引导卡片，界面纯净。
+            3. **macOS 屏幕录制**：框选区域后无需点击确定/取消，直接显示录屏工具栏，保留 4 角拖拽手柄。
+            4. **Windows 屏幕录制 5 大功能**：支持麦克风、系统声音、光标捕获、左右键点击波纹高亮、左下角圆形可拖拽摄像头预览。
+            5. **Windows 声音录制**：窗体高度适中无遮挡，新增最小化功能。
+            6. **Windows 翻译与划词**：划词翻译自动唤醒并提取选中文本，下拉框药丸美化与行对齐，右上角历史记录单例唤起设置中心对应项。
+            7. **Windows 剪贴板历史**：双击记录直接粘贴至光标处，悬浮显隐操作图标，修复删除刷新与操作提示。
+            8. **Windows 偏好设置中心**：全局快捷键设置/清除/恢复全面生效，移除多余按钮文案，独立搜索行并美化历史卡片。
+            9. **Windows 托盘右键菜单**：1:1 对标 macOS，全项矢量图标，首项“全能截图”高亮蓝色药丸，快捷键精准靠右对齐。
           draft: false
           prerelease: false
           files: dist/ShotX-*.dmg

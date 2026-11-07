@@ -379,3 +379,4 @@ public static class TrayMenuHelper
         public override Color MenuItemBorder => Color.Transparent;
     }
 }
+

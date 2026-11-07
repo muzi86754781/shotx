@@ -110,7 +110,7 @@
 
                             <Separator Margin="0,0,0,16" />
 
-                            <TextBlock Text="版本: v1.9.23 (Windows 64-bit 原生版)" FontSize="13" Foreground="#1D1D1F" Margin="0,0,0,8" />
+                            <TextBlock Text="版本: v1.9.24 (Windows 64-bit 原生版)" FontSize="13" Foreground="#1D1D1F" Margin="0,0,0,8" />
                             <TextBlock Text="技术架构: C# .NET 8 + WPF + Direct2D + WinRT OCR" FontSize="12" Foreground="#86868B" Margin="0,0,0,8" />
                             <TextBlock Text="开发者技术支持 QQ 群: 285351298" FontSize="13" Foreground="#007AFF" FontWeight="SemiBold" Margin="0,0,0,8" />
                             <TextBlock Text="官方代码仓库: https://github.com/muzi86754781/shotx" FontSize="12" Foreground="#86868B" Margin="0,0,0,16" />

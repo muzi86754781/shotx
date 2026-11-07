@@ -573,7 +573,7 @@ public partial class PreferencesWindow : Window
 
     private void BtnCheckUpdate_Click(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show("当前已是最新版本 ShotX v1.9.23！", "ShotX 检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
+        MessageBox.Show("当前已是最新版本 ShotX v1.9.24！", "ShotX 检查更新", MessageBoxButton.OK, MessageBoxImage.Information);
     }
 
     private void BtnExit_Click(object sender, RoutedEventArgs e)
