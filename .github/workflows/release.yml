@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.28)'
+        description: 'Release version (e.g. 1.9.29)'
         required: false
-        default: '1.9.28'
+        default: '1.9.29'
 
 concurrency:
   group: release
@@ -41,7 +41,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.28"
+            VERSION="1.9.29"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -76,7 +76,7 @@ jobs:
             - **Windows 绿色便携版 (Portable)**: [ShotX-Windows-${{ env.VERSION }}-Portable.zip](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-Windows-${{ env.VERSION }}-Portable.zip)
             - **macOS 安装包 (DMG)**: [ShotX-${{ env.VERSION }}.dmg](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-${{ env.VERSION }}.dmg)
 
-            #### 🚀 本次更新亮点与修复 (v1.9.28)
+            #### 🚀 本次更新亮点与修复 (v1.9.29)
             1. **Windows 长截图选区内部滑动/滚轮无反应问题彻底解决 (Windows)**：隐藏全屏静态背景快照，选区内部纯透明（0 Alpha），实时无遮挡展现底层应用；选区内支持按住鼠标左键上下拖拽滑动翻页滚动、鼠标滚轮滚动、键盘方向下键以及空格键，底层页面流畅滚动并实时拼接。
             2. **长截图新增【⬇ 向下滚动】单步拼接与【▶ 自动长截】手势模式 (Windows)**：底部工具栏与侧边预览卡片新增一键向下滚动单步拼接与一键自动平滑滚动拼接，到达页面底部自动完成并提示。
             3. **底层窗口穿透与双重消息精准派发 (Windows)**：根据探测到的底层窗口句柄递归查找子容器，同时派发原生 WM_MOUSEWHEEL、WM_VSCROLL 以及全局低级鼠标钩子，保证 Chromium (Chrome/Edge)、Office Word、PDF、微信等所有窗口均能顺畅滚动与抓取。

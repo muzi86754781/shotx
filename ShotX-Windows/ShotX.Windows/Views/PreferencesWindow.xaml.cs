@@ -602,18 +602,32 @@ public partial class PreferencesWindow : Window
 
     private void LoadAiConfigUI()
     {
+        if (PwdBaiduAppId != null) PwdBaiduAppId.Password = PreferencesStore.BaiduTranslateAppId ?? "";
         if (TxtBaiduAppId != null) TxtBaiduAppId.Text = PreferencesStore.BaiduTranslateAppId ?? "";
         if (PwdBaiduSecret != null) PwdBaiduSecret.Password = PreferencesStore.BaiduTranslateSecretKey ?? "";
+        if (TxtBaiduSecret != null) TxtBaiduSecret.Text = PreferencesStore.BaiduTranslateSecretKey ?? "";
+
         if (PwdGoogleKey != null) PwdGoogleKey.Password = PreferencesStore.GoogleTranslateApiKey ?? "";
+        if (TxtGoogleKey != null) TxtGoogleKey.Text = PreferencesStore.GoogleTranslateApiKey ?? "";
+
         if (PwdDeepLKey != null) PwdDeepLKey.Password = PreferencesStore.DeepLTranslateApiKey ?? "";
+        if (TxtDeepLKey != null) TxtDeepLKey.Text = PreferencesStore.DeepLTranslateApiKey ?? "";
+
         if (PwdOpenAIKey != null) PwdOpenAIKey.Password = PreferencesStore.OpenAIApiKey ?? "";
+        if (TxtOpenAIKey != null) TxtOpenAIKey.Text = PreferencesStore.OpenAIApiKey ?? "";
+
         if (TxtOpenAIBaseUrl != null) TxtOpenAIBaseUrl.Text = string.IsNullOrWhiteSpace(PreferencesStore.OpenAIBaseUrl) ? "https://api.openai.com/v1" : PreferencesStore.OpenAIBaseUrl;
         if (TxtOpenAIModel != null) TxtOpenAIModel.Text = string.IsNullOrWhiteSpace(PreferencesStore.OpenAIModel) ? "gpt-4o-mini" : PreferencesStore.OpenAIModel;
 
+        if (PwdBaiduOcrKey != null) PwdBaiduOcrKey.Password = PreferencesStore.BaiduOcrApiKey ?? "";
         if (TxtBaiduOcrKey != null) TxtBaiduOcrKey.Text = PreferencesStore.BaiduOcrApiKey ?? "";
         if (PwdBaiduOcrSecret != null) PwdBaiduOcrSecret.Password = PreferencesStore.BaiduOcrSecretKey ?? "";
+        if (TxtBaiduOcrSecret != null) TxtBaiduOcrSecret.Text = PreferencesStore.BaiduOcrSecretKey ?? "";
+
+        if (PwdYoudaoOcrKey != null) PwdYoudaoOcrKey.Password = PreferencesStore.YoudaoOcrAppKey ?? "";
         if (TxtYoudaoOcrKey != null) TxtYoudaoOcrKey.Text = PreferencesStore.YoudaoOcrAppKey ?? "";
         if (PwdYoudaoOcrSecret != null) PwdYoudaoOcrSecret.Password = PreferencesStore.YoudaoOcrAppSecret ?? "";
+        if (TxtYoudaoOcrSecret != null) TxtYoudaoOcrSecret.Text = PreferencesStore.YoudaoOcrAppSecret ?? "";
 
         SelectTransEngine(PreferencesStore.ActiveTranslationEngine ?? "Baidu", false);
         SelectOcrEngine(PreferencesStore.ActiveOcrEngine ?? "System", false);
@@ -698,10 +712,26 @@ public partial class PreferencesWindow : Window
     private void TransConfig_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (!_isReady) return;
-        if (TxtBaiduAppId != null) PreferencesStore.BaiduTranslateAppId = TxtBaiduAppId.Text.Trim();
+        if (TxtBaiduAppId != null && TxtBaiduAppId.Visibility == Visibility.Visible) PreferencesStore.BaiduTranslateAppId = TxtBaiduAppId.Text.Trim();
+        if (TxtBaiduSecret != null && TxtBaiduSecret.Visibility == Visibility.Visible) PreferencesStore.BaiduTranslateSecretKey = TxtBaiduSecret.Text.Trim();
+        if (TxtGoogleKey != null && TxtGoogleKey.Visibility == Visibility.Visible) PreferencesStore.GoogleTranslateApiKey = TxtGoogleKey.Text.Trim();
+        if (TxtDeepLKey != null && TxtDeepLKey.Visibility == Visibility.Visible) PreferencesStore.DeepLTranslateApiKey = TxtDeepLKey.Text.Trim();
+        if (TxtOpenAIKey != null && TxtOpenAIKey.Visibility == Visibility.Visible) PreferencesStore.OpenAIApiKey = TxtOpenAIKey.Text.Trim();
         if (TxtOpenAIBaseUrl != null) PreferencesStore.OpenAIBaseUrl = TxtOpenAIBaseUrl.Text.Trim();
         if (TxtOpenAIModel != null) PreferencesStore.OpenAIModel = TxtOpenAIModel.Text.Trim();
         PreferencesStore.Save();
+    }
+
+    private void BaiduAppId_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_isReady) return;
+        if (PwdBaiduAppId != null) PreferencesStore.BaiduTranslateAppId = PwdBaiduAppId.Password.Trim();
+        PreferencesStore.Save();
+    }
+
+    private void BtnToggleBaiduAppId_Click(object sender, RoutedEventArgs e)
+    {
+        TogglePasswordVisibility(PwdBaiduAppId, TxtBaiduAppId);
     }
 
     private void BaiduSecret_PasswordChanged(object sender, RoutedEventArgs e)
@@ -735,9 +765,23 @@ public partial class PreferencesWindow : Window
     private void OcrConfig_TextChanged(object sender, TextChangedEventArgs e)
     {
         if (!_isReady) return;
-        if (TxtBaiduOcrKey != null) PreferencesStore.BaiduOcrApiKey = TxtBaiduOcrKey.Text.Trim();
-        if (TxtYoudaoOcrKey != null) PreferencesStore.YoudaoOcrAppKey = TxtYoudaoOcrKey.Text.Trim();
+        if (TxtBaiduOcrKey != null && TxtBaiduOcrKey.Visibility == Visibility.Visible) PreferencesStore.BaiduOcrApiKey = TxtBaiduOcrKey.Text.Trim();
+        if (TxtBaiduOcrSecret != null && TxtBaiduOcrSecret.Visibility == Visibility.Visible) PreferencesStore.BaiduOcrSecretKey = TxtBaiduOcrSecret.Text.Trim();
+        if (TxtYoudaoOcrKey != null && TxtYoudaoOcrKey.Visibility == Visibility.Visible) PreferencesStore.YoudaoOcrAppKey = TxtYoudaoOcrKey.Text.Trim();
+        if (TxtYoudaoOcrSecret != null && TxtYoudaoOcrSecret.Visibility == Visibility.Visible) PreferencesStore.YoudaoOcrAppSecret = TxtYoudaoOcrSecret.Text.Trim();
         PreferencesStore.Save();
+    }
+
+    private void BaiduOcrKey_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_isReady) return;
+        if (PwdBaiduOcrKey != null) PreferencesStore.BaiduOcrApiKey = PwdBaiduOcrKey.Password.Trim();
+        PreferencesStore.Save();
+    }
+
+    private void BtnToggleBaiduOcrKey_Click(object sender, RoutedEventArgs e)
+    {
+        TogglePasswordVisibility(PwdBaiduOcrKey, TxtBaiduOcrKey);
     }
 
     private void BaiduOcrSecret_PasswordChanged(object sender, RoutedEventArgs e)
@@ -747,11 +791,33 @@ public partial class PreferencesWindow : Window
         PreferencesStore.Save();
     }
 
+    private void BtnToggleBaiduOcrSecret_Click(object sender, RoutedEventArgs e)
+    {
+        TogglePasswordVisibility(PwdBaiduOcrSecret, TxtBaiduOcrSecret);
+    }
+
+    private void YoudaoOcrKey_PasswordChanged(object sender, RoutedEventArgs e)
+    {
+        if (!_isReady) return;
+        if (PwdYoudaoOcrKey != null) PreferencesStore.YoudaoOcrAppKey = PwdYoudaoOcrKey.Password.Trim();
+        PreferencesStore.Save();
+    }
+
+    private void BtnToggleYoudaoOcrKey_Click(object sender, RoutedEventArgs e)
+    {
+        TogglePasswordVisibility(PwdYoudaoOcrKey, TxtYoudaoOcrKey);
+    }
+
     private void YoudaoOcrSecret_PasswordChanged(object sender, RoutedEventArgs e)
     {
         if (!_isReady) return;
         if (PwdYoudaoOcrSecret != null) PreferencesStore.YoudaoOcrAppSecret = PwdYoudaoOcrSecret.Password.Trim();
         PreferencesStore.Save();
+    }
+
+    private void BtnToggleYoudaoOcrSecret_Click(object sender, RoutedEventArgs e)
+    {
+        TogglePasswordVisibility(PwdYoudaoOcrSecret, TxtYoudaoOcrSecret);
     }
 
     private void BtnToggleBaiduSecret_Click(object sender, RoutedEventArgs e)

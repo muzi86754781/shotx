@@ -135,6 +135,18 @@ public partial class OverlayWindow : Window
     private static extern bool IsIconic(IntPtr hWnd);
     [DllImport("user32.dll")]
     private static extern void mouse_event(uint dwFlags, uint dx, uint dy, int dwData, UIntPtr dwExtraInfo);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetCursorPos(out POINT lpPoint);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool SetCursorPos(int X, int Y);
+    [DllImport("user32.dll")]
+    private static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, UIntPtr dwExtraInfo);
+
+    private const byte VK_UP = 0x26;
+    private const byte VK_DOWN = 0x28;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
 
     private const int WH_MOUSE_LL = 14;
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
@@ -1506,7 +1518,7 @@ public partial class OverlayWindow : Window
             var badgeRect = new Rect(cardX + 10, cardY + cardH - 64, cardW - 20, 20);
             dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(220, 35, 35, 40)), null, badgeRect, 4, 4);
 
-            var badgeFt = new FormattedText($"长图高度: {_stitcher.CurrentHeight} px", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 10, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            var badgeFt = new FormattedText($"高度: {_stitcher.CurrentHeight} px · 已拼 {_stitcher.SliceCount} 次", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 10, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
             dc.DrawText(badgeFt, new Point(badgeRect.Left + (badgeRect.Width - badgeFt.Width) / 2, badgeRect.Top + 2.5));
         }
 
@@ -2081,7 +2093,7 @@ public partial class OverlayWindow : Window
         return found;
     }
 
-    private async Task ScrollUnderlyingWindowAndStitchAsync(int wheelDelta)
+    private async Task ScrollUnderlyingWindowAndStitchAsync(int wheelDelta, bool isFromHardwareWheel = false)
     {
         if (_isStitchingInProgress) return;
         _isStitchingInProgress = true;
@@ -2111,6 +2123,21 @@ public partial class OverlayWindow : Window
                 targetHwnd = GetWindowBelow(selfHwnd, new System.Drawing.Point(screenX, screenY));
             }
 
+            POINT origCursor = default;
+            bool needRestoreCursor = false;
+
+            if (!isFromHardwareWheel)
+            {
+                if (GetCursorPos(out origCursor))
+                {
+                    needRestoreCursor = (origCursor.x != screenX || origCursor.y != screenY);
+                    if (needRestoreCursor)
+                    {
+                        SetCursorPos(screenX, screenY);
+                    }
+                }
+            }
+
             if (targetHwnd != IntPtr.Zero && targetHwnd != selfHwnd)
             {
                 // 获取最深层级的子窗口（例如 Chromium RenderWidget 或可滚动视口）
@@ -2136,11 +2163,21 @@ public partial class OverlayWindow : Window
                 }
             }
 
-            // 硬件级全局 mouse_event 保底派发
+            // 硬件级全局 mouse_event 滚轮派发
             mouse_event(MOUSEEVENTF_WHEEL, 0, 0, wheelDelta, UIntPtr.Zero);
 
-            // 等待目标页面完成重绘渲染
-            await Task.Delay(85);
+            // 同时派发方向键向下/向上（保证对无焦点窗口或特殊软件 100% 滚动）
+            byte vk = wheelDelta < 0 ? VK_DOWN : VK_UP;
+            keybd_event(vk, 0, 0, UIntPtr.Zero);
+            keybd_event(vk, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
+
+            if (needRestoreCursor)
+            {
+                SetCursorPos(origCursor.x, origCursor.y);
+            }
+
+            // 等待目标页面完成平滑重绘渲染（Chromium 平滑滚动约需 130-150ms）
+            await Task.Delay(140);
 
             // 抓取选区最新的 live 画面切片并无缝垂直拼接
             var fresh = CaptureCurrentSelectionLive();
@@ -2156,6 +2193,7 @@ public partial class OverlayWindow : Window
                 else if (res.DidStitch)
                 {
                     Render();
+                    ModernToast.ShowSuccess($"已向下拼接 +{res.AddedHeight}px (长图总高: {_stitcher.CurrentHeight}px)");
                 }
             }
         }
@@ -2184,7 +2222,7 @@ public partial class OverlayWindow : Window
         _isAutoScrolling = true;
         _autoScrollTimer = new DispatcherTimer
         {
-            Interval = TimeSpan.FromMilliseconds(180)
+            Interval = TimeSpan.FromMilliseconds(260)
         };
         int noMovementCount = 0;
         _autoScrollTimer.Tick += async (s, e) =>
@@ -2196,7 +2234,7 @@ public partial class OverlayWindow : Window
             }
 
             int hBefore = _stitcher.CurrentHeight;
-            await ScrollUnderlyingWindowAndStitchAsync(-120);
+            await ScrollUnderlyingWindowAndStitchAsync(-120, false);
             int hAfter = _stitcher.CurrentHeight;
 
             if (hAfter == hBefore)
@@ -2258,7 +2296,7 @@ public partial class OverlayWindow : Window
                     short wheelDelta = unchecked((short)((hookStruct.mouseData >> 16) & 0xFFFF));
                     Dispatcher.BeginInvoke(new Action(() =>
                     {
-                        _ = ScrollUnderlyingWindowAndStitchAsync(wheelDelta);
+                        _ = ScrollUnderlyingWindowAndStitchAsync(wheelDelta, true);
                     }));
                 }
             }
@@ -2705,24 +2743,20 @@ public partial class OverlayWindow : Window
         _mode = CaptureMode.Scrolling;
         _isSubToolbarVisible = false;
 
-        // 1. 隐藏全屏背景静态快照，确保选区内部 100% 透明，实时可见底层 Chrome/Edge 等应用
+        // 1. 隐藏全屏背景静态快照，确保选区内部 100% 透明，实时可见底层真实桌面与应用
         ImgSnapshot.Visibility = Visibility.Collapsed;
 
-        // 2. 设置从屏幕截图中排除当前覆盖窗体 (WDA_EXCLUDEFROMCAPTURE = 0x00000011)，确保截取的是底层真实页面
-        try
-        {
-            var hwnd = new WindowInteropHelper(this).Handle;
-            SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
-        }
-        catch { }
-
-        // 3. 安装低级别鼠标钩子，捕捉硬件级滚轮
+        // 2. 安装低级别鼠标钩子，捕捉硬件级滚轮
         InstallMouseHook();
 
+        // 3. 初始第一帧画面优先由 live 画面截取，确保尺寸与后续每一片 100% 绝对一致
         var initial = CaptureCurrentSelectionLive() ?? GetCroppedSelectionBitmap();
-        _stitcher.Initialize(initial);
+        if (initial != null)
+        {
+            _stitcher.Initialize(initial);
+        }
         Render();
-        ModernToast.ShowInfo("长截图已开启：滚动鼠标滚轮、在选区内上下拖动鼠标、或点击⬇按钮均可滚动拼接。");
+        ModernToast.ShowInfo("长截图已开启：滚轮滚动、在选框内拖动、或点击右侧【⬇ 滚动】均可向下拼接长图。");
     }
 
     private Bitmap? CaptureCurrentSelectionLive()
@@ -2732,11 +2766,11 @@ public partial class OverlayWindow : Window
             double scaleX = (double)_virtualBounds.Width / Width;
             double scaleY = (double)_virtualBounds.Height / Height;
 
-            // 内缩 2 物理像素，杜绝截取到蓝色选框边缘与端角圆点，保证图像拼接纯净
-            int sx = _virtualBounds.X + (int)Math.Round((_selectionRect.X + 2) * scaleX);
-            int sy = _virtualBounds.Y + (int)Math.Round((_selectionRect.Y + 2) * scaleY);
-            int sw = (int)Math.Round((_selectionRect.Width - 4) * scaleX);
-            int sh = (int)Math.Round((_selectionRect.Height - 4) * scaleY);
+            // 内缩 4 物理像素，杜绝截取到蓝色选框边缘与端角圆点，保证图像拼接纯净
+            int sx = _virtualBounds.X + (int)Math.Round((_selectionRect.X + 4) * scaleX);
+            int sy = _virtualBounds.Y + (int)Math.Round((_selectionRect.Y + 4) * scaleY);
+            int sw = (int)Math.Round((_selectionRect.Width - 8) * scaleX);
+            int sh = (int)Math.Round((_selectionRect.Height - 8) * scaleY);
 
             if (sw <= 10 || sh <= 10) return null;
 
@@ -2755,8 +2789,6 @@ public partial class OverlayWindow : Window
         try
         {
             ImgSnapshot.Visibility = Visibility.Visible;
-            var hwnd = new WindowInteropHelper(this).Handle;
-            SetWindowDisplayAffinity(hwnd, 0);
         }
         catch { }
     }
