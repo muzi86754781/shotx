@@ -10,6 +10,7 @@ using System.Windows.Threading;
 using ShotX.Windows.Core;
 using Application = System.Windows.Application;
 using Clipboard = System.Windows.Clipboard;
+using ComboBox = System.Windows.Controls.ComboBox;
 using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 
 namespace ShotX.Windows.Views;
