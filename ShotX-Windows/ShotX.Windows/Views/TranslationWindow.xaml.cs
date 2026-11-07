@@ -283,32 +283,14 @@ public partial class TranslationWindow : Window
 
         try
         {
-            string url = $"https://translate.googleapis.com/translate_a/single?client=gtx&sl={sl}&tl={tl}&dt=t&q={Uri.EscapeDataString(text)}";
-            var resp = await _httpClient.GetAsync(url, ct);
-            if (resp.IsSuccessStatusCode)
+            string result = await AiTranslationService.TranslateAsync(text, sl, tl, ct);
+            if (!string.IsNullOrWhiteSpace(result))
             {
-                string json = await resp.Content.ReadAsStringAsync(ct);
-                using var doc = JsonDocument.Parse(json);
-                var root = doc.RootElement;
-                if (root.ValueKind == JsonValueKind.Array && root.GetArrayLength() > 0)
-                {
-                    var segs = root[0];
-                    var sb = new System.Text.StringBuilder();
-                    foreach (var seg in segs.EnumerateArray())
-                    {
-                        if (seg.ValueKind == JsonValueKind.Array && seg.GetArrayLength() > 0)
-                        {
-                            sb.Append(seg[0].GetString());
-                        }
-                    }
-                    string result = sb.ToString();
-                    TxtResult.Text = result;
-
-                    HistoryStore.Add(HistoryType.Translation, text, result);
-                    return;
-                }
+                TxtResult.Text = result;
+                HistoryStore.Add(HistoryType.Translation, text, result);
+                return;
             }
-            TxtResult.Text = "（网络翻译接口繁忙，请检查网络连接）";
+            TxtResult.Text = "（翻译接口繁忙或未配置有效密钥，请重试）";
         }
         catch (OperationCanceledException)
         {

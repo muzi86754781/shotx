@@ -66,12 +66,19 @@ enum ColorPicker {
     }
 }
 
+final class ColorPickerWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
 @MainActor
 final class ColorPickerOverlayController {
     static let shared = ColorPickerOverlayController()
 
-    private var windows: [NSWindow] = []
+    private var windows: [ColorPickerWindow] = []
+    private var overlayViews: [ColorPickerOverlayView] = []
     private var activeFormat: ColorFormat = .hex
+    private var keyMonitor: Any?
 
     func show() {
         dismiss()
@@ -88,6 +95,7 @@ final class ColorPickerOverlayController {
                 frame: NSRect(origin: .zero, size: screen.frame.size),
                 screen: screen,
                 screenshot: cgImage,
+                initialFormat: activeFormat,
                 onColorSelected: { [weak self] formattedColor, color in
                     self?.copyColorAndFinish(formattedColor: formattedColor, color: color)
                 },
@@ -96,27 +104,71 @@ final class ColorPickerOverlayController {
                 }
             )
 
-            let win = NSWindow(
+            let win = ColorPickerWindow(
                 contentRect: screen.frame,
                 styleMask: [.borderless],
                 backing: .buffered,
                 defer: false
             )
-            win.level = .screenSaver
+            win.level = .floating
             win.backgroundColor = .clear
             win.isOpaque = false
             win.hasShadow = false
             win.ignoresMouseEvents = false
             win.acceptsMouseMovedEvents = true
-            win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
+            win.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
             win.contentView = overlayView
 
+            CaptureExclusions.register(win)
             win.orderFrontRegardless()
             windows.append(win)
+            overlayViews.append(overlayView)
         }
 
         NSApp.activate(ignoringOtherApps: true)
-        windows.first?.makeKey()
+        if let mainWin = windows.first(where: { $0.screen == NSScreen.main }) ?? windows.first {
+            mainWin.makeKeyAndOrderFront(nil)
+            if let view = mainWin.contentView as? ColorPickerOverlayView {
+                mainWin.makeFirstResponder(view)
+            }
+        }
+
+        // 注册本地键盘全局监听，确保 Tab/C/Space/ESC 零延迟精准拦截切换格式
+        keyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self, !self.windows.isEmpty else { return event }
+            switch event.keyCode {
+            case 53: // ESC
+                self.dismiss()
+                return nil
+            case 48, 8, 49: // Tab (48), C (8), Space (49)
+                self.cycleFormat()
+                return nil
+            case 36, 76: // Enter / Return
+                self.confirmActiveColor()
+                return nil
+            default:
+                return event
+            }
+        }
+    }
+
+    func cycleFormat() {
+        let all = ColorFormat.allCases
+        let nextIndex = (activeFormat.rawValue + 1) % all.count
+        activeFormat = all[nextIndex]
+        for view in overlayViews {
+            view.updateFormat(activeFormat)
+        }
+    }
+
+    private func confirmActiveColor() {
+        for view in overlayViews {
+            if view.mouseInsideView {
+                view.confirmCurrentColor()
+                return
+            }
+        }
+        overlayViews.first?.confirmCurrentColor()
     }
 
     private func copyColorAndFinish(formattedColor: String, color: NSColor) {
@@ -135,12 +187,18 @@ final class ColorPickerOverlayController {
     }
 
     func dismiss() {
+        if let monitor = keyMonitor {
+            NSEvent.removeMonitor(monitor)
+            keyMonitor = nil
+        }
         for w in windows {
+            CaptureExclusions.unregister(w)
             w.orderOut(nil)
             w.contentView = nil
             w.close()
         }
         windows.removeAll()
+        overlayViews.removeAll()
     }
 }
 
@@ -153,16 +211,19 @@ private final class ColorPickerOverlayView: NSView {
     private var currentMousePoint: NSPoint = .zero
     private var activeFormat: ColorFormat = .hex
     private var trackingArea: NSTrackingArea?
+    var mouseInsideView: Bool = false
 
     init(
         frame: NSRect,
         screen: NSScreen,
         screenshot: CGImage,
+        initialFormat: ColorFormat,
         onColorSelected: @escaping (String, NSColor) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.targetScreen = screen
         self.screenshot = screenshot
+        self.activeFormat = initialFormat
         self.onColorSelected = onColorSelected
         self.onCancel = onCancel
         super.init(frame: frame)
@@ -172,12 +233,17 @@ private final class ColorPickerOverlayView: NSView {
 
     override var acceptsFirstResponder: Bool { true }
 
+    func updateFormat(_ format: ColorFormat) {
+        self.activeFormat = format
+        needsDisplay = true
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let ta = trackingArea { removeTrackingArea(ta) }
         let ta = NSTrackingArea(
             rect: bounds,
-            options: [.mouseMoved, .activeAlways, .inVisibleRect],
+            options: [.mouseMoved, .mouseEnteredAndExited, .activeAlways, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -185,30 +251,17 @@ private final class ColorPickerOverlayView: NSView {
         self.trackingArea = ta
     }
 
+    override func mouseEntered(with event: NSEvent) {
+        mouseInsideView = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        mouseInsideView = false
+    }
+
     override func mouseMoved(with event: NSEvent) {
         currentMousePoint = convert(event.locationInWindow, from: nil)
-        needsDisplay = true
-    }
-
-    override func keyDown(with event: NSEvent) {
-        switch event.keyCode {
-        case 53: // ESC
-            onCancel()
-        case 36, 76: // Enter / Return
-            confirmCurrentColor()
-        case 48, 8: // Tab (48) or C (8)
-            cycleFormat()
-        case 49: // Space
-            cycleFormat()
-        default:
-            super.keyDown(with: event)
-        }
-    }
-
-    private func cycleFormat() {
-        let all = ColorFormat.allCases
-        let nextIndex = (activeFormat.rawValue + 1) % all.count
-        activeFormat = all[nextIndex]
+        mouseInsideView = true
         needsDisplay = true
     }
 
@@ -220,7 +273,7 @@ private final class ColorPickerOverlayView: NSView {
         onCancel()
     }
 
-    private func confirmCurrentColor() {
+    func confirmCurrentColor() {
         let (r, g, b, a, color) = getPixelColor(at: currentMousePoint)
         let formatted = activeFormat.format(r: r, g: g, b: b, a: a)
         onColorSelected(formatted, color)
@@ -245,7 +298,6 @@ private final class ColorPickerOverlayView: NSView {
 
         var r = 0, g = 0, b = 0, a = 255
         if bpp >= 4 {
-            // Usually BGRA or RGBA
             let b0 = Int(ptr[offset])
             let b1 = Int(ptr[offset + 1])
             let b2 = Int(ptr[offset + 2])
@@ -279,7 +331,7 @@ private final class ColorPickerOverlayView: NSView {
 
         let p = currentMousePoint
 
-        // 1. 全屏十字瞄准线 (柔和虚线)
+        // 1. 全屏十字瞄准线 (柔和半透明虚线)
         ctx.saveGState()
         ctx.setStrokeColor(NSColor.white.withAlphaComponent(0.45).cgColor)
         ctx.setLineWidth(1.0)
@@ -291,10 +343,10 @@ private final class ColorPickerOverlayView: NSView {
         ])
         ctx.restoreGState()
 
-        // 2. 放大镜尺寸与坐标计算 (参考 Windows 端样式)
+        // 2. 放大镜尺寸与坐标计算
         let loupeSize: CGFloat = 138
         var lx = p.x + 22
-        var ly = p.y - loupeSize - 50 // below cursor
+        var ly = p.y - loupeSize - 50 // 默认置于鼠标右下方
         if lx + loupeSize + 10 > bounds.width { lx = p.x - loupeSize - 22 }
         if ly < 10 { ly = p.y + 22 }
 
@@ -355,7 +407,7 @@ private final class ColorPickerOverlayView: NSView {
         ctx.strokePath()
         ctx.restoreGState()
 
-        // 4. 底部颜色信息与格式指示卡片 (Fluent / macOS 深色卡片)
+        // 4. 底部颜色信息与格式指示卡片 (深色卡片)
         let infoRect = CGRect(x: lx, y: ly, width: loupeSize, height: 42)
         let infoPath = CGPath(roundedRect: infoRect, cornerWidth: 6, cornerHeight: 6, transform: nil)
 
@@ -392,7 +444,7 @@ private final class ColorPickerOverlayView: NSView {
             .font: NSFont.systemFont(ofSize: 8.5, weight: .medium),
             .foregroundColor: NSColor(white: 0.72, alpha: 1.0)
         ]
-        let tipString = NSAttributedString(string: "[Tab/C] 切换格式 · 点击复制", attributes: tipAttrs)
+        let tipString = NSAttributedString(string: "[Tab/C/空格] 切换 · 点击复制", attributes: tipAttrs)
         tipString.draw(at: NSPoint(x: lx + 7, y: ly + 5))
     }
 }

@@ -101,7 +101,7 @@ public partial class HistoryWindow : Window
             if (item.Kind == "OCR")
             {
                 Clipboard.SetText(item.TextContent);
-                MessageBox.Show("OCR 文本已复制到剪贴板！", "ShotX", MessageBoxButton.OK, MessageBoxImage.Information);
+                ModernToast.ShowSuccess("OCR 文本已复制到剪贴板");
             }
             else if (!string.IsNullOrEmpty(item.FilePath) && File.Exists(item.FilePath))
             {
@@ -109,11 +109,11 @@ public partial class HistoryWindow : Window
                 {
                     var bi = new BitmapImage(new Uri(item.FilePath));
                     Clipboard.SetImage(bi);
-                    MessageBox.Show("图片已成功复制到剪贴板！", "ShotX", MessageBoxButton.OK, MessageBoxImage.Information);
+                    ModernToast.ShowSuccess("图片已成功复制到剪贴板");
                 }
                 catch (Exception ex)
                 {
-                    MessageBox.Show($"复制图片失败: {ex.Message}", "ShotX", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    ModernToast.ShowWarning($"复制图片失败: {ex.Message}");
                 }
             }
         }
@@ -131,7 +131,7 @@ public partial class HistoryWindow : Window
             if (sfd.ShowDialog() == System.Windows.Forms.DialogResult.OK)
             {
                 File.Copy(item.FilePath, sfd.FileName, true);
-                MessageBox.Show("图片已成功另存为！", "ShotX", MessageBoxButton.OK, MessageBoxImage.Information);
+                ModernToast.ShowSuccess("图片已成功另存为");
             }
         }
     }
@@ -150,16 +150,15 @@ public partial class HistoryWindow : Window
         {
             HistoryStore.Delete(item);
             RefreshList();
+            ModernToast.ShowInfo("已删除该条记录");
         }
     }
 
     private void BtnClear_Click(object sender, RoutedEventArgs e)
     {
-        if (MessageBox.Show("确定要清空全部截图与 OCR 历史记录吗？", "ShotX 历史记录", MessageBoxButton.YesNo, MessageBoxImage.Question) == MessageBoxResult.Yes)
-        {
-            HistoryStore.Clear();
-            RefreshList();
-        }
+        HistoryStore.Clear();
+        RefreshList();
+        ModernToast.ShowInfo("已清空历史记录");
     }
 }
 

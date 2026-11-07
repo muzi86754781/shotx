@@ -22,6 +22,26 @@ public class AppPreferences
     public string ClipboardShortcut { get; set; } = "Alt+C";
     public string TranslationShortcut { get; set; } = "Alt+V";
 
+    // OCR & 翻译多引擎配置持久化 (解决需求 3)
+    public string ActiveTranslationEngine { get; set; } = "BuiltIn"; // BuiltIn, Baidu, Google, Youdao, DeepL, OpenAI
+    public string BaiduTranslateAppId { get; set; } = "";
+    public string BaiduTranslateSecretKey { get; set; } = "";
+    public string GoogleTranslateApiKey { get; set; } = "";
+    public string YoudaoTranslateAppKey { get; set; } = "";
+    public string YoudaoTranslateAppSecret { get; set; } = "";
+    public string DeepLTranslateApiKey { get; set; } = "";
+    public string OpenAIApiKey { get; set; } = "";
+    public string OpenAIBaseUrl { get; set; } = "https://api.openai.com/v1";
+    public string OpenAIModel { get; set; } = "gpt-4o-mini";
+
+    public string ActiveOcrEngine { get; set; } = "System"; // System, Baidu, Youdao, Tencent
+    public string BaiduOcrApiKey { get; set; } = "";
+    public string BaiduOcrSecretKey { get; set; } = "";
+    public string YoudaoOcrAppKey { get; set; } = "";
+    public string YoudaoOcrAppSecret { get; set; } = "";
+    public string TencentOcrSecretId { get; set; } = "";
+    public string TencentOcrSecretKey { get; set; } = "";
+
     public Dictionary<string, string> Hotkeys { get; set; } = PreferencesStore.CreateDefaultHotkeys();
 }
 
@@ -50,6 +70,7 @@ public static class PreferencesStore
         ["ColorPicker"] = "",
         ["ScreenRecord"] = "",
         ["Translation"] = "",
+        ["SelectionTranslation"] = "",
         ["ClipboardHistory"] = ""
     };
 

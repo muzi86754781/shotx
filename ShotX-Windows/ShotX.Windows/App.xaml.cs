@@ -72,7 +72,7 @@ public partial class App : Application
         _singleInstanceMutex = new Mutex(true, "ShotX_Windows_SingleInstance_Mutex", out bool isNewInstance);
         if (!isNewInstance)
         {
-            MessageBox.Show("ShotX 已经在运行中，请按快捷键 Alt+A 呼出截图或检查右下角系统托盘。", "ShotX", MessageBoxButton.OK, MessageBoxImage.Information);
+            ModernToast.ShowInfo("ShotX 已经在运行中，请按快捷键呼出截图或检查右下角系统托盘。");
             Shutdown();
             return;
         }
@@ -370,10 +370,8 @@ public partial class App : Application
             RegisterConfiguredHotkey("ColorPicker", () => Dispatcher.BeginInvoke(() => StartScreenshot(OverlayMode.ColorPicker)));
             RegisterConfiguredHotkey("ScreenRecord", () => Dispatcher.BeginInvoke(StartScreenRecording));
             RegisterConfiguredHotkey("Translation", () => Dispatcher.BeginInvoke(ShowTranslationWindow));
+            RegisterConfiguredHotkey("SelectionTranslation", () => Dispatcher.BeginInvoke(TranslateSelection));
             RegisterConfiguredHotkey("ClipboardHistory", () => Dispatcher.BeginInvoke(ShowClipboardHistoryWindow));
-
-            // 额外保持 Alt + Shift + F 划词翻译热键
-            _hotKeyManager.Register(ModifierKeys.Alt | ModifierKeys.Shift, Key.F, () => Dispatcher.BeginInvoke(TranslateSelection));
         }
         catch
         {
@@ -661,7 +659,7 @@ public partial class App : Application
     {
         if (!LastCaptureStore.HasPrevious)
         {
-            MessageBox.Show("暂无上一次截图区域记录，请先使用区域截图框选一次。", "ShotX", MessageBoxButton.OK, MessageBoxImage.Information);
+            ModernToast.ShowInfo("暂无上一次截图区域记录，请先使用区域截图框选一次。");
             StartScreenshot(OverlayMode.Area);
             return;
         }
@@ -764,7 +762,7 @@ public partial class App : Application
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"打开图片失败: {ex.Message}", "ShotX", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ModernToast.ShowWarning($"打开图片失败: {ex.Message}");
         }
     }
 
@@ -797,11 +795,11 @@ public partial class App : Application
                     return;
                 }
             }
-            MessageBox.Show("剪贴板中暂无有效图片，请先截图或复制一张图片后再使用“改图-从剪贴板打开”。", "ShotX 改图", MessageBoxButton.OK, MessageBoxImage.Information);
+            ModernToast.ShowInfo("剪贴板中暂无有效图片，请先截图或复制图片后再使用。");
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"读取剪贴板图片失败: {ex.Message}", "ShotX", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ModernToast.ShowWarning($"读取剪贴板图片失败: {ex.Message}");
         }
     }
 
@@ -823,11 +821,11 @@ public partial class App : Application
                     return;
                 }
             }
-            MessageBox.Show("剪贴板中暂无有效图片，请先复制一张图片后再贴图。", "ShotX 贴图", MessageBoxButton.OK, MessageBoxImage.Information);
+            ModernToast.ShowInfo("剪贴板中暂无有效图片，请先复制图片后再贴图。");
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"读取剪贴板图片失败: {ex.Message}", "ShotX", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ModernToast.ShowWarning($"读取剪贴板图片失败: {ex.Message}");
         }
     }
 

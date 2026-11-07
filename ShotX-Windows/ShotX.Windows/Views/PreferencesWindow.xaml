@@ -331,7 +331,7 @@
                         <Image Source="pack://application:,,,/Resources/icon.png" Width="22" Height="22" RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,10,0"/>
                         <TextBlock Text="ShotX 设置中心" FontSize="13.5" FontWeight="Bold" Foreground="#0F172A" VerticalAlignment="Center"/>
                         <Border Background="#E0F2FE" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="v1.9.25" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7"/>
+                            <TextBlock Text="v1.9.26" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7"/>
                         </Border>
                     </StackPanel>
 
@@ -697,7 +697,7 @@
                                 </StackPanel>
                             </Border>
 
-                            <!-- 卡片 4: 文本识别 (OCR) 与翻译平台 -->
+                            <!-- 卡片 4: 文本识别 (OCR) 与翻译平台 (多引擎可配置与信息保留，参照设计图) -->
                             <Border x:Name="CardAi" Style="{StaticResource CardBorderStyle}">
                                 <StackPanel>
                                     <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
@@ -705,48 +705,361 @@
                                             <TextBlock Text="🌐" FontSize="16" HorizontalAlignment="Center" VerticalAlignment="Center"/>
                                         </Border>
                                         <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="智能文字识别 (OCR) 与多语言翻译" FontSize="14.5" FontWeight="Bold" Foreground="#0F172A"/>
-                                            <TextBlock Text="配置离线或云端 OCR 文字提取引擎与机器翻译接口" FontSize="11.5" Foreground="#64748B" Margin="0,2,0,0"/>
+                                            <TextBlock Text="机器翻译与文字识别 (OCR) 服务配置" FontSize="14.5" FontWeight="Bold" Foreground="#0F172A"/>
+                                            <TextBlock Text="支持多平台翻译与 OCR 引擎自由切换，独立配置各平台 API 凭证并持久保留" FontSize="11.5" Foreground="#64748B" Margin="0,2,0,0"/>
                                         </StackPanel>
                                     </StackPanel>
                                     <Separator Background="#F1F5F9" Margin="0,0,0,12"/>
 
-                                    <!-- OCR 引擎 -->
-                                    <Grid Margin="0,0,0,10">
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="文本识别 (OCR) 引擎" FontSize="13" FontWeight="SemiBold" Foreground="#1E293B"/>
-                                            <TextBlock Text="支持 Windows 原生离线 OCR、百度智能云、有道智云、腾讯云" FontSize="11.5" Foreground="#64748B" Margin="0,3,0,0"/>
-                                        </StackPanel>
-                                        <ComboBox HorizontalAlignment="Right" VerticalAlignment="Center" Width="220" Height="30" VerticalContentAlignment="Center" SelectedIndex="0">
-                                            <ComboBoxItem Content="Windows OCR (系统离线 · 推荐)"/>
-                                            <ComboBoxItem Content="百度智能云 (通用高精度)"/>
-                                            <ComboBoxItem Content="有道智云 OCR"/>
-                                            <ComboBoxItem Content="腾讯云通用印刷体"/>
-                                        </ComboBox>
-                                    </Grid>
+                                    <!-- 1. 机器翻译平台 (1:1 还原用户参考设计图布局 - 解决需求 3) -->
+                                    <TextBlock Text="多语言机器翻译平台" FontSize="13" FontWeight="Bold" Foreground="#1E293B" Margin="0,0,0,8"/>
+                                    <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="8" Height="210" Margin="0,0,0,16">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="200"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
 
-                                    <Border Background="#ECFDF5" CornerRadius="6" Padding="10,6" Margin="0,0,0,14">
-                                        <TextBlock Text="●  已启用 Windows 原生离线视觉引擎，无需联网与密钥，极速识别中英日韩文字。" FontSize="11.5" Foreground="#059669" FontWeight="Medium"/>
+                                            <!-- 左侧翻译引擎列表 -->
+                                            <Border Grid.Column="0" BorderBrush="#E2E8F0" BorderThickness="0,0,1,0" Background="#FFFFFF" CornerRadius="8,0,0,8">
+                                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                    <StackPanel x:Name="PnlTransEngines">
+                                                        <!-- 百度翻译 -->
+                                                        <Border x:Name="RowTransBaidu" Background="#007AFF" Padding="10,8" Cursor="Hand" MouseDown="TransEngineRow_MouseDown" Tag="Baidu">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <CheckBox x:Name="ChkTransBaidu" IsHitTestVisible="False" IsChecked="True" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="译" FontWeight="Bold" FontSize="12.5" Foreground="#FFFFFF" Margin="0,0,6,0"/>
+                                                                    <TextBlock x:Name="TxtTitleTransBaidu" Text="百度翻译" FontSize="12" FontWeight="SemiBold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <Border Grid.Column="2" Background="#2563EB" CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
+                                                                    <TextBlock Text="秘钥" FontSize="9.5" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+
+                                                        <!-- 内置免密钥翻译 -->
+                                                        <Border x:Name="RowTransBuiltIn" Background="Transparent" Padding="10,8" Cursor="Hand" MouseDown="TransEngineRow_MouseDown" Tag="BuiltIn">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <CheckBox x:Name="ChkTransBuiltIn" IsHitTestVisible="False" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="🌐" FontSize="12.5" Margin="0,0,6,0"/>
+                                                                    <TextBlock x:Name="TxtTitleTransBuiltIn" Text="内置翻译" FontSize="12" FontWeight="SemiBold" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <Border Grid.Column="2" Background="#DCFCE7" CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
+                                                                    <TextBlock Text="免费" FontSize="9.5" FontWeight="Bold" Foreground="#15803D"/>
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+
+                                                        <!-- 谷歌翻译 -->
+                                                        <Border x:Name="RowTransGoogle" Background="Transparent" Padding="10,8" Cursor="Hand" MouseDown="TransEngineRow_MouseDown" Tag="Google">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <CheckBox x:Name="ChkTransGoogle" IsHitTestVisible="False" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="G" FontWeight="Bold" FontSize="12.5" Foreground="#EA4335" Margin="0,0,6,0"/>
+                                                                    <TextBlock x:Name="TxtTitleTransGoogle" Text="谷歌翻译" FontSize="12" FontWeight="SemiBold" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <Border Grid.Column="2" Background="#EFF6FF" CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
+                                                                    <TextBlock Text="秘钥" FontSize="9.5" FontWeight="Bold" Foreground="#2563EB"/>
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+
+                                                        <!-- DeepL 翻译 -->
+                                                        <Border x:Name="RowTransDeepL" Background="Transparent" Padding="10,8" Cursor="Hand" MouseDown="TransEngineRow_MouseDown" Tag="DeepL">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <CheckBox x:Name="ChkTransDeepL" IsHitTestVisible="False" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="D" FontWeight="Bold" FontSize="12.5" Foreground="#0F2B46" Margin="0,0,6,0"/>
+                                                                    <TextBlock x:Name="TxtTitleTransDeepL" Text="DeepL 翻译" FontSize="12" FontWeight="SemiBold" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <Border Grid.Column="2" Background="#EFF6FF" CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
+                                                                    <TextBlock Text="秘钥" FontSize="9.5" FontWeight="Bold" Foreground="#2563EB"/>
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+
+                                                        <!-- OpenAI 翻译 -->
+                                                        <Border x:Name="RowTransOpenAI" Background="Transparent" Padding="10,8" Cursor="Hand" MouseDown="TransEngineRow_MouseDown" Tag="OpenAI">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <CheckBox x:Name="ChkTransOpenAI" IsHitTestVisible="False" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="🤖" FontSize="12.5" Margin="0,0,6,0"/>
+                                                                    <TextBlock x:Name="TxtTitleTransOpenAI" Text="OpenAI 翻译" FontSize="12" FontWeight="SemiBold" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <Border Grid.Column="2" Background="#EFF6FF" CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
+                                                                    <TextBlock Text="秘钥" FontSize="9.5" FontWeight="Bold" Foreground="#2563EB"/>
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+                                                    </StackPanel>
+                                                </ScrollViewer>
+                                            </Border>
+
+                                            <!-- 右侧翻译配置表单 -->
+                                            <Grid Grid.Column="1" Margin="16,14,16,12">
+                                                <!-- 百度翻译配置 -->
+                                                <StackPanel x:Name="PnlCfgTransBaidu" Visibility="Visible">
+                                                    <Grid Margin="0,0,0,10">
+                                                        <TextBlock Text="APP ID:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Margin="85,0,0,0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <TextBox x:Name="TxtBaiduAppId" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" TextChanged="TransConfig_TextChanged"/>
+                                                        </Border>
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,12">
+                                                        <TextBlock Text="Secret Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Margin="85,0,0,0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <Grid>
+                                                                <PasswordBox x:Name="PwdBaiduSecret" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" PasswordChanged="BaiduSecret_PasswordChanged"/>
+                                                                <TextBox x:Name="TxtBaiduSecret" Visibility="Collapsed" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" TextChanged="TransConfig_TextChanged"/>
+                                                                <Button HorizontalAlignment="Right" Content="👁" Width="26" Height="26" Background="Transparent" BorderThickness="0" Click="BtnToggleBaiduSecret_Click" ToolTip="显示/隐藏密钥"/>
+                                                            </Grid>
+                                                        </Border>
+                                                    </Grid>
+                                                    <Grid Margin="0,4,0,0">
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" Click="BtnVerifyBaiduTrans_Click"/>
+                                                            <TextBlock x:Name="TxtVerifyTransStatus" Text="" FontSize="11.5" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                                        </StackPanel>
+                                                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                            <Hyperlink Click="LnkApplyBaiduTrans_Click" Foreground="#0284C7" TextDecorations="None">如何申请？</Hyperlink>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </StackPanel>
+
+                                                <!-- 内置免密钥配置 -->
+                                                <StackPanel x:Name="PnlCfgTransBuiltIn" Visibility="Collapsed">
+                                                    <Border Background="#ECFDF5" CornerRadius="8" Padding="14,12" Margin="0,8,0,12" BorderBrush="#A7F3D0" BorderThickness="1">
+                                                        <StackPanel>
+                                                            <TextBlock Text="●  无需任何 API 密钥与账号注册" FontSize="12.5" FontWeight="Bold" Foreground="#065F46" Margin="0,0,0,6"/>
+                                                            <TextBlock Text="采用 Google Translate 免密钥高速多语言翻译通道，开箱即用支持全球 100+ 语言实时互译、划词翻译与截图 OCR 翻译。"
+                                                                       FontSize="11.5" Foreground="#047857" TextWrapping="Wrap" LineHeight="18"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                    <Button Content="测试翻译" Style="{StaticResource SmallBtnStyle}" HorizontalAlignment="Left" Width="76" Height="28" Click="BtnVerifyBuiltInTrans_Click"/>
+                                                </StackPanel>
+
+                                                <!-- 谷歌翻译配置 -->
+                                                <StackPanel x:Name="PnlCfgTransGoogle" Visibility="Collapsed">
+                                                    <Grid Margin="0,0,0,12">
+                                                        <TextBlock Text="API Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Margin="85,0,0,0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <Grid>
+                                                                <PasswordBox x:Name="PwdGoogleKey" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" PasswordChanged="GoogleKey_PasswordChanged"/>
+                                                                <TextBox x:Name="TxtGoogleKey" Visibility="Collapsed" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" TextChanged="TransConfig_TextChanged"/>
+                                                                <Button HorizontalAlignment="Right" Content="👁" Width="26" Height="26" Background="Transparent" BorderThickness="0" Click="BtnToggleGoogleKey_Click" ToolTip="显示/隐藏密钥"/>
+                                                            </Grid>
+                                                        </Border>
+                                                    </Grid>
+                                                    <Grid Margin="0,4,0,0">
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" Click="BtnVerifyGoogleTrans_Click"/>
+                                                            <TextBlock x:Name="TxtVerifyGoogleStatus" Text="" FontSize="11.5" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                                        </StackPanel>
+                                                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                            <Hyperlink Click="LnkApplyGoogleTrans_Click" Foreground="#0284C7" TextDecorations="None">如何申请？</Hyperlink>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </StackPanel>
+
+                                                <!-- DeepL 翻译配置 -->
+                                                <StackPanel x:Name="PnlCfgTransDeepL" Visibility="Collapsed">
+                                                    <Grid Margin="0,0,0,12">
+                                                        <TextBlock Text="Auth Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Margin="85,0,0,0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <Grid>
+                                                                <PasswordBox x:Name="PwdDeepLKey" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" PasswordChanged="DeepLKey_PasswordChanged"/>
+                                                                <TextBox x:Name="TxtDeepLKey" Visibility="Collapsed" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" TextChanged="TransConfig_TextChanged"/>
+                                                                <Button HorizontalAlignment="Right" Content="👁" Width="26" Height="26" Background="Transparent" BorderThickness="0" Click="BtnToggleDeepLKey_Click" ToolTip="显示/隐藏密钥"/>
+                                                            </Grid>
+                                                        </Border>
+                                                    </Grid>
+                                                    <Grid Margin="0,4,0,0">
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" Click="BtnVerifyDeepLTrans_Click"/>
+                                                            <TextBlock x:Name="TxtVerifyDeepLStatus" Text="" FontSize="11.5" VerticalAlignment="Center" Margin="10,0,0,0"/>
+                                                        </StackPanel>
+                                                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                            <Hyperlink Click="LnkApplyDeepLTrans_Click" Foreground="#0284C7" TextDecorations="None">如何申请？</Hyperlink>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </StackPanel>
+
+                                                <!-- OpenAI 翻译配置 -->
+                                                <StackPanel x:Name="PnlCfgTransOpenAI" Visibility="Collapsed">
+                                                    <Grid Margin="0,0,0,8">
+                                                        <TextBlock Text="API Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <Border Margin="85,0,0,0" Background="#FFFFFF" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="5" Height="28">
+                                                            <Grid>
+                                                                <PasswordBox x:Name="PwdOpenAIKey" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" PasswordChanged="OpenAIKey_PasswordChanged"/>
+                                                                <TextBox x:Name="TxtOpenAIKey" Visibility="Collapsed" BorderThickness="0" Background="Transparent" VerticalAlignment="Center" Padding="8,0" FontSize="12" TextChanged="TransConfig_TextChanged"/>
+                                                                <Button HorizontalAlignment="Right" Content="👁" Width="26" Height="26" Background="Transparent" BorderThickness="0" Click="BtnToggleOpenAIKey_Click" ToolTip="显示/隐藏密钥"/>
+                                                            </Grid>
+                                                        </Border>
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,8">
+                                                        <TextBlock Text="Base URL:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <TextBox x:Name="TxtOpenAIBaseUrl" Margin="85,0,0,0" Text="https://api.openai.com/v1" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" TextChanged="TransConfig_TextChanged"/>
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,10">
+                                                        <TextBlock Text="Model:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <TextBox x:Name="TxtOpenAIModel" Margin="85,0,0,0" Text="gpt-4o-mini" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" TextChanged="TransConfig_TextChanged"/>
+                                                    </Grid>
+                                                    <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" HorizontalAlignment="Left" Click="BtnVerifyOpenAITrans_Click"/>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Grid>
                                     </Border>
 
-                                    <Separator Background="#F1F5F9" Margin="0,0,0,12"/>
+                                    <!-- 2. 文本识别 (OCR) 平台 (参照设计图 - 解决需求 3) -->
+                                    <TextBlock Text="文本识别 (OCR) 引擎" FontSize="13" FontWeight="Bold" Foreground="#1E293B" Margin="0,0,0,8"/>
+                                    <Border Background="#F8FAFC" BorderBrush="#CBD5E1" BorderThickness="1" CornerRadius="8" Height="175">
+                                        <Grid>
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="200"/>
+                                                <ColumnDefinition Width="*"/>
+                                            </Grid.ColumnDefinitions>
 
-                                    <!-- 翻译引擎 -->
-                                    <Grid Margin="0,0,0,10">
-                                        <StackPanel VerticalAlignment="Center">
-                                            <TextBlock Text="多语言机器翻译服务" FontSize="13" FontWeight="SemiBold" Foreground="#1E293B"/>
-                                            <TextBlock Text="支持谷歌免密钥翻译、百度翻译、有道翻译、腾讯云机器翻译" FontSize="11.5" Foreground="#64748B" Margin="0,3,0,0"/>
-                                        </StackPanel>
-                                        <ComboBox HorizontalAlignment="Right" VerticalAlignment="Center" Width="220" Height="30" VerticalContentAlignment="Center" SelectedIndex="0">
-                                            <ComboBoxItem Content="谷歌翻译 (免密钥 · 默认推荐)"/>
-                                            <ComboBoxItem Content="百度通用翻译"/>
-                                            <ComboBoxItem Content="有道智云翻译"/>
-                                            <ComboBoxItem Content="腾讯云机器翻译"/>
-                                        </ComboBox>
-                                    </Grid>
+                                            <!-- 左侧 OCR 引擎列表 -->
+                                            <Border Grid.Column="0" BorderBrush="#E2E8F0" BorderThickness="0,0,1,0" Background="#FFFFFF" CornerRadius="8,0,0,8">
+                                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                                    <StackPanel x:Name="PnlOcrEngines">
+                                                        <!-- Windows 原生 OCR -->
+                                                        <Border x:Name="RowOcrSystem" Background="#007AFF" Padding="10,8" Cursor="Hand" MouseDown="OcrEngineRow_MouseDown" Tag="System">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <CheckBox x:Name="ChkOcrSystem" IsHitTestVisible="False" IsChecked="True" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="💻" FontSize="12.5" Margin="0,0,6,0"/>
+                                                                    <TextBlock x:Name="TxtTitleOcrSystem" Text="Windows 原生" FontSize="12" FontWeight="SemiBold" Foreground="#FFFFFF" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <Border Grid.Column="2" Background="#15803D" CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
+                                                                    <TextBlock Text="免费" FontSize="9.5" FontWeight="Bold" Foreground="#FFFFFF"/>
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
 
-                                    <Border Background="#ECFDF5" CornerRadius="6" Padding="10,6">
-                                        <TextBlock Text="●  已连接 Google Translate 免密钥高速通道，支持划词翻译、截图翻译与实时输入互译。" FontSize="11.5" Foreground="#059669" FontWeight="Medium"/>
+                                                        <!-- 百度智能云 OCR -->
+                                                        <Border x:Name="RowOcrBaidu" Background="Transparent" Padding="10,8" Cursor="Hand" MouseDown="OcrEngineRow_MouseDown" Tag="Baidu">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <CheckBox x:Name="ChkOcrBaidu" IsHitTestVisible="False" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="☁️" FontSize="12.5" Margin="0,0,6,0"/>
+                                                                    <TextBlock x:Name="TxtTitleOcrBaidu" Text="百度智能云" FontSize="12" FontWeight="SemiBold" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <Border Grid.Column="2" Background="#EFF6FF" CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
+                                                                    <TextBlock Text="秘钥" FontSize="9.5" FontWeight="Bold" Foreground="#2563EB"/>
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+
+                                                        <!-- 有道智云 OCR -->
+                                                        <Border x:Name="RowOcrYoudao" Background="Transparent" Padding="10,8" Cursor="Hand" MouseDown="OcrEngineRow_MouseDown" Tag="Youdao">
+                                                            <Grid>
+                                                                <Grid.ColumnDefinitions>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                    <ColumnDefinition Width="*"/>
+                                                                    <ColumnDefinition Width="Auto"/>
+                                                                </Grid.ColumnDefinitions>
+                                                                <CheckBox x:Name="ChkOcrYoudao" IsHitTestVisible="False" VerticalAlignment="Center" Margin="0,0,8,0"/>
+                                                                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                                                    <TextBlock Text="🔤" FontSize="12.5" Margin="0,0,6,0"/>
+                                                                    <TextBlock x:Name="TxtTitleOcrYoudao" Text="有道智云 OCR" FontSize="12" FontWeight="SemiBold" Foreground="#1E293B" VerticalAlignment="Center"/>
+                                                                </StackPanel>
+                                                                <Border Grid.Column="2" Background="#EFF6FF" CornerRadius="4" Padding="5,1" VerticalAlignment="Center">
+                                                                    <TextBlock Text="秘钥" FontSize="9.5" FontWeight="Bold" Foreground="#2563EB"/>
+                                                                </Border>
+                                                            </Grid>
+                                                        </Border>
+                                                    </StackPanel>
+                                                </ScrollViewer>
+                                            </Border>
+
+                                            <!-- 右侧 OCR 配置表单 -->
+                                            <Grid Grid.Column="1" Margin="16,14,16,12">
+                                                <!-- 系统原生 OCR -->
+                                                <StackPanel x:Name="PnlCfgOcrSystem" Visibility="Visible">
+                                                    <Border Background="#ECFDF5" CornerRadius="8" Padding="14,12" Margin="0,4,0,12" BorderBrush="#A7F3D0" BorderThickness="1">
+                                                        <StackPanel>
+                                                            <TextBlock Text="●  Windows 原生离线 OCR (已激活)" FontSize="12.5" FontWeight="Bold" Foreground="#065F46" Margin="0,0,0,6"/>
+                                                            <TextBlock Text="无需联网与任何 API 秘钥，利用 Windows 10/11 本地视觉识别核心，极速提取图像中的中英文与标点符号。"
+                                                                       FontSize="11.5" Foreground="#047857" TextWrapping="Wrap" LineHeight="18"/>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </StackPanel>
+
+                                                <!-- 百度智能云 OCR 配置 -->
+                                                <StackPanel x:Name="PnlCfgOcrBaidu" Visibility="Collapsed">
+                                                    <Grid Margin="0,0,0,8">
+                                                        <TextBlock Text="API Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <TextBox x:Name="TxtBaiduOcrKey" Margin="85,0,0,0" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" TextChanged="OcrConfig_TextChanged"/>
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,10">
+                                                        <TextBlock Text="Secret Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <PasswordBox x:Name="PwdBaiduOcrSecret" Margin="85,0,0,0" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" PasswordChanged="BaiduOcrSecret_PasswordChanged"/>
+                                                    </Grid>
+                                                    <Grid>
+                                                        <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" HorizontalAlignment="Left" Click="BtnVerifyBaiduOcr_Click"/>
+                                                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                            <Hyperlink Click="LnkApplyBaiduOcr_Click" Foreground="#0284C7" TextDecorations="None">如何申请？</Hyperlink>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </StackPanel>
+
+                                                <!-- 有道智云 OCR 配置 -->
+                                                <StackPanel x:Name="PnlCfgOcrYoudao" Visibility="Collapsed">
+                                                    <Grid Margin="0,0,0,8">
+                                                        <TextBlock Text="App Key:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <TextBox x:Name="TxtYoudaoOcrKey" Margin="85,0,0,0" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" TextChanged="OcrConfig_TextChanged"/>
+                                                    </Grid>
+                                                    <Grid Margin="0,0,0,10">
+                                                        <TextBlock Text="App Secret:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
+                                                        <PasswordBox x:Name="PwdYoudaoOcrSecret" Margin="85,0,0,0" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" PasswordChanged="YoudaoOcrSecret_PasswordChanged"/>
+                                                    </Grid>
+                                                    <Grid>
+                                                        <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" HorizontalAlignment="Left" Click="BtnVerifyYoudaoOcr_Click"/>
+                                                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                            <Hyperlink Click="LnkApplyYoudaoOcr_Click" Foreground="#0284C7" TextDecorations="None">如何申请？</Hyperlink>
+                                                        </TextBlock>
+                                                    </Grid>
+                                                </StackPanel>
+                                            </Grid>
+                                        </Grid>
                                     </Border>
                                 </StackPanel>
                             </Border>
@@ -878,8 +1191,19 @@
 
                                         <Grid Margin="0,5">
                                             <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="划词翻译 / 输入翻译" FontSize="12.5" FontWeight="SemiBold" Foreground="#1E293B"/>
-                                                <TextBlock Text="选中任意文字按 Alt+Shift+F 划词翻译，或按 Alt+V 呼出独立翻译窗口" FontSize="11" Foreground="#64748B"/>
+                                                <TextBlock Text="划词翻译" FontSize="12.5" FontWeight="SemiBold" Foreground="#1E293B"/>
+                                                <TextBlock Text="在任意软件中鼠标选中文字后按下此快捷键，直接提取并翻译" FontSize="11" Foreground="#64748B"/>
+                                            </StackPanel>
+                                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                <TextBox Tag="SelectionTranslation" Text="" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
+                                                <Button Tag="SelectionTranslation" Content="清除" Style="{StaticResource SmallBtnStyle}" Margin="6,0,0,0" Click="BtnClearSingleHotkey_Click"/>
+                                            </StackPanel>
+                                        </Grid>
+
+                                        <Grid Margin="0,5">
+                                            <StackPanel VerticalAlignment="Center">
+                                                <TextBlock Text="输入翻译" FontSize="12.5" FontWeight="SemiBold" Foreground="#1E293B"/>
+                                                <TextBlock Text="呼出独立多功能翻译窗口，支持智能语言识别、双向互译与多引擎切换" FontSize="11" Foreground="#64748B"/>
                                             </StackPanel>
                                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
                                                 <TextBox Tag="Translation" Text="" Style="{StaticResource KeycapBoxStyle}" Cursor="Hand" ToolTip="点击后按下新快捷键即可录制" PreviewKeyDown="HotkeyBox_PreviewKeyDown"/>
@@ -917,7 +1241,7 @@
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                             <Image Source="pack://application:,,,/Resources/icon.png" Width="48" Height="48" RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,14,0"/>
                                             <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="ShotX for Windows  v1.9.25" FontSize="16" FontWeight="Bold" Foreground="#0F172A"/>
+                                                <TextBlock Text="ShotX for Windows  v1.9.26" FontSize="16" FontWeight="Bold" Foreground="#0F172A"/>
                                                 <TextBlock Text="开发者: @muzi86754781  ·  github.com/muzi86754781/shotx  ·  QQ: 285351298" FontSize="11.5" Foreground="#64748B" Margin="0,4,0,0"/>
                                             </StackPanel>
                                         </StackPanel>

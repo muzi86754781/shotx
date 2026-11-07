@@ -322,11 +322,11 @@ public partial class ScreenRecordingWindow : Window
             }
 
             HistoryStore.Add(HistoryType.ScreenRecord, outputFile, $"屏幕录制 ({(_isGif ? "GIF" : "MP4")}) - 耗时 {Math.Max(1, _seconds)} 秒");
-            MessageBox.Show($"录制完成！文件已保存至:\n{outputFile}", "ShotX 屏幕录制", MessageBoxButton.OK, MessageBoxImage.Information);
+            ModernToast.ShowSuccess($"录屏已保存至: {Path.GetFileName(outputFile)}");
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"保存录屏文件失败: {ex.Message}", "ShotX", MessageBoxButton.OK, MessageBoxImage.Error);
+            ModernToast.ShowError($"保存录屏文件失败: {ex.Message}");
         }
         finally
         {

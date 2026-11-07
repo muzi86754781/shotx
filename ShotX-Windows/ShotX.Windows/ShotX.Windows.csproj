@@ -12,9 +12,9 @@
     <ApplicationIcon>Resources\app.ico</ApplicationIcon>
     <AssemblyTitle>ShotX</AssemblyTitle>
     <Product>ShotX for Windows</Product>
-    <Version>1.9.25</Version>
-    <FileVersion>1.9.25.0</FileVersion>
-    <AssemblyVersion>1.9.25.0</AssemblyVersion>
+    <Version>1.9.26</Version>
+    <FileVersion>1.9.26.0</FileVersion>
+    <AssemblyVersion>1.9.26.0</AssemblyVersion>
     <Authors>ShotX</Authors>
     <Company>ShotX</Company>
     <Description>专业的屏幕截图、长截图、标注、贴图与屏幕录制工具 (Windows 版)</Description>

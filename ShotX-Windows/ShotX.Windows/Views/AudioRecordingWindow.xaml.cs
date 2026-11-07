@@ -180,11 +180,11 @@ public partial class AudioRecordingWindow : Window
             }
 
             HistoryStore.Add(HistoryType.AudioRecord, audioFile, $"声音录制 (WAV) - 耗时 {Math.Max(1, _seconds)} 秒");
-            MessageBox.Show($"录音完成！音频文件已保存至:\n{audioFile}", "ShotX 声音录制", MessageBoxButton.OK, MessageBoxImage.Information);
+            ModernToast.ShowSuccess($"录音已保存至: {Path.GetFileName(audioFile)}");
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"保存录音失败: {ex.Message}", "ShotX", MessageBoxButton.OK, MessageBoxImage.Error);
+            ModernToast.ShowError($"保存录音失败: {ex.Message}");
         }
 
         Close();

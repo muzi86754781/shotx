@@ -106,8 +106,24 @@ public partial class OverlayWindow : Window
 
     [DllImport("user32.dll")]
     private static extern bool SetWindowPos(IntPtr hWnd, IntPtr hWndInsertAfter, int X, int Y, int cx, int cy, uint uFlags);
+    [DllImport("user32.dll")]
+    private static extern uint SetWindowDisplayAffinity(IntPtr hWnd, uint dwAffinity);
+    [DllImport("user32.dll")]
+    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll")]
+    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
+    [DllImport("user32.dll")]
+    private static extern IntPtr WindowFromPoint(System.Drawing.Point Point);
+    [DllImport("user32.dll")]
+    private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+
     private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     private const uint SWP_SHOWWINDOW = 0x0040;
+    private const int GWL_EXSTYLE = -20;
+    private const int WS_EX_TRANSPARENT = 0x00000020;
+    private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
+    private const uint WM_MOUSEWHEEL = 0x020A;
+    private bool _isStitchingInProgress = false;
 
     // 8 Sub-Toolbar Preset Colors
     private static readonly Color[] SubToolbarColors = new[]
@@ -1778,22 +1794,66 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private void Window_MouseWheel(object sender, MouseWheelEventArgs e)
+    private async void Window_MouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (_mode == CaptureMode.Scrolling)
         {
             var p = e.GetPosition(this);
             if (_selectionRect.Contains(p))
             {
-                var fresh = GetCroppedSelectionBitmap();
-                var res = _stitcher.AppendSlice(fresh);
-                if (res.ReachedLimit)
+                e.Handled = true;
+                if (_isStitchingInProgress) return;
+                _isStitchingInProgress = true;
+
+                try
                 {
-                    System.Windows.MessageBox.Show("已达长截图最大高度限制 (32000px)", "ShotX", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    var screenPt = System.Windows.Forms.Cursor.Position;
+                    var hwnd = new WindowInteropHelper(this).Handle;
+
+                    // 1. 穿透获取光标下方真实目标窗口句柄 (Chrome/Edge/Word/PDF)
+                    int oldExStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+                    SetWindowLong(hwnd, GWL_EXSTYLE, oldExStyle | WS_EX_TRANSPARENT);
+
+                    IntPtr targetHwnd = WindowFromPoint(new System.Drawing.Point(screenPt.X, screenPt.Y));
+
+                    SetWindowLong(hwnd, GWL_EXSTYLE, oldExStyle);
+
+                    if (targetHwnd == IntPtr.Zero || targetHwnd == hwnd)
+                    {
+                        targetHwnd = App.LastExternalForegroundHwnd;
+                    }
+
+                    // 2. 向目标底层窗口发送原生 WM_MOUSEWHEEL 滚轮消息让页面真实滚动
+                    if (targetHwnd != IntPtr.Zero)
+                    {
+                        IntPtr wParam = (IntPtr)(e.Delta << 16);
+                        IntPtr lParam = (IntPtr)((screenPt.Y << 16) | (screenPt.X & 0xFFFF));
+                        PostMessage(targetHwnd, WM_MOUSEWHEEL, wParam, lParam);
+                    }
+
+                    // 3. 等待底层页面渲染滚动位移 (55ms)
+                    await System.Threading.Tasks.Task.Delay(55);
+
+                    // 4. 从屏幕设备上下文抓取选区最新的 live 画面切片并拼接 (解决需求 5)
+                    var fresh = CaptureCurrentSelectionLive();
+                    if (fresh != null)
+                    {
+                        var res = _stitcher.AppendSlice(fresh);
+                        try { fresh.Dispose(); } catch { }
+                        if (res.ReachedLimit)
+                        {
+                            ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
+                        }
+                        else if (res.DidStitch)
+                        {
+                            Render();
+                        }
+                    }
                 }
-                else if (res.DidStitch)
+                catch { }
+                finally
                 {
-                    Render();
+                    _isStitchingInProgress = false;
                 }
             }
         }
@@ -2074,7 +2134,7 @@ public partial class OverlayWindow : Window
                 _ => $"#{col.R:X2}{col.G:X2}{col.B:X2}"
             };
             System.Windows.Clipboard.SetText(formattedColor);
-            System.Windows.MessageBox.Show($"已复制颜色代码: {formattedColor}", "ShotX 拾色器", MessageBoxButton.OK, MessageBoxImage.Information);
+            ModernToast.ShowSuccess($"已复制颜色: {formattedColor}");
         }
         catch
         {
@@ -2202,11 +2262,7 @@ public partial class OverlayWindow : Window
 
         if (string.IsNullOrWhiteSpace(text))
         {
-            System.Windows.MessageBox.Show(
-                "未在框选区域内识别到清晰文字，请尝试框选包含清晰文字的区域重试。",
-                "ShotX 文字识别 (OCR)",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
+            ModernToast.ShowWarning("未在框选区域内识别到文字内容");
             return;
         }
 
@@ -2216,7 +2272,7 @@ public partial class OverlayWindow : Window
         }
         catch { }
         HistoryStore.AddOcr(text);
-        System.Windows.MessageBox.Show(text, "ShotX 文字识别 (已自动复制到剪贴板)", MessageBoxButton.OK, MessageBoxImage.Information);
+        ModernToast.ShowSuccess($"已识别文字并复制到剪贴板 ({text.Length} 字)");
         Close();
     }
 
@@ -2235,9 +2291,51 @@ public partial class OverlayWindow : Window
     {
         _mode = CaptureMode.Scrolling;
         _isSubToolbarVisible = false;
-        var initial = GetCroppedSelectionBitmap();
+
+        // 设置从屏幕截图中排除当前覆盖窗体 (WDA_EXCLUDEFROMCAPTURE = 0x00000011)，确保截取的是底层真实页面
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
+        }
+        catch { }
+
+        var initial = CaptureCurrentSelectionLive() ?? GetCroppedSelectionBitmap();
         _stitcher.Initialize(initial);
         Render();
+        ModernToast.ShowInfo("已开启长截图：在框选区域内滚动滚轮即可拼接，点击对勾保存。");
+    }
+
+    private Bitmap? CaptureCurrentSelectionLive()
+    {
+        try
+        {
+            double scaleX = (double)_virtualBounds.Width / Width;
+            double scaleY = (double)_virtualBounds.Height / Height;
+
+            int sx = _virtualBounds.X + (int)Math.Round(_selectionRect.X * scaleX);
+            int sy = _virtualBounds.Y + (int)Math.Round(_selectionRect.Y * scaleY);
+            int sw = (int)Math.Round(_selectionRect.Width * scaleX);
+            int sh = (int)Math.Round(_selectionRect.Height * scaleY);
+
+            if (sw <= 0 || sh <= 0) return null;
+
+            return ScreenCapture.CaptureScreen(new System.Drawing.Rectangle(sx, sy, sw, sh));
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private void CleanupScrollingCapture()
+    {
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            SetWindowDisplayAffinity(hwnd, 0);
+        }
+        catch { }
     }
 
     private static string SaveImageToConfiguredDir(Bitmap img)
@@ -2266,11 +2364,9 @@ public partial class OverlayWindow : Window
         }
         catch { }
         HistoryStore.AddCapture(finalImage, _mode == CaptureMode.Scrolling ? "长截图" : "截图");
-        if (PreferencesStore.Current.PlaySound)
-        {
-            System.Media.SystemSounds.Beep.Play();
-        }
         finalImage.Dispose();
+        CleanupScrollingCapture();
+        ModernToast.ShowSuccess(_mode == CaptureMode.Scrolling ? "长截图已复制并保存" : "截图已复制并保存");
         Close();
     }
 
@@ -2287,14 +2383,12 @@ public partial class OverlayWindow : Window
         {
             string savedPath = SaveImageToConfiguredDir(finalImage);
             HistoryStore.AddCapture(finalImage, _mode == CaptureMode.Scrolling ? "长截图" : "截图");
-            if (PreferencesStore.Current.PlaySound)
-            {
-                System.Media.SystemSounds.Beep.Play();
-            }
+            CleanupScrollingCapture();
+            ModernToast.ShowSuccess($"已保存至: {System.IO.Path.GetFileName(savedPath)}");
         }
         catch (Exception ex)
         {
-            System.Windows.MessageBox.Show($"保存截图失败: {ex.Message}", "ShotX", MessageBoxButton.OK, MessageBoxImage.Warning);
+            ModernToast.ShowError($"保存截图失败: {ex.Message}");
         }
         finally
         {
