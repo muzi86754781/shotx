@@ -11,7 +11,6 @@ final class SoundEffect {
     private init() {}
 
     func playShutter() {
-        guard PreferencesStore.shared.playShutterSound else { return }
         // 1108 为 macOS / iOS 原生相机快门音 SystemSoundID，完全通过系统守护进程播放，纯输出无需麦克风权限
         AudioServicesPlaySystemSound(1108)
     }

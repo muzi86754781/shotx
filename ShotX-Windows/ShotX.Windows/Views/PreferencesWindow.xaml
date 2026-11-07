@@ -931,7 +931,13 @@
                                                         <TextBlock Text="Model:" Width="85" FontSize="12" FontWeight="SemiBold" Foreground="#334155" VerticalAlignment="Center"/>
                                                         <TextBox x:Name="TxtOpenAIModel" Margin="85,0,0,0" Text="gpt-4o-mini" Height="28" VerticalContentAlignment="Center" Padding="6,0" FontSize="11.5" TextChanged="TransConfig_TextChanged"/>
                                                     </Grid>
-                                                    <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" HorizontalAlignment="Left" Click="BtnVerifyOpenAITrans_Click"/>
+                                                    <Grid>
+                                                        <Button Content="验 证" Style="{StaticResource AccentBtnStyle}" Width="68" Height="28" HorizontalAlignment="Left" Click="BtnVerifyOpenAITrans_Click"/>
+                                                        <TextBlock x:Name="TxtVerifyOpenAIStatus" Text="" FontSize="11.5" VerticalAlignment="Center" Margin="78,0,0,0"/>
+                                                        <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center">
+                                                            <Hyperlink Click="LnkApplyOpenAITrans_Click" Foreground="#0284C7" TextDecorations="None">如何申请？</Hyperlink>
+                                                        </TextBlock>
+                                                    </Grid>
                                                 </StackPanel>
                                             </Grid>
                                         </Grid>

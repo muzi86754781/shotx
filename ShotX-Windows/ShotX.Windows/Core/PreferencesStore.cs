@@ -116,6 +116,84 @@ public static class PreferencesStore
         set => Current.ImageFormat = value;
     }
 
+    public static string ActiveTranslationEngine
+    {
+        get => Current.ActiveTranslationEngine ?? "BuiltIn";
+        set => Current.ActiveTranslationEngine = value;
+    }
+
+    public static string BaiduTranslateAppId
+    {
+        get => Current.BaiduTranslateAppId ?? "";
+        set => Current.BaiduTranslateAppId = value;
+    }
+
+    public static string BaiduTranslateSecretKey
+    {
+        get => Current.BaiduTranslateSecretKey ?? "";
+        set => Current.BaiduTranslateSecretKey = value;
+    }
+
+    public static string GoogleTranslateApiKey
+    {
+        get => Current.GoogleTranslateApiKey ?? "";
+        set => Current.GoogleTranslateApiKey = value;
+    }
+
+    public static string DeepLTranslateApiKey
+    {
+        get => Current.DeepLTranslateApiKey ?? "";
+        set => Current.DeepLTranslateApiKey = value;
+    }
+
+    public static string OpenAIApiKey
+    {
+        get => Current.OpenAIApiKey ?? "";
+        set => Current.OpenAIApiKey = value;
+    }
+
+    public static string OpenAIBaseUrl
+    {
+        get => string.IsNullOrWhiteSpace(Current.OpenAIBaseUrl) ? "https://api.openai.com/v1" : Current.OpenAIBaseUrl;
+        set => Current.OpenAIBaseUrl = value;
+    }
+
+    public static string OpenAIModel
+    {
+        get => string.IsNullOrWhiteSpace(Current.OpenAIModel) ? "gpt-4o-mini" : Current.OpenAIModel;
+        set => Current.OpenAIModel = value;
+    }
+
+    public static string ActiveOcrEngine
+    {
+        get => Current.ActiveOcrEngine ?? "System";
+        set => Current.ActiveOcrEngine = value;
+    }
+
+    public static string BaiduOcrApiKey
+    {
+        get => Current.BaiduOcrApiKey ?? "";
+        set => Current.BaiduOcrApiKey = value;
+    }
+
+    public static string BaiduOcrSecretKey
+    {
+        get => Current.BaiduOcrSecretKey ?? "";
+        set => Current.BaiduOcrSecretKey = value;
+    }
+
+    public static string YoudaoOcrAppKey
+    {
+        get => Current.YoudaoOcrAppKey ?? "";
+        set => Current.YoudaoOcrAppKey = value;
+    }
+
+    public static string YoudaoOcrAppSecret
+    {
+        get => Current.YoudaoOcrAppSecret ?? "";
+        set => Current.YoudaoOcrAppSecret = value;
+    }
+
     public static string GetHotkey(string actionKey)
     {
         EnsureHotkeysInitialized();

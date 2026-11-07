@@ -15,6 +15,7 @@ using KeyEventArgs = System.Windows.Input.KeyEventArgs;
 using MessageBox = System.Windows.MessageBox;
 using RadioButton = System.Windows.Controls.RadioButton;
 using TextBox = System.Windows.Controls.TextBox;
+using Brushes = System.Windows.Media.Brushes;
 
 namespace ShotX.Windows.Views;
 
