@@ -16,6 +16,8 @@ public enum ToolbarTool
     Redo,
     OCR,
     Scrolling,
+    ScrollDown,
+    AutoScroll,
     Cancel,
     Save,
     Copy

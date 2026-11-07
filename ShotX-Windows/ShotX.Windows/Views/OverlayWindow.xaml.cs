@@ -117,7 +117,56 @@ public partial class OverlayWindow : Window
     [DllImport("user32.dll")]
     private static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")]
+    private static extern IntPtr SendMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")]
+    private static extern IntPtr ChildWindowFromPointEx(IntPtr hWndParent, System.Drawing.Point pt, uint uFlags);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    private delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool GetWindowRect(IntPtr hWnd, out WindowDetectionHelper.RECT lpRect);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool IsIconic(IntPtr hWnd);
+    [DllImport("user32.dll")]
     private static extern void mouse_event(uint dwFlags, uint dx, uint dy, int dwData, UIntPtr dwExtraInfo);
+
+    private const int WH_MOUSE_LL = 14;
+    private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
+    private LowLevelMouseProc? _mouseProc;
+    private IntPtr _mouseHook = IntPtr.Zero;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct POINT
+    {
+        public int x;
+        public int y;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MSLLHOOKSTRUCT
+    {
+        public POINT pt;
+        public uint mouseData;
+        public uint flags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr SetWindowsHookEx(int idHook, LowLevelMouseProc lpfn, IntPtr hMod, uint dwThreadId);
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool UnhookWindowsHookEx(IntPtr hhk);
+    [DllImport("user32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr CallNextHookEx(IntPtr hhk, int nCode, IntPtr wParam, IntPtr lParam);
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    private static extern IntPtr GetModuleHandle(string? lpModuleName);
 
     private static readonly IntPtr HWND_TOPMOST = new IntPtr(-1);
     private const uint SWP_SHOWWINDOW = 0x0040;
@@ -125,8 +174,18 @@ public partial class OverlayWindow : Window
     private const int WS_EX_TRANSPARENT = 0x00000020;
     private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
     private const uint WM_MOUSEWHEEL = 0x020A;
+    private const uint WM_VSCROLL = 0x0115;
+    private const int SB_LINEUP = 0;
+    private const int SB_LINEDOWN = 1;
     private const uint MOUSEEVENTF_WHEEL = 0x0800;
     private bool _isStitchingInProgress = false;
+
+    // 长截图交互状态：滚轮、滑动鼠标拖拽、自动滚动
+    private bool _isScrollingMouseDragging = false;
+    private Point _scrollingDragStartPoint;
+    private Point _scrollingDragLastPoint;
+    private DispatcherTimer? _autoScrollTimer;
+    private bool _isAutoScrolling = false;
 
     // 8 Sub-Toolbar Preset Colors
     private static readonly Color[] SubToolbarColors = new[]
@@ -284,19 +343,44 @@ public partial class OverlayWindow : Window
 
     private void DrawCanvas(DrawingContext dc)
     {
-        // 铺底近透明层确保全屏任何位置均可响应鼠标框选与移动事件
         var fullRect = new Rect(0, 0, Width, Height);
+
+        if (_mode == CaptureMode.Scrolling)
+        {
+            // 长截图模式：选区内部绝对纯透明（0 Alpha），彻底透出底层真实活动窗口，无任何阻隔
+            Rect clearRect = !_selectionRect.IsEmpty ? _selectionRect : Rect.Empty;
+            var maskGeo = new CombinedGeometry(
+                GeometryCombineMode.Exclude,
+                new RectangleGeometry(fullRect),
+                new RectangleGeometry(clearRect)
+            );
+            dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(135, 0, 0, 0)), null, maskGeo);
+
+            dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect);
+            DrawCornerBrackets(dc, _selectionRect);
+
+            DrawScrollingPreviewPanel(dc);
+            DrawBottomToolbar(dc);
+
+            if (!string.IsNullOrEmpty(_toastMessage))
+            {
+                DrawToast(dc, _toastMessage);
+            }
+            return;
+        }
+
+        // 铺底近透明层确保全屏任何位置均可响应鼠标框选与移动事件
         dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), null, fullRect);
 
         // 1. 绘制半透明灰色遮罩（窗口截图悬停时高亮镂空目标窗口，框选时镂空选区）
-        Rect clearRect = !_selectionRect.IsEmpty
+        Rect clearRectNormal = !_selectionRect.IsEmpty
             ? _selectionRect
             : (_overlayMode == OverlayMode.Window && _hoveredWindowRect.HasValue ? _hoveredWindowRect.Value : Rect.Empty);
 
         var maskGeometry = new CombinedGeometry(
             GeometryCombineMode.Exclude,
             new RectangleGeometry(fullRect),
-            new RectangleGeometry(clearRect)
+            new RectangleGeometry(clearRectNormal)
         );
         dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(120, 0, 0, 0)), null, maskGeometry);
 
@@ -395,13 +479,6 @@ public partial class OverlayWindow : Window
             {
                 DrawSubToolbar(dc);
             }
-        }
-        else if (_mode == CaptureMode.Scrolling)
-        {
-            dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect);
-            DrawCornerBrackets(dc, _selectionRect);
-            DrawScrollingPreviewPanel(dc);
-            DrawBottomToolbar(dc);
         }
 
         // 浮动 Toast 提示
@@ -738,9 +815,18 @@ public partial class OverlayWindow : Window
         catch { }
     }
 
+    private ToolButton[] CurrentScrollingTools => new ToolButton[]
+    {
+        new(ToolbarTool.Cancel, "✖", "退出长截图 (Esc)"),
+        new(ToolbarTool.ScrollDown, "⬇", "向下滚动一步并拼接"),
+        new(ToolbarTool.AutoScroll, _isAutoScrolling ? "⏸" : "▶", _isAutoScrolling ? "暂停自动滚动" : "自动平滑向下长截"),
+        new(ToolbarTool.Save, "存", "保存长图 (Ctrl+S)"),
+        new(ToolbarTool.Copy, "✔", "完成并复制长图 (Enter)")
+    };
+
     private Rect BottomToolbarRect()
     {
-        int count = _mode == CaptureMode.Scrolling ? 3 : 16;
+        int count = _mode == CaptureMode.Scrolling ? CurrentScrollingTools.Length : 16;
         double w = count * 33 + 16;
         double h = 42;
         double x = Math.Max(10, Math.Min(Width - w - 10, _selectionRect.Left + (_selectionRect.Width - w) / 2));
@@ -775,13 +861,6 @@ public partial class OverlayWindow : Window
         new(ToolbarTool.Copy, "✔", "复制并完成 (Enter)")
     };
 
-    private static readonly ToolButton[] ScrollingTools = new ToolButton[]
-    {
-        new(ToolbarTool.Cancel, "✖", "退出长截图"),
-        new(ToolbarTool.Save, "存", "保存长图"),
-        new(ToolbarTool.Copy, "✔", "完成并复制")
-    };
-
     private void DrawBottomToolbar(DrawingContext dc)
     {
         var r = BottomToolbarRect();
@@ -790,7 +869,7 @@ public partial class OverlayWindow : Window
         dc.DrawRoundedRectangle(Brushes.White, new Pen(new SolidColorBrush(Color.FromRgb(225, 225, 230)), 1), r, 12, 12);
 
         var tools = _mode == CaptureMode.Scrolling
-            ? ScrollingTools
+            ? CurrentScrollingTools
             : AllTools;
 
         for (int i = 0; i < tools.Length; i++)
@@ -950,6 +1029,36 @@ public partial class OverlayWindow : Window
                 dc.DrawGeometry(null, new Pen(brush, 1.5) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round },
                     Geometry.Parse("M 5,6 L 5,3.5 L 15,3.5 L 15,6 M 5,14 L 5,16.5 L 15,16.5 L 15,14 M 10,6.5 L 10,13.5 M 7.8,8.7 L 10,6.3 L 12.2,8.7 M 7.8,11.3 L 10,13.7 L 12.2,11.3"));
                 dc.Pop();
+                break;
+
+            case ToolbarTool.ScrollDown:
+                // 向下滚动单步箭头
+                var scrollPen = new Pen(brush, 1.8) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round, LineJoin = PenLineJoin.Round };
+                dc.DrawLine(scrollPen, new Point(cx, cy - 6), new Point(cx, cy + 5));
+                dc.DrawLine(scrollPen, new Point(cx - 4.5, cy + 1), new Point(cx, cy + 5.5));
+                dc.DrawLine(scrollPen, new Point(cx + 4.5, cy + 1), new Point(cx, cy + 5.5));
+                break;
+
+            case ToolbarTool.AutoScroll:
+                if (_isAutoScrolling)
+                {
+                    // 暂停两条杠 ⏸
+                    var pausePen = new Pen(brush, 2.2) { StartLineCap = PenLineCap.Round, EndLineCap = PenLineCap.Round };
+                    dc.DrawLine(pausePen, new Point(cx - 3, cy - 5), new Point(cx - 3, cy + 5));
+                    dc.DrawLine(pausePen, new Point(cx + 3, cy - 5), new Point(cx + 3, cy + 5));
+                }
+                else
+                {
+                    // 播放三角形 ▶
+                    var playGeo = new StreamGeometry();
+                    using (var ctx = playGeo.Open())
+                    {
+                        ctx.BeginFigure(new Point(cx - 3.5, cy - 5.5), true, true);
+                        ctx.LineTo(new Point(cx + 5.5, cy), true, false);
+                        ctx.LineTo(new Point(cx - 3.5, cy + 5.5), true, false);
+                    }
+                    dc.DrawGeometry(brush, null, playGeo);
+                }
                 break;
 
             case ToolbarTool.Cancel:
@@ -1328,26 +1437,62 @@ public partial class OverlayWindow : Window
         dc.DrawGeometry(brush, null, headGeo);
     }
 
-    private void DrawScrollingPreviewPanel(DrawingContext dc)
+    private Rect ScrollingPreviewPanelRect()
     {
+        if (_mode != CaptureMode.Scrolling || _selectionRect.IsEmpty) return Rect.Empty;
         double cardW = 220;
-        double cardH = Math.Min(Height - 60, Math.Max(360, _selectionRect.Height * 1.5));
+        double cardH = Math.Min(Height - 60, Math.Max(380, _selectionRect.Height * 1.5));
         double cardX = (_selectionRect.Left >= cardW + 24) ? (_selectionRect.Left - cardW - 16) : (_selectionRect.Right + 16);
         cardX = Math.Max(16, Math.Min(Width - cardW - 16, cardX));
         double cardY = Math.Max(20, Math.Min(Height - cardH - 20, _selectionRect.Top));
+        return new Rect(cardX, cardY, cardW, cardH);
+    }
 
-        var cardRect = new Rect(cardX, cardY, cardW, cardH);
+    private Rect ScrollingCancelButtonRect()
+    {
+        var r = ScrollingPreviewPanelRect();
+        if (r.IsEmpty) return Rect.Empty;
+        double btnW = (r.Width - 28) / 3;
+        return new Rect(r.Left + 10, r.Bottom - 34, btnW, 24);
+    }
+
+    private Rect ScrollingStepButtonRect()
+    {
+        var r = ScrollingPreviewPanelRect();
+        if (r.IsEmpty) return Rect.Empty;
+        double btnW = (r.Width - 28) / 3;
+        return new Rect(r.Left + 14 + btnW, r.Bottom - 34, btnW, 24);
+    }
+
+    private Rect ScrollingDoneButtonRect()
+    {
+        var r = ScrollingPreviewPanelRect();
+        if (r.IsEmpty) return Rect.Empty;
+        double btnW = (r.Width - 28) / 3;
+        return new Rect(r.Left + 18 + btnW * 2, r.Bottom - 34, btnW, 24);
+    }
+
+    private void DrawScrollingPreviewPanel(DrawingContext dc)
+    {
+        var cardRect = ScrollingPreviewPanelRect();
+        if (cardRect.IsEmpty) return;
+
+        double cardX = cardRect.Left;
+        double cardY = cardRect.Top;
+        double cardW = cardRect.Width;
+        double cardH = cardRect.Height;
+
         dc.DrawRoundedRectangle(Brushes.White, new Pen(new SolidColorBrush(Color.FromRgb(220, 220, 225)), 1), cardRect, 8, 8);
 
         // 标题栏 "长截图预览"
-        var titleFt = new FormattedText("长截图预览", System.Globalization.CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight, new Typeface("Segoe UI Bold"), 11, new SolidColorBrush(Color.FromRgb(50, 50, 60)), VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        var titleFt = new FormattedText("长截图预览", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal), 11, new SolidColorBrush(Color.FromRgb(50, 50, 60)), VisualTreeHelper.GetDpi(this).PixelsPerDip);
         dc.DrawText(titleFt, new Point(cardX + 10, cardY + 8));
 
         if (_stitcher.HasImage && _stitcher.StitchedLongBitmap != null)
         {
             var imgSource = ScreenCapture.ToBitmapSource(_stitcher.StitchedLongBitmap);
             double innerW = cardW - 20;
-            double innerH = cardH - 85;
+            double innerH = cardH - 100;
             double scale = Math.Min(innerW / imgSource.Width, innerH / imgSource.Height);
             double dw = imgSource.Width * scale;
             double dh = imgSource.Height * scale;
@@ -1358,12 +1503,32 @@ public partial class OverlayWindow : Window
             dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromRgb(215, 215, 220)), 1), drawRect);
 
             // 高度徽章
-            var badgeRect = new Rect(cardX + 10, cardY + cardH - 36, cardW - 20, 22);
+            var badgeRect = new Rect(cardX + 10, cardY + cardH - 64, cardW - 20, 20);
             dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(220, 35, 35, 40)), null, badgeRect, 4, 4);
 
-            var badgeFt = new FormattedText($"长图高度: {_stitcher.CurrentHeight} px", System.Globalization.CultureInfo.CurrentCulture, System.Windows.FlowDirection.LeftToRight, new Typeface("Segoe UI Semibold"), 10, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-            dc.DrawText(badgeFt, new Point(badgeRect.Left + (badgeRect.Width - badgeFt.Width) / 2, badgeRect.Top + 3.5));
+            var badgeFt = new FormattedText($"长图高度: {_stitcher.CurrentHeight} px", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 10, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+            dc.DrawText(badgeFt, new Point(badgeRect.Left + (badgeRect.Width - badgeFt.Width) / 2, badgeRect.Top + 2.5));
         }
+
+        // 底部 3 个快捷操作按钮
+        var cancelBtnRect = ScrollingCancelButtonRect();
+        var stepBtnRect = ScrollingStepButtonRect();
+        var doneBtnRect = ScrollingDoneButtonRect();
+
+        // 退出按钮
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(243, 244, 246)), new Pen(new SolidColorBrush(Color.FromRgb(229, 231, 235)), 1), cancelBtnRect, 4, 4);
+        var cancelFt = new FormattedText("退出", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), 10.5, new SolidColorBrush(Color.FromRgb(100, 116, 139)), VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        dc.DrawText(cancelFt, new Point(cancelBtnRect.Left + (cancelBtnRect.Width - cancelFt.Width) / 2, cancelBtnRect.Top + 4));
+
+        // 滚动按钮
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(238, 242, 255)), new Pen(new SolidColorBrush(Color.FromRgb(199, 210, 254)), 1), stepBtnRect, 4, 4);
+        var stepFt = new FormattedText("⬇ 滚动", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.Normal, FontStretches.Normal), 10.5, new SolidColorBrush(Color.FromRgb(79, 70, 229)), VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        dc.DrawText(stepFt, new Point(stepBtnRect.Left + (stepBtnRect.Width - stepFt.Width) / 2, stepBtnRect.Top + 4));
+
+        // 完成按钮
+        dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromRgb(0, 122, 255)), null, doneBtnRect, 4, 4);
+        var doneFt = new FormattedText("✔ 完成", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal), 10.5, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+        dc.DrawText(doneFt, new Point(doneBtnRect.Left + (doneBtnRect.Width - doneFt.Width) / 2, doneBtnRect.Top + 4));
     }
 
     #endregion
@@ -1449,6 +1614,44 @@ public partial class OverlayWindow : Window
         }
 
         if (e.ChangedButton != MouseButton.Left) return;
+
+        if (_mode == CaptureMode.Scrolling)
+        {
+            if (ScrollingCancelButtonRect().Contains(p))
+            {
+                Close();
+                return;
+            }
+            if (ScrollingStepButtonRect().Contains(p))
+            {
+                _ = ScrollUnderlyingWindowAndStitchAsync(-120);
+                return;
+            }
+            if (ScrollingDoneButtonRect().Contains(p))
+            {
+                FinishAndCopy();
+                return;
+            }
+
+            var bBar = BottomToolbarRect();
+            if (bBar.Contains(p))
+            {
+                HandleBottomToolbarClick(p, bBar);
+                return;
+            }
+
+            if (_selectionRect.Contains(p))
+            {
+                _isScrollingMouseDragging = true;
+                _scrollingDragStartPoint = p;
+                _scrollingDragLastPoint = p;
+                CaptureMouse();
+                Cursor = Cursors.Hand;
+                return;
+            }
+            return;
+        }
+
         CaptureMouse();
 
         // 2. 双击选区直接完成并复制到剪贴板
@@ -1578,6 +1781,47 @@ public partial class OverlayWindow : Window
     private void Window_MouseMove(object sender, MouseEventArgs e)
     {
         _currentMouse = e.GetPosition(this);
+
+        if (_mode == CaptureMode.Scrolling)
+        {
+            if (_isScrollingMouseDragging)
+            {
+                double dy = _currentMouse.Y - _scrollingDragLastPoint.Y;
+                if (Math.Abs(dy) >= 10)
+                {
+                    // 向上滑动 -> 页面向下滚动；向下滑动 -> 页面向上滚动
+                    int wheelDelta = dy < 0 ? -120 : 120;
+                    _scrollingDragLastPoint = _currentMouse;
+                    _ = ScrollUnderlyingWindowAndStitchAsync(wheelDelta);
+                }
+                return;
+            }
+
+            if (_selectionRect.Contains(_currentMouse))
+            {
+                Cursor = Cursors.ScrollNS;
+            }
+            else
+            {
+                Cursor = Cursors.Arrow;
+            }
+
+            var scrollBar = BottomToolbarRect();
+            int oldScrollHover = _hoveredButtonIndex;
+            if (scrollBar.Contains(_currentMouse))
+            {
+                _hoveredButtonIndex = (int)((_currentMouse.X - scrollBar.Left - 8) / 33);
+            }
+            else
+            {
+                _hoveredButtonIndex = -1;
+            }
+            if (oldScrollHover != _hoveredButtonIndex)
+            {
+                Render();
+            }
+            return;
+        }
 
         if (_mode == CaptureMode.Selecting)
         {
@@ -1755,6 +1999,16 @@ public partial class OverlayWindow : Window
             ReleaseMouseCapture();
         }
 
+        if (_mode == CaptureMode.Scrolling)
+        {
+            if (_isScrollingMouseDragging)
+            {
+                _isScrollingMouseDragging = false;
+                Cursor = Cursors.ScrollNS;
+                return;
+            }
+        }
+
         _isDraggingCornerSlider = false;
         _isDraggingSizeSlider = false;
         _isDraggingOpacitySlider = false;
@@ -1802,41 +2056,93 @@ public partial class OverlayWindow : Window
         if (_mode == CaptureMode.Scrolling)
         {
             e.Handled = true;
-            _ = TriggerHardwareScrollStepAsync(e.Delta);
+            _ = ScrollUnderlyingWindowAndStitchAsync(e.Delta);
         }
     }
 
-    private async Task TriggerHardwareScrollStepAsync(int delta)
+    private IntPtr GetWindowBelow(IntPtr hwndExclude, System.Drawing.Point pt)
+    {
+        IntPtr found = IntPtr.Zero;
+        EnumWindows((hWnd, lParam) =>
+        {
+            if (hWnd == hwndExclude || !IsWindowVisible(hWnd) || IsIconic(hWnd))
+                return true;
+
+            if (GetWindowRect(hWnd, out WindowDetectionHelper.RECT rect))
+            {
+                if (pt.X >= rect.Left && pt.X <= rect.Right && pt.Y >= rect.Top && pt.Y <= rect.Bottom)
+                {
+                    found = hWnd;
+                    return false; // 找到正下方的顶层窗口，终止遍历
+                }
+            }
+            return true;
+        }, IntPtr.Zero);
+        return found;
+    }
+
+    private async Task ScrollUnderlyingWindowAndStitchAsync(int wheelDelta)
     {
         if (_isStitchingInProgress) return;
         _isStitchingInProgress = true;
 
         try
         {
-            var hwnd = new WindowInteropHelper(this).Handle;
-            int oldExStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+            // 1. 获取选区中心对应的屏幕物理坐标与底层目标窗口句柄
+            var centerDip = new Point(_selectionRect.Left + _selectionRect.Width / 2, _selectionRect.Top + _selectionRect.Height / 2);
+            double scaleX = (double)_virtualBounds.Width / Width;
+            double scaleY = (double)_virtualBounds.Height / Height;
+            int screenX = _virtualBounds.X + (int)Math.Round(centerDip.X * scaleX);
+            int screenY = _virtualBounds.Y + (int)Math.Round(centerDip.Y * scaleY);
 
-            // 1. 穿透覆层，让系统硬件级滚轮事件直达底层真实应用 (Chrome/Edge/Word/PDF)
-            SetWindowLong(hwnd, GWL_EXSTYLE, oldExStyle | WS_EX_TRANSPARENT);
+            var selfHwnd = new WindowInteropHelper(this).Handle;
+            IntPtr targetHwnd = IntPtr.Zero;
 
-            mouse_event(MOUSEEVENTF_WHEEL, 0, 0, delta, UIntPtr.Zero);
-
-            // 2. 同时向底层窗口句柄派发原生 WM_MOUSEWHEEL 双重保险
-            var screenPt = System.Windows.Forms.Cursor.Position;
-            IntPtr targetHwnd = WindowFromPoint(new System.Drawing.Point(screenPt.X, screenPt.Y));
-            if (targetHwnd != IntPtr.Zero && targetHwnd != hwnd)
+            // 优先从预探测的可见窗口列表中查找
+            var targetWin = WindowDetectionHelper.FindWindowAtPoint(_detectedWindows, centerDip);
+            if (targetWin != null && targetWin.Hwnd != IntPtr.Zero && targetWin.Hwnd != selfHwnd)
             {
-                IntPtr wParam = (IntPtr)((delta << 16) & 0xFFFFFFFF);
-                IntPtr lParam = (IntPtr)((screenPt.Y << 16) | (screenPt.X & 0xFFFF));
-                PostMessage(targetHwnd, WM_MOUSEWHEEL, wParam, lParam);
+                targetHwnd = targetWin.Hwnd;
             }
 
-            // 3. 适当延时等待目标应用完成画面滚动与重新渲染
-            await System.Threading.Tasks.Task.Delay(85);
+            // 如果没找到，则使用 GetWindowBelow 查找覆层正下方的窗口
+            if (targetHwnd == IntPtr.Zero || targetHwnd == selfHwnd)
+            {
+                targetHwnd = GetWindowBelow(selfHwnd, new System.Drawing.Point(screenX, screenY));
+            }
 
-            SetWindowLong(hwnd, GWL_EXSTYLE, oldExStyle);
+            if (targetHwnd != IntPtr.Zero && targetHwnd != selfHwnd)
+            {
+                // 获取最深层级的子窗口（例如 Chromium RenderWidget 或可滚动视口）
+                IntPtr childHwnd = ChildWindowFromPointEx(targetHwnd, new System.Drawing.Point(screenX, screenY), 0);
+                IntPtr dispatchHwnd = (childHwnd != IntPtr.Zero && childHwnd != targetHwnd) ? childHwnd : targetHwnd;
 
-            // 4. 抓取选区最新的 live 画面切片并无缝垂直拼接
+                IntPtr wParam = (IntPtr)((wheelDelta << 16) & 0xFFFFFFFF);
+                IntPtr lParam = (IntPtr)((screenY << 16) | (screenX & 0xFFFF));
+
+                // 向目标控件及主窗体派发原生 WM_MOUSEWHEEL
+                PostMessage(dispatchHwnd, WM_MOUSEWHEEL, wParam, lParam);
+                if (dispatchHwnd != targetHwnd)
+                {
+                    PostMessage(targetHwnd, WM_MOUSEWHEEL, wParam, lParam);
+                }
+
+                // 同时发送 WM_VSCROLL 以兼容传统 Win32/Office/PDF 滚动容器
+                int vscrollCmd = wheelDelta < 0 ? SB_LINEDOWN : SB_LINEUP;
+                SendMessage(dispatchHwnd, WM_VSCROLL, (IntPtr)vscrollCmd, IntPtr.Zero);
+                if (dispatchHwnd != targetHwnd)
+                {
+                    SendMessage(targetHwnd, WM_VSCROLL, (IntPtr)vscrollCmd, IntPtr.Zero);
+                }
+            }
+
+            // 硬件级全局 mouse_event 保底派发
+            mouse_event(MOUSEEVENTF_WHEEL, 0, 0, wheelDelta, UIntPtr.Zero);
+
+            // 等待目标页面完成重绘渲染
+            await Task.Delay(85);
+
+            // 抓取选区最新的 live 画面切片并无缝垂直拼接
             var fresh = CaptureCurrentSelectionLive();
             if (fresh != null)
             {
@@ -1844,6 +2150,7 @@ public partial class OverlayWindow : Window
                 fresh.Dispose();
                 if (res.ReachedLimit)
                 {
+                    StopAutoScroll();
                     ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
                 }
                 else if (res.DidStitch)
@@ -1855,15 +2162,108 @@ public partial class OverlayWindow : Window
         catch { }
         finally
         {
-            try
-            {
-                var hwnd = new WindowInteropHelper(this).Handle;
-                int oldExStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
-                SetWindowLong(hwnd, GWL_EXSTYLE, oldExStyle & ~WS_EX_TRANSPARENT);
-            }
-            catch { }
             _isStitchingInProgress = false;
         }
+    }
+
+    private void ToggleAutoScroll()
+    {
+        if (_isAutoScrolling)
+        {
+            StopAutoScroll();
+        }
+        else
+        {
+            StartAutoScroll();
+        }
+    }
+
+    private void StartAutoScroll()
+    {
+        if (_isAutoScrolling) return;
+        _isAutoScrolling = true;
+        _autoScrollTimer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(180)
+        };
+        int noMovementCount = 0;
+        _autoScrollTimer.Tick += async (s, e) =>
+        {
+            if (!_isAutoScrolling || _mode != CaptureMode.Scrolling)
+            {
+                StopAutoScroll();
+                return;
+            }
+
+            int hBefore = _stitcher.CurrentHeight;
+            await ScrollUnderlyingWindowAndStitchAsync(-120);
+            int hAfter = _stitcher.CurrentHeight;
+
+            if (hAfter == hBefore)
+            {
+                noMovementCount++;
+                if (noMovementCount >= 4)
+                {
+                    StopAutoScroll();
+                    ModernToast.ShowSuccess("已自动滚动至页面底部，长截图拼接完成！");
+                }
+            }
+            else
+            {
+                noMovementCount = 0;
+            }
+        };
+        _autoScrollTimer.Start();
+        Render();
+        ModernToast.ShowInfo("正在自动向下滚动长截... 再次点击或按任意键暂停");
+    }
+
+    private void StopAutoScroll()
+    {
+        if (!_isAutoScrolling) return;
+        _isAutoScrolling = false;
+        _autoScrollTimer?.Stop();
+        _autoScrollTimer = null;
+        Render();
+    }
+
+    private void InstallMouseHook()
+    {
+        if (_mouseHook != IntPtr.Zero) return;
+        _mouseProc = HookCallback;
+        using var curProcess = System.Diagnostics.Process.GetCurrentProcess();
+        using var curModule = curProcess.MainModule;
+        _mouseHook = SetWindowsHookEx(WH_MOUSE_LL, _mouseProc, GetModuleHandle(curModule?.ModuleName), 0);
+    }
+
+    private void UninstallMouseHook()
+    {
+        if (_mouseHook != IntPtr.Zero)
+        {
+            UnhookWindowsHookEx(_mouseHook);
+            _mouseHook = IntPtr.Zero;
+        }
+    }
+
+    private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
+    {
+        if (nCode >= 0 && _mode == CaptureMode.Scrolling)
+        {
+            if ((int)wParam == WM_MOUSEWHEEL)
+            {
+                var hookStruct = Marshal.PtrToStructure<MSLLHOOKSTRUCT>(lParam);
+                Point wpfPt = PointFromScreen(new Point(hookStruct.pt.x, hookStruct.pt.y));
+                if (_selectionRect.Contains(wpfPt))
+                {
+                    short wheelDelta = unchecked((short)((hookStruct.mouseData >> 16) & 0xFFFF));
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        _ = ScrollUnderlyingWindowAndStitchAsync(wheelDelta);
+                    }));
+                }
+            }
+        }
+        return CallNextHookEx(_mouseHook, nCode, wParam, lParam);
     }
 
     #endregion
@@ -1874,7 +2274,7 @@ public partial class OverlayWindow : Window
     {
         int idx = (int)((p.X - bar.Left - 8) / 33);
         var tools = _mode == CaptureMode.Scrolling
-            ? ScrollingTools.Select(t => t.Tool).ToArray()
+            ? CurrentScrollingTools.Select(t => t.Tool).ToArray()
             : AllTools.Select(t => t.Tool).ToArray();
 
         if (idx < 0 || idx >= tools.Length) return;
@@ -1914,6 +2314,12 @@ public partial class OverlayWindow : Window
                 break;
             case ToolbarTool.Scrolling:
                 StartScrollingCapture();
+                break;
+            case ToolbarTool.ScrollDown:
+                _ = ScrollUnderlyingWindowAndStitchAsync(-120);
+                break;
+            case ToolbarTool.AutoScroll:
+                ToggleAutoScroll();
                 break;
             case ToolbarTool.Cancel:
                 Close();
@@ -2299,7 +2705,10 @@ public partial class OverlayWindow : Window
         _mode = CaptureMode.Scrolling;
         _isSubToolbarVisible = false;
 
-        // 设置从屏幕截图中排除当前覆盖窗体 (WDA_EXCLUDEFROMCAPTURE = 0x00000011)，确保截取的是底层真实页面
+        // 1. 隐藏全屏背景静态快照，确保选区内部 100% 透明，实时可见底层 Chrome/Edge 等应用
+        ImgSnapshot.Visibility = Visibility.Collapsed;
+
+        // 2. 设置从屏幕截图中排除当前覆盖窗体 (WDA_EXCLUDEFROMCAPTURE = 0x00000011)，确保截取的是底层真实页面
         try
         {
             var hwnd = new WindowInteropHelper(this).Handle;
@@ -2307,10 +2716,13 @@ public partial class OverlayWindow : Window
         }
         catch { }
 
+        // 3. 安装低级别鼠标钩子，捕捉硬件级滚轮
+        InstallMouseHook();
+
         var initial = CaptureCurrentSelectionLive() ?? GetCroppedSelectionBitmap();
         _stitcher.Initialize(initial);
         Render();
-        ModernToast.ShowInfo("长截图已开启：滚动鼠标滚轮或按 ↓ 键即可向下滚动拼接，点击对勾保存。");
+        ModernToast.ShowInfo("长截图已开启：滚动鼠标滚轮、在选区内上下拖动鼠标、或点击⬇按钮均可滚动拼接。");
     }
 
     private Bitmap? CaptureCurrentSelectionLive()
@@ -2320,12 +2732,13 @@ public partial class OverlayWindow : Window
             double scaleX = (double)_virtualBounds.Width / Width;
             double scaleY = (double)_virtualBounds.Height / Height;
 
-            int sx = _virtualBounds.X + (int)Math.Round(_selectionRect.X * scaleX);
-            int sy = _virtualBounds.Y + (int)Math.Round(_selectionRect.Y * scaleY);
-            int sw = (int)Math.Round(_selectionRect.Width * scaleX);
-            int sh = (int)Math.Round(_selectionRect.Height * scaleY);
+            // 内缩 2 物理像素，杜绝截取到蓝色选框边缘与端角圆点，保证图像拼接纯净
+            int sx = _virtualBounds.X + (int)Math.Round((_selectionRect.X + 2) * scaleX);
+            int sy = _virtualBounds.Y + (int)Math.Round((_selectionRect.Y + 2) * scaleY);
+            int sw = (int)Math.Round((_selectionRect.Width - 4) * scaleX);
+            int sh = (int)Math.Round((_selectionRect.Height - 4) * scaleY);
 
-            if (sw <= 0 || sh <= 0) return null;
+            if (sw <= 10 || sh <= 10) return null;
 
             return ScreenCapture.CaptureScreen(new System.Drawing.Rectangle(sx, sy, sw, sh));
         }
@@ -2337,8 +2750,11 @@ public partial class OverlayWindow : Window
 
     private void CleanupScrollingCapture()
     {
+        StopAutoScroll();
+        UninstallMouseHook();
         try
         {
+            ImgSnapshot.Visibility = Visibility.Visible;
             var hwnd = new WindowInteropHelper(this).Handle;
             SetWindowDisplayAffinity(hwnd, 0);
         }
@@ -2417,13 +2833,13 @@ public partial class OverlayWindow : Window
             if (e.Key == Key.Down || e.Key == Key.PageDown || e.Key == Key.Space)
             {
                 e.Handled = true;
-                _ = TriggerHardwareScrollStepAsync(-120);
+                _ = ScrollUnderlyingWindowAndStitchAsync(-120);
                 return;
             }
             if (e.Key == Key.Up || e.Key == Key.PageUp)
             {
                 e.Handled = true;
-                _ = TriggerHardwareScrollStepAsync(120);
+                _ = ScrollUnderlyingWindowAndStitchAsync(120);
                 return;
             }
             if (e.Key == Key.Enter)
@@ -2540,6 +2956,7 @@ public partial class OverlayWindow : Window
     protected override void OnClosed(EventArgs e)
     {
         base.OnClosed(e);
+        CleanupScrollingCapture();
         _fullSnapshot.Dispose();
         _stitcher.Reset();
     }

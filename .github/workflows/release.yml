@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.27)'
+        description: 'Release version (e.g. 1.9.28)'
         required: false
-        default: '1.9.27'
+        default: '1.9.28'
 
 concurrency:
   group: release
@@ -41,7 +41,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.27"
+            VERSION="1.9.28"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -76,12 +76,11 @@ jobs:
             - **Windows 绿色便携版 (Portable)**: [ShotX-Windows-${{ env.VERSION }}-Portable.zip](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-Windows-${{ env.VERSION }}-Portable.zip)
             - **macOS 安装包 (DMG)**: [ShotX-${{ env.VERSION }}.dmg](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-${{ env.VERSION }}.dmg)
 
-            #### 🚀 本次更新亮点与修复 (v1.9.27)
-            1. **macOS 拾色器点击闪退根除 (macOS)**：修复拾色器在鼠标点击确认时窗口被同步过早销毁导致的 TouchBar 悬垂指针 EXC_BAD_ACCESS 崩溃；完善异步安全窗口关闭与像素提取边界保护，点击取色立即复制并展示居中 Toast。
-            2. **Windows 长截图滚轮穿透滚动与实时拼接彻底打通 (Windows)**：改用 Windows 硬件级注入真实滚轮事件，无论 Chrome、Edge、Word、微信还是 PDF，都能 100% 真实滚动页面并实时无缝拼接；新增方向下键、PageDown、空格键等辅助滚动热键支持。
-            3. **偏好设置多平台配置文本框标题完整展示 (Windows)**：彻底重构多语言机器翻译平台与 OCR 识别引擎的输入网格布局，采用双列绝对栅格分割，标题文本永不被输入框白色背景覆盖遮挡。
-            4. **OCR 与翻译平台选择后全局真正生效 (Windows)**：打通平台切换与识别/翻译业务调度链路，选择百度/有道/微软原生即刻全局生效；百度云 OCR 增加实时 OAuth Token 连通性测试。
-            5. **独立翻译窗口实时标识当前激活引擎 (Windows)**：顶栏清晰标注当前生效的翻译引擎（如【百度翻译】、【谷歌翻译】、【内置免密】等），方便直观掌控。
+            #### 🚀 本次更新亮点与修复 (v1.9.28)
+            1. **Windows 长截图选区内部滑动/滚轮无反应问题彻底解决 (Windows)**：隐藏全屏静态背景快照，选区内部纯透明（0 Alpha），实时无遮挡展现底层应用；选区内支持按住鼠标左键上下拖拽滑动翻页滚动、鼠标滚轮滚动、键盘方向下键以及空格键，底层页面流畅滚动并实时拼接。
+            2. **长截图新增【⬇ 向下滚动】单步拼接与【▶ 自动长截】手势模式 (Windows)**：底部工具栏与侧边预览卡片新增一键向下滚动单步拼接与一键自动平滑滚动拼接，到达页面底部自动完成并提示。
+            3. **底层窗口穿透与双重消息精准派发 (Windows)**：根据探测到的底层窗口句柄递归查找子容器，同时派发原生 WM_MOUSEWHEEL、WM_VSCROLL 以及全局低级鼠标钩子，保证 Chromium (Chrome/Edge)、Office Word、PDF、微信等所有窗口均能顺畅滚动与抓取。
+            4. **选区边缘保护防蓝色边框混入 (Windows)**：抓取切片时自动向内收缩 2 物理像素，彻底避免选框的蓝色边线和四角控制点被误作为画面拼接。
           draft: false
           prerelease: false
           files: dist/ShotX-*.dmg
