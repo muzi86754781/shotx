@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.30)'
+        description: 'Release version (e.g. 1.9.31)'
         required: false
-        default: '1.9.30'
+        default: '1.9.31'
 
 concurrency:
   group: release
@@ -41,7 +41,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.30"
+            VERSION="1.9.31"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -76,10 +76,9 @@ jobs:
             - **Windows 绿色便携版 (Portable)**: [ShotX-Windows-${{ env.VERSION }}-Portable.zip](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-Windows-${{ env.VERSION }}-Portable.zip)
             - **macOS 安装包 (DMG)**: [ShotX-${{ env.VERSION }}.dmg](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-${{ env.VERSION }}.dmg)
 
-            #### 🚀 本次更新亮点与修复 (v1.9.30)
-            1. **Windows 长截图滚动穿透与实时预览更新彻底修复 (Windows)**：长截图选区采用动态 `WS_EX_TRANSPARENT` 穿透机制，使得滚轮消息直接无缝送达底层 Chrome/Edge/Word/PDF/微信 等窗口，页面原生平滑滚动；底层窗口滚动后 75ms 自动捕获最新切片并拼接，侧边预览区长图实时延展增长。
-            2. **长截图低级鼠标与键盘钩子全局拦截 (Windows)**：支持全局 Esc 退出、Enter 完成复制、Ctrl+S 保存、空格切换自动长截、方向下键单步滚动拼接，不受焦点位置影响。
-            3. **精准工具栏与预览面板响应保护 (Windows)**：鼠标进入工具栏或预览面板时自动切换为正常命中测试，按钮点击 100% 灵敏响应。
+            #### 🚀 本次更新亮点与修复 (v1.9.31)
+            1. **Windows 长截图滚动高频连续采样拼接 (Windows)**：彻底消除单次抓取即停止的问题，新增 35ms 持续采样队列，与 Chromium 平滑滚动渲染完全同步，滚轮滚动过程中持续顺畅拼接。
+            2. **长截图双锚点与全步长匹配算法 (Windows)**：双锚定区域（底部 55%~92% 与中部 25%~55%），采用逐像素全精度线性扫描，彻底避免次像素跳格导致的匹配丢失，大幅提升各类文档与网页的长图拼接成功率。
           draft: false
           prerelease: false
           files: dist/ShotX-*.dmg

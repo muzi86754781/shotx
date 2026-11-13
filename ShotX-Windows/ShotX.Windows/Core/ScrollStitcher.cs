@@ -62,7 +62,7 @@ public sealed class ScrollStitcher
             }
 
             var (hasMovement, S) = DetectScrollMovement(_lastStitchedBitmap, freshBitmap);
-            if (!hasMovement || S < 3)
+            if (!hasMovement || S < 2)
             {
                 return (false, false, 0);
             }
@@ -129,7 +129,7 @@ public sealed class ScrollStitcher
         int sampleWidth = w - 2 * marginX;
         if (sampleWidth <= 32) return (false, 0);
 
-        const int colCount = 40;
+        const int colCount = 36;
         var sampleCols = new int[colCount];
         int colStep = sampleWidth / colCount;
         for (int i = 0; i < colCount; i++)
@@ -137,16 +137,39 @@ public sealed class ScrollStitcher
             sampleCols[i] = marginX + i * colStep;
         }
 
-        // 2. 在 base 下半部分寻找对比度最强（方差最大）的锚定条带
-        int anchorH = Math.Min(48, Math.Max(24, h / 10));
-        int searchMinTop = Math.Max(8, (int)(h * 0.25));
-        int searchMaxTop = Math.Min(h - anchorH - 6, (int)(h * 0.92));
-        if (searchMaxTop <= searchMinTop) return (false, 0);
+        int anchorH = Math.Min(52, Math.Max(28, h / 10));
+
+        // 双锚点检测：
+        // 锚点 1（优先）：baseBmp 底部高对比度区域 (0.55h ~ 0.92h)，最大位移可达视口 92%
+        // 锚点 2（备用）：baseBmp 中部高对比度区域 (0.25h ~ 0.55h)
+        int bestTop1 = FindBestAnchorTop(bufA, w, h, anchorH, sampleCols, (int)(h * 0.55), (int)(h * 0.92));
+        int bestTop2 = FindBestAnchorTop(bufA, w, h, anchorH, sampleCols, (int)(h * 0.25), (int)(h * 0.55));
+
+        if (bestTop1 > 0)
+        {
+            var res1 = MatchAnchor(bufA, bufB, w, h, anchorH, bestTop1, sampleCols);
+            if (res1.HasMovement) return res1;
+        }
+
+        if (bestTop2 > 0 && bestTop2 != bestTop1)
+        {
+            var res2 = MatchAnchor(bufA, bufB, w, h, anchorH, bestTop2, sampleCols);
+            if (res2.HasMovement) return res2;
+        }
+
+        return (false, 0);
+    }
+
+    private static unsafe int FindBestAnchorTop(byte[] bufA, int w, int h, int anchorH, int[] sampleCols, int minTop, int maxTop)
+    {
+        maxTop = Math.Min(h - anchorH - 6, maxTop);
+        minTop = Math.Max(6, minTop);
+        if (maxTop <= minTop) return -1;
 
         double bestVar = 0.0;
-        int bestTop = searchMaxTop;
+        int bestTop = -1;
 
-        for (int candTop = searchMaxTop; candTop >= searchMinTop; candTop -= 4)
+        for (int candTop = maxTop; candTop >= minTop; candTop -= 4)
         {
             double sum = 0.0;
             double sumSq = 0.0;
@@ -154,7 +177,7 @@ public sealed class ScrollStitcher
             for (int r = 0; r < anchorH; r += 3)
             {
                 int row = (candTop + r) * w;
-                for (int i = 0; i < colCount; i++)
+                for (int i = 0; i < sampleCols.Length; i++)
                 {
                     double val = bufA[row + sampleCols[i]];
                     sum += val;
@@ -175,19 +198,20 @@ public sealed class ScrollStitcher
             }
         }
 
-        // 纯平坦区域（纯白背景等无纹理内容）不作误匹配
-        if (bestVar < 1.0) return (false, 0);
+        return (bestVar >= 1.5) ? bestTop : -1;
+    }
 
-        // 3. 快速零位移检测（完全静止直接跳过）
+    private static unsafe (bool HasMovement, int DeltaY) MatchAnchor(byte[] bufA, byte[] bufB, int w, int h, int anchorH, int anchorTop, int[] sampleCols)
+    {
+        // 快速零位移检测（完全静止直接跳过）
         double zeroDiff = 0.0;
         int zeroCount = 0;
         for (int r = 0; r < anchorH; r += 2)
         {
-            int rowA = (bestTop + r) * w;
-            for (int i = 0; i < colCount; i++)
+            int rowA = (anchorTop + r) * w;
+            for (int i = 0; i < sampleCols.Length; i++)
             {
-                int col = sampleCols[i];
-                zeroDiff += Math.Abs(bufA[rowA + col] - bufB[rowA + col]);
+                zeroDiff += Math.Abs(bufA[rowA + sampleCols[i]] - bufB[rowA + sampleCols[i]]);
                 zeroCount++;
             }
         }
@@ -196,67 +220,27 @@ public sealed class ScrollStitcher
             return (false, 0);
         }
 
-        // 4. 在 fresh 中向上搜索向下位移 S (3px 到 90% 视口高度)
-        int maxS = Math.Min((int)(h * 0.90), bestTop);
-        if (maxS < 3) return (false, 0);
+        int maxS = Math.Min((int)(h * 0.92), anchorTop);
+        if (maxS < 2) return (false, 0);
 
-        // 粗扫描：步长 2
-        int coarseBestS = 0;
-        double coarseBestErr = double.MaxValue;
-
-        for (int S = 3; S <= maxS; S += 2)
-        {
-            int y = bestTop - S;
-            if (y < 0) break;
-
-            double diff = 0.0;
-            int count = 0;
-            for (int r = 0; r < anchorH; r += 3)
-            {
-                int rowA = (bestTop + r) * w;
-                int rowB = (y + r) * w;
-                for (int i = 0; i < colCount; i++)
-                {
-                    int col = sampleCols[i];
-                    diff += Math.Abs(bufA[rowA + col] - bufB[rowB + col]);
-                    count++;
-                }
-            }
-
-            if (count > 0)
-            {
-                double err = diff / count;
-                if (err < coarseBestErr)
-                {
-                    coarseBestErr = err;
-                    coarseBestS = S;
-                }
-            }
-        }
-
-        if (coarseBestS < 3) return (false, 0);
-
-        // 精细扫描：在 coarseBestS 附近 ±2px 细扫步长 1 寻找像素级对齐点
-        int fineStart = Math.Max(3, coarseBestS - 2);
-        int fineEnd = Math.Min(maxS, coarseBestS + 2);
-        int bestS = coarseBestS;
+        int bestS = 0;
         double bestErr = double.MaxValue;
 
-        for (int S = fineStart; S <= fineEnd; S++)
+        // 全步长逐像素线性扫描 (S 从 2 到 maxS)，绝不漏掉单像素文字笔画与次像素对齐点
+        for (int S = 2; S <= maxS; S++)
         {
-            int y = bestTop - S;
+            int y = anchorTop - S;
             if (y < 0) break;
 
             double diff = 0.0;
             int count = 0;
             for (int r = 0; r < anchorH; r += 2)
             {
-                int rowA = (bestTop + r) * w;
+                int rowA = (anchorTop + r) * w;
                 int rowB = (y + r) * w;
-                for (int i = 0; i < colCount; i++)
+                for (int i = 0; i < sampleCols.Length; i++)
                 {
-                    int col = sampleCols[i];
-                    diff += Math.Abs(bufA[rowA + col] - bufB[rowB + col]);
+                    diff += Math.Abs(bufA[rowA + sampleCols[i]] - bufB[rowB + sampleCols[i]]);
                     count++;
                 }
             }
@@ -272,8 +256,8 @@ public sealed class ScrollStitcher
             }
         }
 
-        // Windows 平台兼容 ClearType 次像素反锯齿与高分屏缩放（误差阈值放宽至 14.0 灰度级）
-        if (bestErr <= 14.0 && bestS >= 3)
+        // 阈值宽容匹配 Windows ClearType 与高分屏缩放 (<= 18.0 灰度级)
+        if (bestErr <= 18.0 && bestS >= 2)
         {
             return (true, bestS);
         }
