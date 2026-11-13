@@ -137,20 +137,19 @@ public sealed class ScrollStitcher
             sampleCols[i] = marginX + i * colStep;
         }
 
-        int anchorH = Math.Min(52, Math.Max(28, h / 10));
+        int anchorH = Math.Min(48, Math.Max(24, h / 10));
 
         // 双锚点检测：
-        // 锚点 1（优先）：baseBmp 底部高对比度区域 (0.55h ~ 0.92h)，最大位移可达视口 92%
-        // 锚点 2（备用）：baseBmp 中部高对比度区域 (0.25h ~ 0.55h)
-        int bestTop1 = FindBestAnchorTop(bufA, w, h, anchorH, sampleCols, (int)(h * 0.55), (int)(h * 0.92));
-        int bestTop2 = FindBestAnchorTop(bufA, w, h, anchorH, sampleCols, (int)(h * 0.25), (int)(h * 0.55));
-
+        // 锚点 1（优先）：baseBmp 底部高特征区域 (0.50h ~ 0.92h)，最大位移可达视口 92%
+        // 锚点 2（备用）：baseBmp 中部高特征区域 (0.20h ~ 0.50h)
+        int bestTop1 = FindBestAnchorTop(bufA, w, h, anchorH, sampleCols, (int)(h * 0.50), (int)(h * 0.92));
         if (bestTop1 > 0)
         {
             var res1 = MatchAnchor(bufA, bufB, w, h, anchorH, bestTop1, sampleCols);
             if (res1.HasMovement) return res1;
         }
 
+        int bestTop2 = FindBestAnchorTop(bufA, w, h, anchorH, sampleCols, (int)(h * 0.20), (int)(h * 0.50));
         if (bestTop2 > 0 && bestTop2 != bestTop1)
         {
             var res2 = MatchAnchor(bufA, bufB, w, h, anchorH, bestTop2, sampleCols);
@@ -166,8 +165,8 @@ public sealed class ScrollStitcher
         minTop = Math.Max(6, minTop);
         if (maxTop <= minTop) return -1;
 
-        double bestVar = 0.0;
-        int bestTop = -1;
+        double bestVar = -1.0;
+        int bestTop = maxTop;
 
         for (int candTop = maxTop; candTop >= minTop; candTop -= 4)
         {
@@ -198,7 +197,7 @@ public sealed class ScrollStitcher
             }
         }
 
-        return (bestVar >= 1.5) ? bestTop : -1;
+        return (bestVar >= 0.3) ? bestTop : maxTop;
     }
 
     private static unsafe (bool HasMovement, int DeltaY) MatchAnchor(byte[] bufA, byte[] bufB, int w, int h, int anchorH, int anchorTop, int[] sampleCols)
@@ -256,8 +255,8 @@ public sealed class ScrollStitcher
             }
         }
 
-        // 阈值宽容匹配 Windows ClearType 与高分屏缩放 (<= 18.0 灰度级)
-        if (bestErr <= 18.0 && bestS >= 2)
+        // 阈值宽容匹配 Windows ClearType、字体抗锯齿与高分屏缩放 (<= 22.0 灰度级)
+        if (bestErr <= 22.0 && bestS >= 2)
         {
             return (true, bestS);
         }

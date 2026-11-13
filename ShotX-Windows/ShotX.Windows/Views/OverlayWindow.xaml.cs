@@ -226,7 +226,8 @@ public partial class OverlayWindow : Window
     // 长截图交互与透明穿透状态
     private bool _isClickThrough = false;
     private DispatcherTimer? _scrollingIgnoreTimer;
-    private bool _isLiveScrollLoopRunning = false;
+    private DispatcherTimer? _liveScrollCaptureTimer;
+    private int _liveScrollIdleRounds = 0;
     private DateTime _lastWheelEventUtc = DateTime.MinValue;
     private DispatcherTimer? _autoScrollTimer;
     private bool _isAutoScrolling = false;
@@ -382,6 +383,11 @@ public partial class OverlayWindow : Window
 
     private void Render()
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            Dispatcher.BeginInvoke(new Action(Render));
+            return;
+        }
         OverlayCanvas.InvalidateVisual();
     }
 
@@ -2305,59 +2311,68 @@ public partial class OverlayWindow : Window
     private void OnWheelEventDetected()
     {
         _lastWheelEventUtc = DateTime.UtcNow;
-        if (_isLiveScrollLoopRunning || _mode != CaptureMode.Scrolling) return;
-        _ = RunLiveScrollCaptureLoopAsync();
+        _liveScrollIdleRounds = 0;
+        if (_mode != CaptureMode.Scrolling) return;
+
+        if (_liveScrollCaptureTimer == null)
+        {
+            _liveScrollCaptureTimer = new DispatcherTimer(DispatcherPriority.Render)
+            {
+                Interval = TimeSpan.FromMilliseconds(40)
+            };
+            _liveScrollCaptureTimer.Tick += LiveScrollCaptureTimer_Tick;
+            _liveScrollCaptureTimer.Start();
+        }
     }
 
-    private async Task RunLiveScrollCaptureLoopAsync()
+    private void LiveScrollCaptureTimer_Tick(object? sender, EventArgs e)
     {
-        if (_isLiveScrollLoopRunning) return;
-        _isLiveScrollLoopRunning = true;
-
-        try
+        if (_mode != CaptureMode.Scrolling)
         {
-            int idleRounds = 0;
-            // 持续轮询采样并拼接，与底层应用程序平滑滚动渲染保持同步 (约 30 FPS)
-            while (_mode == CaptureMode.Scrolling)
+            StopLiveScrollCaptureTimer();
+            return;
+        }
+
+        var fresh = CaptureCurrentSelectionLive();
+        if (fresh != null)
+        {
+            var res = _stitcher.AppendSlice(fresh);
+            fresh.Dispose();
+
+            if (res.ReachedLimit)
             {
-                await Task.Delay(35);
+                StopLiveScrollCaptureTimer();
+                StopAutoScroll();
+                ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
+                return;
+            }
 
-                var fresh = CaptureCurrentSelectionLive();
-                if (fresh != null)
-                {
-                    var res = _stitcher.AppendSlice(fresh);
-                    fresh.Dispose();
-
-                    if (res.ReachedLimit)
-                    {
-                        StopAutoScroll();
-                        ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
-                        break;
-                    }
-
-                    if (res.DidStitch)
-                    {
-                        idleRounds = 0;
-                        Render();
-                    }
-                    else
-                    {
-                        idleRounds++;
-                    }
-                }
-
-                // 当滚轮静止超过 350ms 且连续 4 轮检测到 0 位移（平滑滚动彻底停止），退出采样循环
-                var elapsed = (DateTime.UtcNow - _lastWheelEventUtc).TotalMilliseconds;
-                if (elapsed > 350 && idleRounds >= 4)
-                {
-                    break;
-                }
+            if (res.DidStitch)
+            {
+                _liveScrollIdleRounds = 0;
+                Render();
+            }
+            else
+            {
+                _liveScrollIdleRounds++;
             }
         }
-        catch { }
-        finally
+
+        // 当滚轮静止超过 400ms 且连续 4 轮检测到 0 位移（平滑滚动彻底停止），暂停定时采样
+        var elapsed = (DateTime.UtcNow - _lastWheelEventUtc).TotalMilliseconds;
+        if (elapsed > 400 && _liveScrollIdleRounds >= 4)
         {
-            _isLiveScrollLoopRunning = false;
+            StopLiveScrollCaptureTimer();
+        }
+    }
+
+    private void StopLiveScrollCaptureTimer()
+    {
+        if (_liveScrollCaptureTimer != null)
+        {
+            _liveScrollCaptureTimer.Stop();
+            _liveScrollCaptureTimer.Tick -= LiveScrollCaptureTimer_Tick;
+            _liveScrollCaptureTimer = null;
         }
     }
 
@@ -2985,6 +3000,11 @@ public partial class OverlayWindow : Window
 
     private Bitmap? CaptureCurrentSelectionLive()
     {
+        if (!Dispatcher.CheckAccess())
+        {
+            return Dispatcher.Invoke(CaptureCurrentSelectionLive);
+        }
+
         try
         {
             double scaleX = (double)_virtualBounds.Width / Width;
@@ -3009,10 +3029,10 @@ public partial class OverlayWindow : Window
     private void CleanupScrollingCapture()
     {
         StopAutoScroll();
+        StopLiveScrollCaptureTimer();
         StopScrollingIgnoreTimer();
         SetClickThrough(false);
         UninstallHooks();
-        _isLiveScrollLoopRunning = false;
         try
         {
             ImgSnapshot.Visibility = Visibility.Visible;
