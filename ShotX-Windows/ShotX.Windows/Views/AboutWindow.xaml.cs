@@ -36,19 +36,19 @@ public partial class AboutWindow : Window
             using var doc = JsonDocument.Parse(json);
             string tagName = doc.RootElement.GetProperty("tag_name").GetString() ?? "";
 
-            if (!string.IsNullOrEmpty(tagName) && tagName != "v1.9.29")
+            if (!string.IsNullOrEmpty(tagName) && tagName != "v1.9.30")
             {
                 ModernToast.ShowInfo($"发现新版本 {tagName}，正在前往发布页面...");
                 Process.Start(new ProcessStartInfo("https://github.com/muzi86754781/shotx/releases/latest") { UseShellExecute = true });
             }
             else
             {
-                ModernToast.ShowSuccess("当前已是最新版本 (v1.9.29)。");
+                ModernToast.ShowSuccess("当前已是最新版本 (v1.9.30)。");
             }
         }
         catch
         {
-            ModernToast.ShowSuccess("当前已是最新版本 (v1.9.29)。");
+            ModernToast.ShowSuccess("当前已是最新版本 (v1.9.30)。");
         }
     }
 

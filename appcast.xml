@@ -7,6 +7,15 @@
         <language>en</language>
 
         <item>
+            <title>Version 1.9.30</title>
+            <pubDate>Fri, 13 Nov 2026 14:00:00 +0800</pubDate>
+            <sparkle:version>1.9.30</sparkle:version>
+            <sparkle:shortVersionString>1.9.30</sparkle:shortVersionString>
+            <sparkle:minimumSystemVersion>13.0</sparkle:minimumSystemVersion>
+            <enclosure url="https://github.com/muzi86754781/shotx/releases/download/v1.9.30/ShotX-1.9.30.dmg" length="3400000" type="application/octet-stream" />
+        </item>
+
+        <item>
             <title>Version 1.9.29</title>
             <pubDate>Sun, 08 Nov 2026 03:00:00 +0800</pubDate>
             <sparkle:version>1.9.29</sparkle:version>

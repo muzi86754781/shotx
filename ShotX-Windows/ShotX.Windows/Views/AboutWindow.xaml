@@ -21,7 +21,7 @@
                 <StackPanel Orientation="Horizontal">
                     <TextBlock Text="ShotX" FontSize="22" FontWeight="Bold" Foreground="#1D1D1F" />
                     <Border Background="#E5E5EA" CornerRadius="10" Margin="10,2,0,2" Padding="8,2">
-                        <TextBlock Text="v1.9.29" FontSize="12" FontWeight="SemiBold" Foreground="#48484A" />
+                        <TextBlock Text="v1.9.30" FontSize="12" FontWeight="SemiBold" Foreground="#48484A" />
                     </Border>
                 </StackPanel>
                 <TextBlock Text="专业全能屏幕截图、长截图、标注与多媒体录制工具" FontSize="12" Foreground="#86868B" Margin="0,4,0,0" />
