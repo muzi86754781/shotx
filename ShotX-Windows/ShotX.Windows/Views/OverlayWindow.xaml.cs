@@ -2245,10 +2245,6 @@ public partial class OverlayWindow : Window
                 {
                     Dispatcher.BeginInvoke(new Action(() => _ = ScrollUnderlyingWindowAndStitchAsync(-120)));
                 }
-                else if (ScrollingAutoButtonRect().Contains(p))
-                {
-                    Dispatcher.BeginInvoke(new Action(ToggleAutoScroll));
-                }
             }
             else if (msg == (int)WM_MOUSEWHEEL)
             {
@@ -2395,7 +2391,7 @@ public partial class OverlayWindow : Window
             bool gotOrig = GetCursorPos(out origCursor);
             SetCursorPos(screenX, screenY);
 
-            mouse_event(MOUSEEVENTF_WHEEL, 0, 0, (uint)wheelDelta, UIntPtr.Zero);
+            mouse_event(MOUSEEVENTF_WHEEL, 0, 0, wheelDelta, UIntPtr.Zero);
 
             byte vk = wheelDelta < 0 ? VK_DOWN : VK_UP;
             keybd_event(vk, 0, 0, UIntPtr.Zero);
