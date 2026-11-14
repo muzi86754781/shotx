@@ -2396,7 +2396,7 @@ public partial class OverlayWindow : Window
         var fresh = CaptureCurrentSelectionLive();
         if (fresh == null) return false;
 
-        ScrollStitcher.StitchResult res;
+        StitchResult res;
         try
         {
             res = _stitcher.AppendSlice(fresh);
