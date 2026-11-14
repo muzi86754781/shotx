@@ -215,6 +215,8 @@ public partial class OverlayWindow : Window
     private const uint SWP_SHOWWINDOW = 0x0040;
     private const int GWL_EXSTYLE = -20;
     private const int WS_EX_TRANSPARENT = 0x00000020;
+    private const int WS_EX_NOACTIVATE = 0x08000000;
+    private const uint WDA_NONE = 0x00000000;
     private const uint WDA_EXCLUDEFROMCAPTURE = 0x00000011;
     private const uint WM_MOUSEWHEEL = 0x020A;
     private const uint WM_VSCROLL = 0x0115;
@@ -227,8 +229,8 @@ public partial class OverlayWindow : Window
     private bool _isClickThrough = false;
     private DispatcherTimer? _scrollingIgnoreTimer;
     private DispatcherTimer? _liveScrollCaptureTimer;
-    private int _liveScrollIdleRounds = 0;
     private DateTime _lastWheelEventUtc = DateTime.MinValue;
+    private DateTime _lastScrollingActionUtc = DateTime.MinValue;
     private DispatcherTimer? _autoScrollTimer;
     private bool _isAutoScrolling = false;
 
@@ -406,8 +408,10 @@ public partial class OverlayWindow : Window
             );
             dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(135, 0, 0, 0)), null, maskGeo);
 
-            dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect);
-            DrawCornerBrackets(dc, _selectionRect);
+            var borderRect = _selectionRect;
+            borderRect.Inflate(3, 3);
+            dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), borderRect);
+            DrawCornerBrackets(dc, borderRect, drawHandles: false);
 
             DrawScrollingPreviewPanel(dc);
             DrawBottomToolbar(dc);
@@ -538,7 +542,7 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private void DrawCornerBrackets(DrawingContext dc, Rect r)
+    private void DrawCornerBrackets(DrawingContext dc, Rect r, bool drawHandles = true)
     {
         var accentBrush = new SolidColorBrush(Color.FromRgb(46, 135, 255));
         var pen = new Pen(accentBrush, 3.5)
@@ -561,12 +565,15 @@ public partial class OverlayWindow : Window
         dc.DrawLine(pen, new Point(r.Right - len, r.Bottom + 1), new Point(r.Right + 1, r.Bottom + 1));
         dc.DrawLine(pen, new Point(r.Right + 1, r.Bottom + 1), new Point(r.Right + 1, r.Bottom - len));
 
-        // 4 角明显可拖拽锚点圆点，提示用户可随时拖拽四角重新框选调整
-        var handlePen = new Pen(accentBrush, 2.0);
-        dc.DrawEllipse(Brushes.White, handlePen, new Point(r.Left, r.Top), 5, 5);
-        dc.DrawEllipse(Brushes.White, handlePen, new Point(r.Right, r.Top), 5, 5);
-        dc.DrawEllipse(Brushes.White, handlePen, new Point(r.Left, r.Bottom), 5, 5);
-        dc.DrawEllipse(Brushes.White, handlePen, new Point(r.Right, r.Bottom), 5, 5);
+        if (drawHandles)
+        {
+            // 4 角明显可拖拽锚点圆点，提示用户可随时拖拽四角重新框选调整
+            var handlePen = new Pen(accentBrush, 2.0);
+            dc.DrawEllipse(Brushes.White, handlePen, new Point(r.Left, r.Top), 5, 5);
+            dc.DrawEllipse(Brushes.White, handlePen, new Point(r.Right, r.Top), 5, 5);
+            dc.DrawEllipse(Brushes.White, handlePen, new Point(r.Left, r.Bottom), 5, 5);
+            dc.DrawEllipse(Brushes.White, handlePen, new Point(r.Right, r.Bottom), 5, 5);
+        }
     }
 
     private Rect TopBarRect()
@@ -884,7 +891,14 @@ public partial class OverlayWindow : Window
         double subExtra = (_isSubToolbarVisible && _mode != CaptureMode.Scrolling && _currentTool != ToolbarTool.None) ? 48 : 0;
         if (y + h + subExtra > Height - 10)
         {
-            y = Math.Max(10, _selectionRect.Bottom - h - subExtra - 12);
+            if (_mode == CaptureMode.Scrolling && _selectionRect.Top >= h + 16)
+            {
+                y = _selectionRect.Top - h - 10;
+            }
+            else
+            {
+                y = Math.Max(10, _selectionRect.Bottom - h - subExtra - 12);
+            }
         }
         return new Rect(x, y, w, h);
     }
@@ -1540,12 +1554,13 @@ public partial class OverlayWindow : Window
 
         if (_stitcher.HasImage && _stitcher.StitchedLongBitmap != null)
         {
-            var imgSource = ScreenCapture.ToBitmapSource(_stitcher.StitchedLongBitmap);
+            var stitchedBmp = _stitcher.StitchedLongBitmap;
+            var imgSource = ScreenCapture.ToBitmapSource(stitchedBmp);
             double innerW = cardW - 20;
             double innerH = cardH - 100;
-            double scale = Math.Min(innerW / imgSource.Width, innerH / imgSource.Height);
-            double dw = imgSource.Width * scale;
-            double dh = imgSource.Height * scale;
+            double scale = Math.Min(innerW / Math.Max(1.0, stitchedBmp.Width), innerH / Math.Max(1.0, stitchedBmp.Height));
+            double dw = stitchedBmp.Width * scale;
+            double dh = stitchedBmp.Height * scale;
 
             var drawRect = new Rect(cardX + (cardW - dw) / 2, cardY + 28, dw, dh);
             dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(245, 245, 248)), null, drawRect);
@@ -1667,33 +1682,9 @@ public partial class OverlayWindow : Window
 
         if (_mode == CaptureMode.Scrolling)
         {
-            if (ScrollingCancelButtonRect().Contains(p))
-            {
-                Close();
-                return;
-            }
-            if (ScrollingStepButtonRect().Contains(p))
-            {
-                _ = ScrollUnderlyingWindowAndStitchAsync(-120);
-                return;
-            }
-            if (ScrollingDoneButtonRect().Contains(p))
-            {
-                FinishAndCopy();
-                return;
-            }
-
-            var bBar = BottomToolbarRect();
-            if (bBar.Contains(p))
-            {
-                HandleBottomToolbarClick(p, bBar);
-                return;
-            }
-
+            HandleScrollingPointClick(p);
             return;
         }
-
-        CaptureMouse();
 
         // 2. 双击选区直接完成并复制到剪贴板
         if (e.ClickCount == 2 && !_selectionRect.IsEmpty && _selectionRect.Contains(p))
@@ -1726,6 +1717,7 @@ public partial class OverlayWindow : Window
                 return;
             }
 
+            CaptureMouse();
             _startPoint = p;
             _selectionRect = Rect.Empty;
             return;
@@ -1737,6 +1729,7 @@ public partial class OverlayWindow : Window
         {
             if (p.X >= topBar.Left + 88 && p.X <= topBar.Left + 145)
             {
+                CaptureMouse();
                 _isDraggingCornerSlider = true;
                 UpdateCornerRadius(p.X, topBar.Left + 88, topBar.Left + 143);
                 return;
@@ -1766,6 +1759,8 @@ public partial class OverlayWindow : Window
             HandleBottomToolbarClick(p, bottomBar);
             return;
         }
+
+        CaptureMouse();
 
         // 选区四角或边框调整 / 移动 (优先级高于内部普通拖拽，确保随时可拖四角再次框选)
         var hit = HitTestSelection(p);
@@ -2076,12 +2071,47 @@ public partial class OverlayWindow : Window
         }
     }
 
+    private bool HandleScrollingPointClick(Point p)
+    {
+        if ((DateTime.UtcNow - _lastScrollingActionUtc).TotalMilliseconds < 220)
+            return true;
+
+        if (ScrollingCancelButtonRect().Contains(p))
+        {
+            _lastScrollingActionUtc = DateTime.UtcNow;
+            Close();
+            return true;
+        }
+        if (ScrollingStepButtonRect().Contains(p))
+        {
+            _lastScrollingActionUtc = DateTime.UtcNow;
+            _ = ScrollUnderlyingWindowAndStitchAsync(-120);
+            return true;
+        }
+        if (ScrollingDoneButtonRect().Contains(p))
+        {
+            _lastScrollingActionUtc = DateTime.UtcNow;
+            FinishAndCopy();
+            return true;
+        }
+
+        var bBar = BottomToolbarRect();
+        if (bBar.Contains(p))
+        {
+            _lastScrollingActionUtc = DateTime.UtcNow;
+            HandleBottomToolbarClick(p, bBar);
+            return true;
+        }
+        return false;
+    }
+
     private void Window_MouseWheel(object sender, MouseWheelEventArgs e)
     {
         if (_mode == CaptureMode.Scrolling)
         {
             e.Handled = true;
-            OnWheelEventDetected();
+            SetClickThrough(true);
+            _ = ScrollUnderlyingWindowAndStitchAsync(e.Delta);
         }
     }
 
@@ -2106,6 +2136,27 @@ public partial class OverlayWindow : Window
         return found;
     }
 
+    private void ActivateUnderlyingWindowAtSelectionCenter()
+    {
+        try
+        {
+            if (_selectionRect.IsEmpty) return;
+            var centerDip = new Point(_selectionRect.Left + _selectionRect.Width / 2, _selectionRect.Top + _selectionRect.Height / 2);
+            double scaleX = (double)_virtualBounds.Width / Math.Max(1.0, Width);
+            double scaleY = (double)_virtualBounds.Height / Math.Max(1.0, Height);
+            int screenX = _virtualBounds.X + (int)Math.Round(centerDip.X * scaleX);
+            int screenY = _virtualBounds.Y + (int)Math.Round(centerDip.Y * scaleY);
+
+            var selfHwnd = new WindowInteropHelper(this).Handle;
+            IntPtr topHwnd = GetWindowBelow(selfHwnd, new System.Drawing.Point(screenX, screenY));
+            if (topHwnd != IntPtr.Zero && topHwnd != selfHwnd)
+            {
+                SetForegroundWindow(topHwnd);
+            }
+        }
+        catch { }
+    }
+
     private Point ScreenToDip(POINT pt)
     {
         double scaleX = (double)_virtualBounds.Width / Math.Max(1, Width);
@@ -2115,7 +2166,6 @@ public partial class OverlayWindow : Window
 
     private void SetClickThrough(bool enable)
     {
-        if (_isClickThrough == enable) return;
         try
         {
             var hwnd = new WindowInteropHelper(this).Handle;
@@ -2123,12 +2173,28 @@ public partial class OverlayWindow : Window
             int exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
             if (enable)
             {
-                SetWindowLong(hwnd, GWL_EXSTYLE, exStyle | WS_EX_TRANSPARENT);
+                int targetStyle = exStyle | WS_EX_TRANSPARENT | WS_EX_NOACTIVATE;
+                if (exStyle != targetStyle)
+                {
+                    SetWindowLong(hwnd, GWL_EXSTYLE, targetStyle);
+                }
                 _isClickThrough = true;
             }
             else
             {
-                SetWindowLong(hwnd, GWL_EXSTYLE, exStyle & ~WS_EX_TRANSPARENT);
+                int targetStyle = exStyle & ~WS_EX_TRANSPARENT;
+                if (_mode == CaptureMode.Scrolling)
+                {
+                    targetStyle |= WS_EX_NOACTIVATE;
+                }
+                else
+                {
+                    targetStyle &= ~WS_EX_NOACTIVATE;
+                }
+                if (exStyle != targetStyle)
+                {
+                    SetWindowLong(hwnd, GWL_EXSTYLE, targetStyle);
+                }
                 _isClickThrough = false;
             }
         }
@@ -2145,8 +2211,8 @@ public partial class OverlayWindow : Window
 
         Rect toolbarRect = BottomToolbarRect();
         Rect previewRect = ScrollingPreviewPanelRect();
-        if (!toolbarRect.IsEmpty) toolbarRect.Inflate(12, 12);
-        if (!previewRect.IsEmpty) previewRect.Inflate(12, 12);
+        if (!toolbarRect.IsEmpty) toolbarRect.Inflate(10, 10);
+        if (!previewRect.IsEmpty) previewRect.Inflate(10, 10);
 
         bool isOverControls = (!toolbarRect.IsEmpty && toolbarRect.Contains(p)) ||
                               (!previewRect.IsEmpty && previewRect.Contains(p));
@@ -2165,7 +2231,7 @@ public partial class OverlayWindow : Window
     private void StartScrollingIgnoreTimer()
     {
         StopScrollingIgnoreTimer();
-        _scrollingIgnoreTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(40) };
+        _scrollingIgnoreTimer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(35) };
         _scrollingIgnoreTimer.Tick += (_, _) =>
         {
             if (_mode != CaptureMode.Scrolling)
@@ -2232,36 +2298,30 @@ public partial class OverlayWindow : Window
             if (msg == WM_MOUSEMOVE)
             {
                 UpdateMouseIgnoreState(p);
-                if (_selectionRect.Contains(p) && (GetAsyncKeyState(0x01) & 0x8000) != 0)
-                {
-                    Dispatcher.BeginInvoke(new Action(OnWheelEventDetected));
-                }
             }
             else if (msg == WM_LBUTTONDOWN)
             {
-                var bBar = BottomToolbarRect();
-                if (bBar.Contains(p))
+                if (_isClickThrough)
                 {
-                    Dispatcher.BeginInvoke(new Action(() => HandleBottomToolbarClick(p, bBar)));
-                }
-                else if (ScrollingDoneButtonRect().Contains(p))
-                {
-                    Dispatcher.BeginInvoke(new Action(FinishAndCopy));
-                }
-                else if (ScrollingCancelButtonRect().Contains(p))
-                {
-                    Dispatcher.BeginInvoke(new Action(Close));
-                }
-                else if (ScrollingStepButtonRect().Contains(p))
-                {
-                    Dispatcher.BeginInvoke(new Action(() => _ = ScrollUnderlyingWindowAndStitchAsync(-120)));
+                    var bBar = BottomToolbarRect();
+                    if (bBar.Contains(p) ||
+                        ScrollingDoneButtonRect().Contains(p) ||
+                        ScrollingCancelButtonRect().Contains(p) ||
+                        ScrollingStepButtonRect().Contains(p))
+                    {
+                        Dispatcher.BeginInvoke(new Action(() => HandleScrollingPointClick(p)));
+                    }
                 }
             }
             else if (msg == (int)WM_MOUSEWHEEL)
             {
-                if (_selectionRect.Contains(p))
+                _lastWheelEventUtc = DateTime.UtcNow;
+                bool isInjected = (hookStruct.flags & 0x01) != 0;
+                if (!isInjected && _selectionRect.Contains(p))
                 {
-                    Dispatcher.BeginInvoke(new Action(OnWheelEventDetected));
+                    int delta = (short)((hookStruct.mouseData >> 16) & 0xFFFF);
+                    POINT wheelPt = hookStruct.pt;
+                    Dispatcher.BeginInvoke(new Action(() => _ = OnPhysicalWheelInSelectionAsync(wheelPt, delta)));
                 }
             }
         }
@@ -2308,21 +2368,15 @@ public partial class OverlayWindow : Window
         return CallNextHookEx(_keyboardHook, nCode, wParam, lParam);
     }
 
-    private void OnWheelEventDetected()
+    private void StartLiveScrollCaptureTimer()
     {
-        _lastWheelEventUtc = DateTime.UtcNow;
-        _liveScrollIdleRounds = 0;
-        if (_mode != CaptureMode.Scrolling) return;
-
-        if (_liveScrollCaptureTimer == null)
+        StopLiveScrollCaptureTimer();
+        _liveScrollCaptureTimer = new DispatcherTimer(DispatcherPriority.Render)
         {
-            _liveScrollCaptureTimer = new DispatcherTimer(DispatcherPriority.Render)
-            {
-                Interval = TimeSpan.FromMilliseconds(40)
-            };
-            _liveScrollCaptureTimer.Tick += LiveScrollCaptureTimer_Tick;
-            _liveScrollCaptureTimer.Start();
-        }
+            Interval = TimeSpan.FromMilliseconds(50)
+        };
+        _liveScrollCaptureTimer.Tick += LiveScrollCaptureTimer_Tick;
+        _liveScrollCaptureTimer.Start();
     }
 
     private void LiveScrollCaptureTimer_Tick(object? sender, EventArgs e)
@@ -2332,38 +2386,41 @@ public partial class OverlayWindow : Window
             StopLiveScrollCaptureTimer();
             return;
         }
+        CaptureAndStitchOnce();
+    }
+
+    private bool CaptureAndStitchOnce()
+    {
+        if (_mode != CaptureMode.Scrolling) return false;
 
         var fresh = CaptureCurrentSelectionLive();
-        if (fresh != null)
+        if (fresh == null) return false;
+
+        ScrollStitcher.StitchResult res;
+        try
         {
-            var res = _stitcher.AppendSlice(fresh);
+            res = _stitcher.AppendSlice(fresh);
+        }
+        finally
+        {
             fresh.Dispose();
-
-            if (res.ReachedLimit)
-            {
-                StopLiveScrollCaptureTimer();
-                StopAutoScroll();
-                ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
-                return;
-            }
-
-            if (res.DidStitch)
-            {
-                _liveScrollIdleRounds = 0;
-                Render();
-            }
-            else
-            {
-                _liveScrollIdleRounds++;
-            }
         }
 
-        // 当滚轮静止超过 400ms 且连续 4 轮检测到 0 位移（平滑滚动彻底停止），暂停定时采样
-        var elapsed = (DateTime.UtcNow - _lastWheelEventUtc).TotalMilliseconds;
-        if (elapsed > 400 && _liveScrollIdleRounds >= 4)
+        if (res.ReachedLimit)
         {
             StopLiveScrollCaptureTimer();
+            StopAutoScroll();
+            ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
+            return false;
         }
+
+        if (res.DidStitch)
+        {
+            Render();
+            return true;
+        }
+
+        return false;
     }
 
     private void StopLiveScrollCaptureTimer()
@@ -2376,6 +2433,52 @@ public partial class OverlayWindow : Window
         }
     }
 
+    private async Task OnPhysicalWheelInSelectionAsync(POINT wheelPt, int wheelDelta)
+    {
+        if (_mode != CaptureMode.Scrolling) return;
+
+        SetClickThrough(true);
+        int sliceBefore = _stitcher.SliceCount;
+
+        await Task.Delay(70);
+        if (_mode != CaptureMode.Scrolling) return;
+        CaptureAndStitchOnce();
+
+        // 若硬件滚轮事件未直接带动底层窗口滚动（例如底层窗口未激活），主动激活并转发滚轮消息
+        if (_stitcher.SliceCount == sliceBefore && wheelDelta != 0)
+        {
+            try
+            {
+                var selfHwnd = new WindowInteropHelper(this).Handle;
+                var sysPt = new System.Drawing.Point(wheelPt.x, wheelPt.y);
+                IntPtr topHwnd = GetWindowBelow(selfHwnd, sysPt);
+                IntPtr pointHwnd = WindowFromPoint(sysPt);
+
+                if (topHwnd != IntPtr.Zero && topHwnd != selfHwnd)
+                {
+                    SetForegroundWindow(topHwnd);
+                }
+
+                IntPtr dispatchHwnd = (pointHwnd != IntPtr.Zero && pointHwnd != selfHwnd) ? pointHwnd : topHwnd;
+                if (dispatchHwnd != IntPtr.Zero && dispatchHwnd != selfHwnd)
+                {
+                    IntPtr wParam = (IntPtr)((wheelDelta << 16) & 0xFFFFFFFF);
+                    IntPtr lParam = (IntPtr)((wheelPt.y << 16) | (wheelPt.x & 0xFFFF));
+                    PostMessage(dispatchHwnd, WM_MOUSEWHEEL, wParam, lParam);
+                    if (topHwnd != IntPtr.Zero && topHwnd != dispatchHwnd)
+                    {
+                        PostMessage(topHwnd, WM_MOUSEWHEEL, wParam, lParam);
+                    }
+                }
+            }
+            catch { }
+
+            await Task.Delay(80);
+            if (_mode != CaptureMode.Scrolling) return;
+            CaptureAndStitchOnce();
+        }
+    }
+
     private async Task ScrollUnderlyingWindowAndStitchAsync(int wheelDelta, bool isFromHardwareWheel = false)
     {
         if (_isStitchingInProgress || _mode != CaptureMode.Scrolling) return;
@@ -2383,83 +2486,71 @@ public partial class OverlayWindow : Window
 
         try
         {
-            // 1. 获取选区中心对应的屏幕物理坐标与底层目标窗口句柄
+            // 1. 先开启鼠标穿透，防止模拟滚轮被 OverlayWindow 自身拦截
+            SetClickThrough(true);
+
             var centerDip = new Point(_selectionRect.Left + _selectionRect.Width / 2, _selectionRect.Top + _selectionRect.Height / 2);
-            double scaleX = (double)_virtualBounds.Width / Width;
-            double scaleY = (double)_virtualBounds.Height / Height;
+            double scaleX = (double)_virtualBounds.Width / Math.Max(1.0, Width);
+            double scaleY = (double)_virtualBounds.Height / Math.Max(1.0, Height);
             int screenX = _virtualBounds.X + (int)Math.Round(centerDip.X * scaleX);
             int screenY = _virtualBounds.Y + (int)Math.Round(centerDip.Y * scaleY);
+            var sysPt = new System.Drawing.Point(screenX, screenY);
 
             var selfHwnd = new WindowInteropHelper(this).Handle;
-            IntPtr targetHwnd = IntPtr.Zero;
+            IntPtr topHwnd = GetWindowBelow(selfHwnd, sysPt);
+            IntPtr pointHwnd = WindowFromPoint(sysPt);
 
-            var targetWin = WindowDetectionHelper.FindWindowAtPoint(_detectedWindows, centerDip);
-            if (targetWin != null && targetWin.Hwnd != IntPtr.Zero && targetWin.Hwnd != selfHwnd)
+            if (topHwnd != IntPtr.Zero && topHwnd != selfHwnd)
             {
-                targetHwnd = targetWin.Hwnd;
+                SetForegroundWindow(topHwnd);
             }
 
-            if (targetHwnd == IntPtr.Zero || targetHwnd == selfHwnd)
+            int sliceBefore = _stitcher.SliceCount;
+
+            if (!isFromHardwareWheel)
             {
-                targetHwnd = GetWindowBelow(selfHwnd, new System.Drawing.Point(screenX, screenY));
-            }
-
-            if (targetHwnd != IntPtr.Zero && targetHwnd != selfHwnd)
-            {
-                SetForegroundWindow(targetHwnd);
-
-                IntPtr childHwnd = ChildWindowFromPointEx(targetHwnd, new System.Drawing.Point(screenX, screenY), 0);
-                IntPtr dispatchHwnd = (childHwnd != IntPtr.Zero && childHwnd != targetHwnd) ? childHwnd : targetHwnd;
-
-                IntPtr wParam = (IntPtr)((wheelDelta << 16) & 0xFFFFFFFF);
-                IntPtr lParam = (IntPtr)((screenY << 16) | (screenX & 0xFFFF));
-
-                PostMessage(dispatchHwnd, WM_MOUSEWHEEL, wParam, lParam);
-                if (dispatchHwnd != targetHwnd)
+                POINT origCursor = default;
+                bool gotOrig = GetCursorPos(out origCursor);
+                SetCursorPos(screenX, screenY);
+                mouse_event(MOUSEEVENTF_WHEEL, 0, 0, wheelDelta, UIntPtr.Zero);
+                if (gotOrig)
                 {
-                    PostMessage(targetHwnd, WM_MOUSEWHEEL, wParam, lParam);
-                }
-
-                int vscrollCmd = wheelDelta < 0 ? SB_LINEDOWN : SB_LINEUP;
-                SendMessage(dispatchHwnd, WM_VSCROLL, (IntPtr)vscrollCmd, IntPtr.Zero);
-                if (dispatchHwnd != targetHwnd)
-                {
-                    SendMessage(targetHwnd, WM_VSCROLL, (IntPtr)vscrollCmd, IntPtr.Zero);
+                    SetCursorPos(origCursor.x, origCursor.y);
                 }
             }
 
-            POINT origCursor = default;
-            bool gotOrig = GetCursorPos(out origCursor);
-            SetCursorPos(screenX, screenY);
+            await Task.Delay(80);
+            if (_mode != CaptureMode.Scrolling) return;
+            CaptureAndStitchOnce();
 
-            mouse_event(MOUSEEVENTF_WHEEL, 0, 0, wheelDelta, UIntPtr.Zero);
-
-            byte vk = wheelDelta < 0 ? VK_DOWN : VK_UP;
-            keybd_event(vk, 0, 0, UIntPtr.Zero);
-            keybd_event(vk, 0, KEYEVENTF_KEYUP, UIntPtr.Zero);
-
-            if (gotOrig)
+            // 2. 若 mouse_event 未带动目标控件滚动，回退至向子窗口句柄直接投递 WM_MOUSEWHEEL 与 WM_VSCROLL
+            if (_stitcher.SliceCount == sliceBefore)
             {
-                SetCursorPos(origCursor.x, origCursor.y);
+                IntPtr dispatchHwnd = (pointHwnd != IntPtr.Zero && pointHwnd != selfHwnd) ? pointHwnd : topHwnd;
+                if (dispatchHwnd != IntPtr.Zero && dispatchHwnd != selfHwnd)
+                {
+                    IntPtr wParam = (IntPtr)((wheelDelta << 16) & 0xFFFFFFFF);
+                    IntPtr lParam = (IntPtr)((screenY << 16) | (screenX & 0xFFFF));
+
+                    PostMessage(dispatchHwnd, WM_MOUSEWHEEL, wParam, lParam);
+                    if (topHwnd != IntPtr.Zero && topHwnd != dispatchHwnd)
+                    {
+                        PostMessage(topHwnd, WM_MOUSEWHEEL, wParam, lParam);
+                    }
+
+                    int vscrollCmd = wheelDelta < 0 ? SB_LINEDOWN : SB_LINEUP;
+                    SendMessage(dispatchHwnd, WM_VSCROLL, (IntPtr)vscrollCmd, IntPtr.Zero);
+                }
+
+                await Task.Delay(85);
+                if (_mode != CaptureMode.Scrolling) return;
+                CaptureAndStitchOnce();
             }
-
-            await Task.Delay(130);
-
-            var fresh = CaptureCurrentSelectionLive();
-            if (fresh != null)
+            else
             {
-                var res = _stitcher.AppendSlice(fresh);
-                fresh.Dispose();
-                if (res.ReachedLimit)
-                {
-                    StopAutoScroll();
-                    ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
-                }
-                else if (res.DidStitch)
-                {
-                    Render();
-                    ModernToast.ShowSuccess($"已向下拼接 +{res.AddedHeight}px (长图总高: {_stitcher.CurrentHeight}px)");
-                }
+                await Task.Delay(55);
+                if (_mode != CaptureMode.Scrolling) return;
+                CaptureAndStitchOnce();
             }
         }
         catch { }
@@ -2964,38 +3055,66 @@ public partial class OverlayWindow : Window
         Close();
     }
 
+    private System.Drawing.Rectangle GetSelectionLocalRect()
+    {
+        double scaleX = (double)_virtualBounds.Width / Math.Max(1.0, Width);
+        double scaleY = (double)_virtualBounds.Height / Math.Max(1.0, Height);
+
+        int localX = Math.Max(0, Math.Min(_virtualBounds.Width - 10, (int)Math.Round((_selectionRect.X + 4) * scaleX)));
+        int localY = Math.Max(0, Math.Min(_virtualBounds.Height - 10, (int)Math.Round((_selectionRect.Y + 4) * scaleY)));
+        int sw = Math.Max(10, Math.Min(_virtualBounds.Width - localX, (int)Math.Round((_selectionRect.Width - 8) * scaleX)));
+        int sh = Math.Max(10, Math.Min(_virtualBounds.Height - localY, (int)Math.Round((_selectionRect.Height - 8) * scaleY)));
+
+        return new System.Drawing.Rectangle(localX, localY, sw, sh);
+    }
+
     private void StartScrollingCapture()
     {
+        if (IsMouseCaptured)
+        {
+            ReleaseMouseCapture();
+        }
+
         _mode = CaptureMode.Scrolling;
         _isSubToolbarVisible = false;
 
         // 1. 隐藏全屏背景静态快照，确保选区内部 100% 透明，实时可见底层真实桌面与应用
         ImgSnapshot.Visibility = Visibility.Collapsed;
 
-        // 2. 安装底层全局鼠标和键盘钩子
-        InstallHooks();
-
-        // 3. 开启选区动态透明穿透状态监测定时器
-        StartScrollingIgnoreTimer();
-
-        // 4. 初始第一帧画面优先由 live 画面截取，确保尺寸与后续每一片 100% 绝对一致
-        var initial = CaptureCurrentSelectionLive();
-        if (initial == null)
+        // 2. 将 OverlayWindow 标记为对屏幕截图透明 (WDA_EXCLUDEFROMCAPTURE) 且不抢夺焦点 (WS_EX_NOACTIVATE)
+        try
         {
-            double scaleX = (double)_virtualBounds.Width / Width;
-            double scaleY = (double)_virtualBounds.Height / Height;
-            int sx = Math.Max(0, (int)Math.Round((_selectionRect.X + 4) * scaleX));
-            int sy = Math.Max(0, (int)Math.Round((_selectionRect.Y + 4) * scaleY));
-            int sw = Math.Max(10, (int)Math.Round((_selectionRect.Width - 8) * scaleX));
-            int sh = Math.Max(10, (int)Math.Round((_selectionRect.Height - 8) * scaleY));
-            initial = ScreenCapture.CropBitmap(_fullSnapshot, new System.Drawing.Rectangle(sx, sy, sw, sh));
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                if (Environment.OSVersion.Version.Major >= 10 && Environment.OSVersion.Version.Build >= 19041)
+                {
+                    SetWindowDisplayAffinity(hwnd, WDA_EXCLUDEFROMCAPTURE);
+                }
+                int exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+                SetWindowLong(hwnd, GWL_EXSTYLE, exStyle | WS_EX_NOACTIVATE);
+            }
         }
+        catch { }
+
+        // 3. 从初始无遮挡快照按完全相同的物理像素坐标裁取第一帧，杜绝截取到任何工具栏或选框残影
+        var localRect = GetSelectionLocalRect();
+        var initial = ScreenCapture.CropBitmap(_fullSnapshot, localRect);
         if (initial != null)
         {
             _stitcher.Initialize(initial);
         }
+
+        // 4. 激活选区正下方的目标窗口，确保硬件滚轮和触摸板双指滚动直接作用于目标窗口
+        ActivateUnderlyingWindowAtSelectionCenter();
+
+        // 5. 安装底层全局钩子、穿透状态定时器与持续帧采样拼接定时器
+        InstallHooks();
+        StartScrollingIgnoreTimer();
+        StartLiveScrollCaptureTimer();
+
         Render();
-        ModernToast.ShowInfo("长截图已开启：滚轮滚动、点击【⬇ 滚动】或【▶ 自动长截】均可向下拼接长图。");
+        ModernToast.ShowInfo("长截图已开启：在选区内滚动滑轮、点击【⬇ 滚动】或【▶ 自动长截】即可拼接长图。");
     }
 
     private Bitmap? CaptureCurrentSelectionLive()
@@ -3007,18 +3126,17 @@ public partial class OverlayWindow : Window
 
         try
         {
-            double scaleX = (double)_virtualBounds.Width / Width;
-            double scaleY = (double)_virtualBounds.Height / Height;
+            var localRect = GetSelectionLocalRect();
+            if (localRect.Width <= 10 || localRect.Height <= 10) return null;
 
-            // 内缩 4 物理像素，杜绝截取到蓝色选框边缘与端角圆点，保证图像拼接纯净
-            int sx = _virtualBounds.X + (int)Math.Round((_selectionRect.X + 4) * scaleX);
-            int sy = _virtualBounds.Y + (int)Math.Round((_selectionRect.Y + 4) * scaleY);
-            int sw = (int)Math.Round((_selectionRect.Width - 8) * scaleX);
-            int sh = (int)Math.Round((_selectionRect.Height - 8) * scaleY);
+            var screenRect = new System.Drawing.Rectangle(
+                _virtualBounds.X + localRect.X,
+                _virtualBounds.Y + localRect.Y,
+                localRect.Width,
+                localRect.Height
+            );
 
-            if (sw <= 10 || sh <= 10) return null;
-
-            return ScreenCapture.CaptureScreen(new System.Drawing.Rectangle(sx, sy, sw, sh));
+            return ScreenCapture.CaptureScreen(screenRect);
         }
         catch
         {
@@ -3033,6 +3151,20 @@ public partial class OverlayWindow : Window
         StopScrollingIgnoreTimer();
         SetClickThrough(false);
         UninstallHooks();
+        try
+        {
+            var hwnd = new WindowInteropHelper(this).Handle;
+            if (hwnd != IntPtr.Zero)
+            {
+                if (Environment.OSVersion.Version.Major >= 10 && Environment.OSVersion.Version.Build >= 19041)
+                {
+                    SetWindowDisplayAffinity(hwnd, WDA_NONE);
+                }
+                int exStyle = GetWindowLong(hwnd, GWL_EXSTYLE);
+                SetWindowLong(hwnd, GWL_EXSTYLE, exStyle & ~(WS_EX_TRANSPARENT | WS_EX_NOACTIVATE));
+            }
+        }
+        catch { }
         try
         {
             ImgSnapshot.Visibility = Visibility.Visible;

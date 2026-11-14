@@ -331,7 +331,7 @@
                         <Image Source="pack://application:,,,/Resources/icon.png" Width="22" Height="22" RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,10,0"/>
                         <TextBlock Text="ShotX 设置中心" FontSize="13.5" FontWeight="Bold" Foreground="#0F172A" VerticalAlignment="Center"/>
                         <Border Background="#E0F2FE" CornerRadius="4" Padding="6,2" Margin="8,0,0,0" VerticalAlignment="Center">
-                            <TextBlock Text="v1.9.32" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7"/>
+                            <TextBlock Text="v1.9.33" FontSize="10.5" FontWeight="SemiBold" Foreground="#0284C7"/>
                         </Border>
                     </StackPanel>
 
@@ -1329,7 +1329,7 @@
                                         <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
                                             <Image Source="pack://application:,,,/Resources/icon.png" Width="48" Height="48" RenderOptions.BitmapScalingMode="HighQuality" Margin="0,0,14,0"/>
                                             <StackPanel VerticalAlignment="Center">
-                                                <TextBlock Text="ShotX for Windows  v1.9.32" FontSize="16" FontWeight="Bold" Foreground="#0F172A"/>
+                                                <TextBlock Text="ShotX for Windows  v1.9.33" FontSize="16" FontWeight="Bold" Foreground="#0F172A"/>
                                                 <TextBlock Text="开发者: @muzi86754781  ·  github.com/muzi86754781/shotx  ·  QQ: 285351298" FontSize="11.5" Foreground="#64748B" Margin="0,4,0,0"/>
                                             </StackPanel>
                                         </StackPanel>
