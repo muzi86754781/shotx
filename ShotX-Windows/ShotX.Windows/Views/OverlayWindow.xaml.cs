@@ -238,6 +238,7 @@ public partial class OverlayWindow : Window
     private DispatcherTimer? _wheelSettleTimer;
     private Bitmap? _lastCapturedRawFrame;
     private DateTime _lastWheelEventUtc = DateTime.MinValue;
+    private DateTime _lastScreenPixelChangeUtc = DateTime.MinValue;
     private DateTime _lastDismissHoverUtc = DateTime.MinValue;
     private DateTime _lastHookIgnoreCheckUtc = DateTime.MinValue;
     private DateTime _lastFallbackWheelInjectUtc = DateTime.MinValue;
@@ -2623,6 +2624,11 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        if (_lastCapturedRawFrame != null && ScrollStitcher.HasSignificantChange(_lastCapturedRawFrame, fresh))
+        {
+            _lastScreenPixelChangeUtc = DateTime.UtcNow;
+        }
+
         _lastCapturedRawFrame?.Dispose();
         _lastCapturedRawFrame = new Bitmap(fresh);
 
@@ -2755,14 +2761,16 @@ public partial class OverlayWindow : Window
 
             if (afterBmp != null && screenChanged)
             {
+                _lastScreenPixelChangeUtc = DateTime.UtcNow;
                 _lastCapturedRawFrame?.Dispose();
                 _lastCapturedRawFrame = new Bitmap(afterBmp);
                 await EnqueueFrameStitchAsync(new Bitmap(afterBmp));
                 return;
             }
 
-            // 仅当经过 135ms 画面仍完全静止（例如目标窗口未开启“悬停时滚动非活动窗口”），才尝试激活并单次投递 WM_MOUSEWHEEL
+            // 仅当经过 135ms 画面仍完全静止（且最近 250ms 内定时采样也未发现画面移动），才补发一次 WM_MOUSEWHEEL
             if (!screenChanged && wheelDelta != 0 &&
+                (DateTime.UtcNow - _lastScreenPixelChangeUtc).TotalMilliseconds >= 250 &&
                 (DateTime.UtcNow - _lastFallbackWheelInjectUtc).TotalMilliseconds >= 160)
             {
                 _lastFallbackWheelInjectUtc = DateTime.UtcNow;

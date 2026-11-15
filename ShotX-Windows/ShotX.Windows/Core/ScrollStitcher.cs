@@ -259,17 +259,22 @@ public sealed class ScrollStitcher
                 return (false, false, 0);
             }
 
-            // 2c. 在做向下拼接前，首先在已有长图历史中检查当前视口是否其实仍处于历史区间 [0 .. bottomBaseY]
-            int skipTop = Math.Max(_knownTopFixedH, Math.Max(wmMatch.TopFixedH, (int)(freshH * 0.08)));
-            int skipBot = Math.Max(_knownBottomFixedH, Math.Max(wmMatch.BottomFixedH, (int)(freshH * 0.08)));
-            if (_stitchedLongBitmap.Height > freshH + 12)
+            // 2c. 仅当之前明确处于历史上方（或向下水线匹配不够扎实）时，才在已有长图历史中核验是否仍在历史区间内，
+            //     防止常规连续向下滚动（第 2 下、第 3 下）被误拦截
+            bool allowAppend = wmMatch.Direction > 0 && wmMatch.SignedDy >= MinStitchDy;
+            bool isNearBottom = _estimatedViewportTop >= bottomBaseY - Math.Max(48, freshH / 5);
+            bool isStrongDownMatch = allowAppend && wmMatch.BestDownScore <= 5.5 && wmMatch.BestDownInlier >= 0.72;
+
+            if (_stitchedLongBitmap.Height > freshH + 12 && (!isNearBottom || !isStrongDownMatch))
             {
+                int skipTop = Math.Max(_knownTopFixedH, wmMatch.TopFixedH);
+                int skipBot = Math.Max(_knownBottomFixedH, wmMatch.BottomFixedH);
                 int foundY = TryRelocalizeInLongBitmap(
                     _stitchedLongBitmap,
                     freshBitmap,
                     skipTop,
                     skipBot,
-                    _knownActiveCols ?? wmMatch.ActiveColByteOffsets,
+                    wmMatch.ActiveColByteOffsets ?? _knownActiveCols,
                     out double relocErr,
                     out double relocInlier,
                     out double relocHardMismatch);
@@ -277,7 +282,7 @@ public sealed class ScrollStitcher
                 if (foundY >= 0)
                 {
                     bool relocIsSolid = relocErr <= 6.0 && relocInlier >= 0.78 && relocHardMismatch <= 0.06;
-                    bool betterThanDown = wmMatch.Direction <= 0 || relocErr <= wmMatch.BestDownScore + 1.2;
+                    bool betterThanDown = !allowAppend || (foundY < bottomBaseY - 12 && relocErr + 0.5 < wmMatch.BestDownScore);
                     if (relocIsSolid && betterThanDown)
                     {
                         _estimatedViewportTop = foundY;
@@ -287,20 +292,19 @@ public sealed class ScrollStitcher
                 }
             }
 
-            // 2d. 校验向下扩展候选是否满足严格重叠置信度（杜绝重复表格行/错位强拼）
-            bool allowAppend = wmMatch.Direction > 0 && wmMatch.SignedDy >= MinStitchDy;
+            // 2d. 校验向下扩展候选（兼顾 125%/150% DPI 亚像素平滑滚动与重复行排重）
             if (allowAppend)
             {
-                bool qualityOk = wmMatch.BestDownScore <= 8.5 &&
-                                 wmMatch.BestDownInlier >= 0.70 &&
-                                 wmMatch.BestDownHardMismatch <= 0.09;
+                bool qualityOk = wmMatch.BestDownScore <= 12.5 &&
+                                 wmMatch.BestDownInlier >= 0.58 &&
+                                 wmMatch.BestDownHardMismatch <= 0.14;
 
-                // 若先前回滚到距底部很远的位置且尚未重新确认靠近底线，则要求极高匹配一致度
-                if (_estimatedViewportTop < bottomBaseY - (int)(freshH * 0.35))
+                // 若先前回滚到距底部较远位置且尚未重回底部，要求更高匹配一致度防止跨行误接
+                if (_estimatedViewportTop < bottomBaseY - (int)(freshH * 0.40))
                 {
-                    qualityOk = wmMatch.BestDownScore <= 5.0 &&
-                                wmMatch.BestDownInlier >= 0.80 &&
-                                wmMatch.BestDownHardMismatch <= 0.05;
+                    qualityOk = wmMatch.BestDownScore <= 7.5 &&
+                                wmMatch.BestDownInlier >= 0.72 &&
+                                wmMatch.BestDownHardMismatch <= 0.08;
                 }
 
                 if (!qualityOk)
@@ -496,12 +500,12 @@ public sealed class ScrollStitcher
                 }
             }
 
-            int yMin = Math.Max(skipTopH + 4, Math.Max(8, (int)(fh * 0.14)));
-            int yMax = Math.Min(fh - skipBottomH - 4, Math.Min(fh - 8, (int)(fh * 0.86)));
+            int yMin = Math.Max(skipTopH + 4, Math.Max(6, (int)(fh * 0.08)));
+            int yMax = Math.Min(fh - Math.Max(skipBottomH, 4) - 2, (int)(fh * 0.94));
             if (yMax - yMin < 24)
             {
-                yMin = Math.Max(8, (int)(fh * 0.22));
-                yMax = Math.Min(fh - 8, (int)(fh * 0.78));
+                yMin = Math.Max(6, (int)(fh * 0.15));
+                yMax = Math.Min(fh - 6, (int)(fh * 0.85));
             }
             if (yMax - yMin < 16) return -1;
 
@@ -914,32 +918,32 @@ public sealed class ScrollStitcher
             return new BidirectionalMatchResult(0, 0, 0, 0, 1.0, zeroInlierRatioGlobal, 999, 0, 1, 999, 0, colByteOffsets);
         }
 
-        // 4. 识别顶部与底部静止固定栏
-        int maxTopScan = (int)(h * 0.24);
-        int topFixedH = Math.Max(4, (int)(h * 0.03));
+        // 4. 识别顶部与底部静止固定栏（仅将既有实际内容梯度又静止不动的区域视为固定栏，不把纯空白页边距当作固定栏裁掉）
+        int maxTopScan = (int)(h * 0.22);
+        int topFixedH = Math.Max(4, (int)(h * 0.02));
         for (int y = 4; y < maxTopScan; y++)
         {
-            if (rowZeroDiff[y] < 1.8)
+            if (rowZeroDiff[y] < 1.8 && rowVertEnergy[y] >= 1.2)
             {
                 topFixedH = y + 1;
             }
-            else if (y > topFixedH + 6)
+            else if (rowZeroDiff[y] >= 1.8)
             {
-                break;
+                if (y > topFixedH + 6) break;
             }
         }
 
-        int maxBotScan = (int)(h * 0.24);
+        int maxBotScan = (int)(h * 0.22);
         int bottomFixedH = 0;
         for (int y = h - 3; y >= h - maxBotScan; y--)
         {
-            if (rowZeroDiff[y] < 1.8)
+            if (rowZeroDiff[y] < 1.8 && rowVertEnergy[y] >= 1.2)
             {
                 bottomFixedH = h - y;
             }
-            else if ((h - y) > bottomFixedH + 6)
+            else if (rowZeroDiff[y] >= 1.8)
             {
-                break;
+                if ((h - y) > bottomFixedH + 6) break;
             }
         }
 
@@ -1010,18 +1014,18 @@ public sealed class ScrollStitcher
         }
 
         bool downCandidateValid = bestDownDy >= 4 &&
-                                  bestDownScore <= 11.5 &&
-                                  bestDownScore < zeroScore * 0.60 &&
-                                  bestDownHardMismatch <= 0.12 &&
-                                  (bestDownFeatCount >= 32 ? (bestDownInlier >= 0.64 || bestDownScore <= 6.5)
-                                                           : (bestDownInlier >= 0.70 && bestDownScore <= 8.0));
+                                  bestDownScore <= 13.5 &&
+                                  bestDownScore < zeroScore * 0.65 &&
+                                  bestDownHardMismatch <= 0.16 &&
+                                  (bestDownFeatCount >= 32 ? (bestDownInlier >= 0.56 || bestDownScore <= 8.0)
+                                                           : (bestDownInlier >= 0.65 && bestDownScore <= 9.5));
 
         bool upCandidateValid = bestUpDy >= 4 &&
-                                bestUpScore <= 12.0 &&
-                                bestUpScore < zeroScore * 0.62 &&
-                                bestUpHardMismatch <= 0.12 &&
-                                (bestUpFeatCount >= 32 ? (bestUpInlier >= 0.62 || bestUpScore <= 7.0)
-                                                       : (bestUpInlier >= 0.68 && bestUpScore <= 8.5));
+                                bestUpScore <= 13.5 &&
+                                bestUpScore < zeroScore * 0.65 &&
+                                bestUpHardMismatch <= 0.16 &&
+                                (bestUpFeatCount >= 32 ? (bestUpInlier >= 0.56 || bestUpScore <= 8.0)
+                                                       : (bestUpInlier >= 0.65 && bestUpScore <= 9.5));
 
         // 7. 双向胜者裁决：当向上滚动得分优于或接近向下滚动（且有效）时，优先判定为向上回滚，杜绝错拼
         if (upCandidateValid && (!downCandidateValid || bestUpScore <= bestDownScore * 1.08))
@@ -1158,6 +1162,7 @@ public sealed class ScrollStitcher
         int hardMismatches = 0;
 
         int nFeat = featurePoints.Count;
+        int maxFreshY = stride2 > 0 ? (buf2.Length / stride2) - 1 : 0;
         for (int i = 0; i < nFeat; i++)
         {
             var pt = featurePoints[i];
@@ -1171,11 +1176,28 @@ public sealed class ScrollStitcher
                      + Math.Abs(buf1[idx1 + 1] - buf2[idx2 + 1])
                      + Math.Abs(buf1[idx1 + 2] - buf2[idx2 + 2]);
 
-            featErrSum += (diff > 105 ? 105 : diff);
+            // 兼容 Windows 125%/150% DPI 与 ClearType 亚像素平滑滚动造成的 ±1px 笔画边缘抖动
+            int subpixelDiff = diff;
+            if (diff > 24 && freshY >= 1 && freshY < maxFreshY)
+            {
+                int idxUp = (freshY - 1) * stride2 + pt.XOff;
+                int idxDn = (freshY + 1) * stride2 + pt.XOff;
+                int dUp = Math.Abs(buf1[idx1] - buf2[idxUp])
+                        + Math.Abs(buf1[idx1 + 1] - buf2[idxUp + 1])
+                        + Math.Abs(buf1[idx1 + 2] - buf2[idxUp + 2]);
+                int dDn = Math.Abs(buf1[idx1] - buf2[idxDn])
+                        + Math.Abs(buf1[idx1 + 1] - buf2[idxDn + 1])
+                        + Math.Abs(buf1[idx1 + 2] - buf2[idxDn + 2]);
+                if (dUp < subpixelDiff) subpixelDiff = dUp;
+                if (dDn < subpixelDiff) subpixelDiff = dDn;
+            }
+
+            int blendedDiff = (diff + subpixelDiff) / 2;
+            featErrSum += (blendedDiff > 105 ? 105 : blendedDiff);
             featCount++;
 
-            if (diff <= 21) inliers++;
-            if (diff >= 60) hardMismatches++;
+            if (diff <= 24 || subpixelDiff <= 15) inliers++;
+            if (subpixelDiff >= 66) hardMismatches++;
         }
 
         int overlapH = activeBot - minLastY;
@@ -1218,7 +1240,7 @@ public sealed class ScrollStitcher
         inlierRatio = inliers / (double)featCount;
         hardMismatchRatio = hardMismatches / (double)featCount;
 
-        // 对强失配比例施加显式惩罚，彻底区分“真正匹配（仅轻微锯齿）”与“重复表格行数字错位（局部强失配）”
-        return featErr * 0.72 + gridErr * 0.28 * (1.20 - 0.40 * inlierRatio) + hardMismatchRatio * 28.0;
+        // 对真实强失配（上下 ±1px 仍失配的局部唯一数字/内容错位）施加惩罚，抗重复表格行误匹配的同时不误伤亚像素平滑滚动
+        return featErr * 0.72 + gridErr * 0.28 * (1.20 - 0.40 * inlierRatio) + hardMismatchRatio * 20.0;
     }
 }

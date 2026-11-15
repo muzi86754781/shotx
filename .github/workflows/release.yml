@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.36)'
+        description: 'Release version (e.g. 1.9.37)'
         required: false
-        default: '1.9.36'
+        default: '1.9.37'
 
 concurrency:
   group: release
@@ -41,7 +41,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.36"
+            VERSION="1.9.37"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -76,11 +76,12 @@ jobs:
             - **Windows 绿色便携版 (Portable)**: [ShotX-Windows-${{ env.VERSION }}-Portable.zip](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-Windows-${{ env.VERSION }}-Portable.zip)
             - **macOS 安装包 (DMG)**: [ShotX-${{ env.VERSION }}.dmg](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-${{ env.VERSION }}.dmg)
 
-            #### 🚀 本次更新亮点与修复 (v1.9.36)
-            1. **Windows 端长截图鼠标滑轮架构重构 (Windows)**：
-               - 移除 `WH_MOUSE_LL` 低级钩子中阻塞系统线程的同步 Win32 调用，修复钩子消息丢帧与卡顿，并阻止选区内滑轮事件在 `Window_MouseWheel` 与底层钩子之间双路重复触发。
-               - 取消 50ms UI 线程盲采阻塞，改用后台串行异步拼图线程 + 115ms 节流采样 + 停滚后 150ms 稳态补帧，并放宽物理滚轮回退注入判定时间（135ms）防止滑轮滚动途中额外注入 `WM_MOUSEWHEEL` 跳页。
-               - 重写 `ScrollStitcher` 线程安全长图重定位逻辑：结合历史长图全局视口定位（严格剔除固定表头/底栏及静止列，消除游标累加漂移丢帧与永远前移的 `_prevLiveBitmap`）、局部强失配惩罚（防重复表格行跨行错位）以及支持高达 88% 视口高度的双向大位移匹配，大幅提升鼠标滑轮任意速率及上下往返滚动稳定性。
+            #### 🚀 本次更新亮点与修复 (v1.9.37)
+            1. **修复 Windows 端长截图第 2 下起连续滚动不拼接的问题 (Windows)**：
+               - 修复连续向下滚动时历史长图重定位（`2c`）提前拦截常规向下扩展的问题，改为仅在明确处于历史上方或向下水线匹配较弱时核验历史重定位。
+               - 修正固定栏检测误将上下空白页边距当成固定表头/底栏导致有效区及 `maxDy` 压缩的问题（要求固定栏同时具备内容梯度与静止特征）。
+               - 在特征点误差评估中加入 `±1px` 亚像素平滑容差，彻底解决 Windows 125%/150% DPI 与 ClearType 亚像素微移导致的连续帧被拒、`_lastStitchedBitmap` 停滞锁死问题。
+               - 同步在 `OverlayWindow` 中记录像素变化时间戳，避免定时采帧与滚轮回退检测互相误判。
           draft: false
           prerelease: false
           files: dist/ShotX-*.dmg
