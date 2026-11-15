@@ -229,12 +229,18 @@ public partial class OverlayWindow : Window
     private const uint MOUSEEVENTF_WHEEL = 0x0800;
     private bool _isStitchingInProgress = false;
     private bool _isPhysicalWheelProcessing = false;
+    private int _pendingStitchFrames = 0;
 
     // 长截图交互与透明穿透状态
     private bool _isClickThrough = false;
     private DispatcherTimer? _scrollingIgnoreTimer;
     private DispatcherTimer? _liveScrollCaptureTimer;
+    private DispatcherTimer? _wheelSettleTimer;
+    private Bitmap? _lastCapturedRawFrame;
     private DateTime _lastWheelEventUtc = DateTime.MinValue;
+    private DateTime _lastDismissHoverUtc = DateTime.MinValue;
+    private DateTime _lastHookIgnoreCheckUtc = DateTime.MinValue;
+    private DateTime _lastFallbackWheelInjectUtc = DateTime.MinValue;
     private DateTime _lastScrollingActionUtc = DateTime.MinValue;
     private DispatcherTimer? _autoScrollTimer;
     private bool _isAutoScrolling = false;
@@ -1653,27 +1659,29 @@ public partial class OverlayWindow : Window
         var titleFt = new FormattedText("长截图预览", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal), 11, new SolidColorBrush(Color.FromRgb(50, 50, 60)), VisualTreeHelper.GetDpi(this).PixelsPerDip);
         dc.DrawText(titleFt, new Point(cardX + 10, cardY + 8));
 
-        if (_stitcher.HasImage && _stitcher.StitchedLongBitmap != null)
+        using (var stitchedBmp = _stitcher.CreateStitchedSnapshot())
         {
-            var stitchedBmp = _stitcher.StitchedLongBitmap;
-            var imgSource = ScreenCapture.ToBitmapSource(stitchedBmp);
-            double innerW = cardW - 20;
-            double innerH = cardH - 100;
-            double scale = Math.Min(innerW / Math.Max(1.0, stitchedBmp.Width), innerH / Math.Max(1.0, stitchedBmp.Height));
-            double dw = stitchedBmp.Width * scale;
-            double dh = stitchedBmp.Height * scale;
+            if (stitchedBmp != null)
+            {
+                var imgSource = ScreenCapture.ToBitmapSource(stitchedBmp);
+                double innerW = cardW - 20;
+                double innerH = cardH - 100;
+                double scale = Math.Min(innerW / Math.Max(1.0, stitchedBmp.Width), innerH / Math.Max(1.0, stitchedBmp.Height));
+                double dw = stitchedBmp.Width * scale;
+                double dh = stitchedBmp.Height * scale;
 
-            var drawRect = new Rect(cardX + (cardW - dw) / 2, cardY + 28, dw, dh);
-            dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(245, 245, 248)), null, drawRect);
-            dc.DrawImage(imgSource, drawRect);
-            dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromRgb(215, 215, 220)), 1), drawRect);
+                var drawRect = new Rect(cardX + (cardW - dw) / 2, cardY + 28, dw, dh);
+                dc.DrawRectangle(new SolidColorBrush(Color.FromRgb(245, 245, 248)), null, drawRect);
+                dc.DrawImage(imgSource, drawRect);
+                dc.DrawRectangle(null, new Pen(new SolidColorBrush(Color.FromRgb(215, 215, 220)), 1), drawRect);
 
-            // 高度徽章
-            var badgeRect = new Rect(cardX + 10, cardY + cardH - 64, cardW - 20, 20);
-            dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(220, 35, 35, 40)), null, badgeRect, 4, 4);
+                // 高度徽章
+                var badgeRect = new Rect(cardX + 10, cardY + cardH - 64, cardW - 20, 20);
+                dc.DrawRoundedRectangle(new SolidColorBrush(Color.FromArgb(220, 35, 35, 40)), null, badgeRect, 4, 4);
 
-            var badgeFt = new FormattedText($"高度: {_stitcher.CurrentHeight} px · 已拼 {_stitcher.SliceCount} 次", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 10, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
-            dc.DrawText(badgeFt, new Point(badgeRect.Left + (badgeRect.Width - badgeFt.Width) / 2, badgeRect.Top + 2.5));
+                var badgeFt = new FormattedText($"高度: {_stitcher.CurrentHeight} px · 已拼 {_stitcher.SliceCount} 次", System.Globalization.CultureInfo.CurrentCulture, FlowDirection.LeftToRight, new Typeface(new FontFamily("Segoe UI, Microsoft YaHei"), FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal), 10, Brushes.White, VisualTreeHelper.GetDpi(this).PixelsPerDip);
+                dc.DrawText(badgeFt, new Point(badgeRect.Left + (badgeRect.Width - badgeFt.Width) / 2, badgeRect.Top + 2.5));
+            }
         }
 
         // 底部 3 个快捷操作按钮
@@ -2211,6 +2219,14 @@ public partial class OverlayWindow : Window
         if (_mode == CaptureMode.Scrolling)
         {
             e.Handled = true;
+            var p = e.GetPosition(this);
+            if (_selectionRect.Contains(p))
+            {
+                // 选区内部滚轮交由 WS_EX_TRANSPARENT + WH_MOUSE_LL 直接穿透到底层窗口，禁止与钩子双路并发触发
+                SetClickThrough(true);
+                return;
+            }
+
             SetClickThrough(true);
             _ = ScrollUnderlyingWindowAndStitchAsync(e.Delta);
         }
@@ -2388,8 +2404,15 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private void DismissUnderlyingHoverPopups(POINT? ptOpt = null)
+    private readonly System.Threading.SemaphoreSlim _stitchLock = new(1, 1);
+
+    private void DismissUnderlyingHoverPopups(POINT? ptOpt = null, bool force = false)
     {
+        var now = DateTime.UtcNow;
+        if (!force && (now - _lastDismissHoverUtc).TotalMilliseconds < 180)
+            return;
+        _lastDismissHoverUtc = now;
+
         try
         {
             var selfHwnd = new WindowInteropHelper(this).Handle;
@@ -2400,11 +2423,6 @@ public partial class OverlayWindow : Window
                 if (pHwnd != IntPtr.Zero && pHwnd != selfHwnd)
                 {
                     PostMessage(pHwnd, WM_MOUSELEAVE, IntPtr.Zero, IntPtr.Zero);
-                }
-                IntPtr tHwnd = GetWindowBelow(selfHwnd, sysPt);
-                if (tHwnd != IntPtr.Zero && tHwnd != selfHwnd && tHwnd != pHwnd)
-                {
-                    PostMessage(tHwnd, WM_MOUSELEAVE, IntPtr.Zero, IntPtr.Zero);
                 }
             }
             else if (GetCursorPos(out POINT curPt))
@@ -2430,11 +2448,29 @@ public partial class OverlayWindow : Window
             int msg = (int)wParam;
             if (msg == WM_MOUSEMOVE)
             {
-                UpdateMouseIgnoreState(p);
-                if (_selectionRect.Contains(p))
+                // WH_MOUSE_LL 回调必须保持微秒级返回：不在钩子线程中直接调用 EnumWindows / SetWindowLong，异步通知 UI 线程刷新穿透与消泡状态
+                Rect toolbarRect = BottomToolbarRect();
+                Rect previewRect = ScrollingPreviewPanelRect();
+                if (!toolbarRect.IsEmpty) toolbarRect.Inflate(10, 10);
+                if (!previewRect.IsEmpty) previewRect.Inflate(10, 10);
+                bool isOverControls = (!toolbarRect.IsEmpty && toolbarRect.Contains(p)) ||
+                                      (!previewRect.IsEmpty && previewRect.Contains(p));
+                bool wantClickThrough = !isOverControls && !_selectionRect.IsEmpty && _selectionRect.Contains(p);
+
+                var now = DateTime.UtcNow;
+                if (wantClickThrough != _isClickThrough || (now - _lastHookIgnoreCheckUtc).TotalMilliseconds >= 45)
                 {
-                    // 鼠标在选区内移动或悬停时，立即向底层控件发送 WM_MOUSELEAVE 消除网页/应用的鼠标悬浮气泡弹窗
-                    DismissUnderlyingHoverPopups(hookStruct.pt);
+                    _lastHookIgnoreCheckUtc = now;
+                    POINT movePt = hookStruct.pt;
+                    Dispatcher.BeginInvoke(new Action(() =>
+                    {
+                        if (_mode != CaptureMode.Scrolling) return;
+                        UpdateMouseIgnoreState(p);
+                        if (_selectionRect.Contains(p))
+                        {
+                            DismissUnderlyingHoverPopups(movePt);
+                        }
+                    }));
                 }
             }
             else if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP)
@@ -2455,7 +2491,7 @@ public partial class OverlayWindow : Window
                 }
                 else if (_selectionRect.Contains(p))
                 {
-                    // 拦截选区内部的鼠标点击与拖拽选字事件，防止底层网页触发文字选中高亮及豆包/浏览器划词悬浮工具栏弹窗
+                    // 拦截选区内部的鼠标点击与拖拽选字事件，防止底层网页触发文字选中高亮及划词悬浮工具栏弹窗
                     return (IntPtr)1;
                 }
             }
@@ -2465,10 +2501,9 @@ public partial class OverlayWindow : Window
                 bool isInjected = (hookStruct.flags & 0x01) != 0;
                 if (!isInjected && _selectionRect.Contains(p))
                 {
-                    DismissUnderlyingHoverPopups(hookStruct.pt);
                     int delta = (short)((hookStruct.mouseData >> 16) & 0xFFFF);
                     POINT wheelPt = hookStruct.pt;
-                    Dispatcher.BeginInvoke(new Action(() => _ = OnPhysicalWheelInSelectionAsync(wheelPt, delta)));
+                    Dispatcher.BeginInvoke(new Action(() => HandlePhysicalWheelEvent(wheelPt, delta)));
                 }
             }
         }
@@ -2518,9 +2553,9 @@ public partial class OverlayWindow : Window
     private void StartLiveScrollCaptureTimer()
     {
         StopLiveScrollCaptureTimer();
-        _liveScrollCaptureTimer = new DispatcherTimer(DispatcherPriority.Render)
+        _liveScrollCaptureTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
-            Interval = TimeSpan.FromMilliseconds(50)
+            Interval = TimeSpan.FromMilliseconds(115)
         };
         _liveScrollCaptureTimer.Tick += LiveScrollCaptureTimer_Tick;
         _liveScrollCaptureTimer.Start();
@@ -2534,8 +2569,108 @@ public partial class OverlayWindow : Window
             return;
         }
 
+        // 若按钮单步滚动或自动长截正在掌控流程，不与后台采帧队列抢帧
+        if (_isStitchingInProgress) return;
+
         DismissUnderlyingHoverPopups();
-        CaptureAndStitchOnce();
+        TriggerAsyncCaptureIfChanged();
+    }
+
+    private void ResetWheelSettleTimer()
+    {
+        if (_wheelSettleTimer == null)
+        {
+            _wheelSettleTimer = new DispatcherTimer(DispatcherPriority.Background)
+            {
+                Interval = TimeSpan.FromMilliseconds(150)
+            };
+            _wheelSettleTimer.Tick += WheelSettleTimer_Tick;
+        }
+        _wheelSettleTimer.Stop();
+        _wheelSettleTimer.Start();
+    }
+
+    private void WheelSettleTimer_Tick(object? sender, EventArgs e)
+    {
+        _wheelSettleTimer?.Stop();
+        if (_mode != CaptureMode.Scrolling || _isStitchingInProgress) return;
+
+        // 鼠标滑轮停下后约 150ms 补采一帧彻底停稳清晰画面
+        DismissUnderlyingHoverPopups();
+        TriggerAsyncCaptureIfChanged(forceEnqueue: true);
+    }
+
+    private void StopWheelSettleTimer()
+    {
+        if (_wheelSettleTimer != null)
+        {
+            _wheelSettleTimer.Stop();
+            _wheelSettleTimer.Tick -= WheelSettleTimer_Tick;
+            _wheelSettleTimer = null;
+        }
+    }
+
+    private void TriggerAsyncCaptureIfChanged(bool forceEnqueue = false)
+    {
+        if (_mode != CaptureMode.Scrolling) return;
+
+        var fresh = CaptureCurrentSelectionLive();
+        if (fresh == null) return;
+
+        if (!forceEnqueue && _lastCapturedRawFrame != null && !ScrollStitcher.HasSignificantChange(_lastCapturedRawFrame, fresh))
+        {
+            fresh.Dispose();
+            return;
+        }
+
+        _lastCapturedRawFrame?.Dispose();
+        _lastCapturedRawFrame = new Bitmap(fresh);
+
+        if (System.Threading.Interlocked.CompareExchange(ref _pendingStitchFrames, 0, 0) >= 2)
+        {
+            fresh.Dispose();
+            return;
+        }
+
+        _ = EnqueueFrameStitchAsync(fresh);
+    }
+
+    private async Task EnqueueFrameStitchAsync(Bitmap fresh)
+    {
+        System.Threading.Interlocked.Increment(ref _pendingStitchFrames);
+        try
+        {
+            await _stitchLock.WaitAsync();
+            try
+            {
+                if (_mode != CaptureMode.Scrolling) return;
+
+                var res = await System.Threading.Tasks.Task.Run(() => _stitcher.AppendSlice(fresh));
+                if (res.ReachedLimit)
+                {
+                    StopLiveScrollCaptureTimer();
+                    StopWheelSettleTimer();
+                    StopAutoScroll();
+                    ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
+                }
+                else if (res.DidStitch)
+                {
+                    Render();
+                }
+            }
+            finally
+            {
+                _stitchLock.Release();
+            }
+        }
+        catch
+        {
+        }
+        finally
+        {
+            fresh.Dispose();
+            System.Threading.Interlocked.Decrement(ref _pendingStitchFrames);
+        }
     }
 
     private bool CaptureAndStitchOnce()
@@ -2544,6 +2679,9 @@ public partial class OverlayWindow : Window
 
         var fresh = CaptureCurrentSelectionLive();
         if (fresh == null) return false;
+
+        _lastCapturedRawFrame?.Dispose();
+        _lastCapturedRawFrame = new Bitmap(fresh);
 
         (bool DidStitch, bool ReachedLimit, int AddedHeight) res;
         try
@@ -2558,6 +2696,7 @@ public partial class OverlayWindow : Window
         if (res.ReachedLimit)
         {
             StopLiveScrollCaptureTimer();
+            StopWheelSettleTimer();
             StopAutoScroll();
             ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
             return false;
@@ -2582,44 +2721,51 @@ public partial class OverlayWindow : Window
         }
     }
 
-    private async Task OnPhysicalWheelInSelectionAsync(POINT wheelPt, int wheelDelta)
+    private void HandlePhysicalWheelEvent(POINT wheelPt, int wheelDelta)
+    {
+        if (_mode != CaptureMode.Scrolling) return;
+
+        SetClickThrough(true);
+        ResetWheelSettleTimer();
+        DismissUnderlyingHoverPopups(wheelPt);
+
+        if (!_isPhysicalWheelProcessing)
+        {
+            _ = CheckWheelFallbackAsync(wheelPt, wheelDelta);
+        }
+    }
+
+    private async Task CheckWheelFallbackAsync(POINT wheelPt, int wheelDelta)
     {
         if (_mode != CaptureMode.Scrolling || _isPhysicalWheelProcessing) return;
 
         _isPhysicalWheelProcessing = true;
         try
         {
-            SetClickThrough(true);
+            using var beforeBmp = _lastCapturedRawFrame != null
+                ? new Bitmap(_lastCapturedRawFrame)
+                : CaptureCurrentSelectionLive();
 
-            // 先截取滚轮刚触发时的当前选区画面作为基线，用于判断底层窗口是否已自行响应滚轮
-            using var beforeBmp = CaptureCurrentSelectionLive();
-
-            await Task.Delay(65);
+            // 预留约 135ms 给浏览器的平滑滚动完成渲染起步，避免误判未滚动而额外补发消息导致跳页
+            await Task.Delay(135);
             if (_mode != CaptureMode.Scrolling) return;
 
             using var afterBmp = CaptureCurrentSelectionLive();
             bool screenChanged = beforeBmp == null || afterBmp == null || ScrollStitcher.HasSignificantChange(beforeBmp, afterBmp);
 
-            if (afterBmp != null)
+            if (afterBmp != null && screenChanged)
             {
-                var res = _stitcher.AppendSlice(afterBmp);
-                if (res.ReachedLimit)
-                {
-                    StopLiveScrollCaptureTimer();
-                    StopAutoScroll();
-                    ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
-                    return;
-                }
-                if (res.DidStitch)
-                {
-                    Render();
-                }
+                _lastCapturedRawFrame?.Dispose();
+                _lastCapturedRawFrame = new Bitmap(afterBmp);
+                await EnqueueFrameStitchAsync(new Bitmap(afterBmp));
+                return;
             }
 
-            // 仅当画面完全没有变化（底层窗口未响应物理滚轮）时，才主动激活并转发一次 WM_MOUSEWHEEL；
-            // 向上回滚或在历史区域内来回滚动时画面已在变化，绝不额外注入滚轮导致多滚跳页。
-            if (!screenChanged && wheelDelta != 0)
+            // 仅当经过 135ms 画面仍完全静止（例如目标窗口未开启“悬停时滚动非活动窗口”），才尝试激活并单次投递 WM_MOUSEWHEEL
+            if (!screenChanged && wheelDelta != 0 &&
+                (DateTime.UtcNow - _lastFallbackWheelInjectUtc).TotalMilliseconds >= 160)
             {
+                _lastFallbackWheelInjectUtc = DateTime.UtcNow;
                 try
                 {
                     var selfHwnd = new WindowInteropHelper(this).Handle;
@@ -2638,17 +2784,13 @@ public partial class OverlayWindow : Window
                         IntPtr wParam = (IntPtr)((wheelDelta << 16) & 0xFFFFFFFF);
                         IntPtr lParam = (IntPtr)((wheelPt.y << 16) | (wheelPt.x & 0xFFFF));
                         PostMessage(dispatchHwnd, WM_MOUSEWHEEL, wParam, lParam);
-                        if (topHwnd != IntPtr.Zero && topHwnd != dispatchHwnd)
-                        {
-                            PostMessage(topHwnd, WM_MOUSEWHEEL, wParam, lParam);
-                        }
                     }
                 }
                 catch { }
 
-                await Task.Delay(80);
+                await Task.Delay(120);
                 if (_mode != CaptureMode.Scrolling) return;
-                CaptureAndStitchOnce();
+                TriggerAsyncCaptureIfChanged(forceEnqueue: true);
             }
         }
         finally
@@ -3113,9 +3255,13 @@ public partial class OverlayWindow : Window
 
     private Bitmap GenerateFinalComposite()
     {
-        if (_mode == CaptureMode.Scrolling && _stitcher.StitchedLongBitmap != null)
+        if (_mode == CaptureMode.Scrolling)
         {
-            return new Bitmap(_stitcher.StitchedLongBitmap);
+            var stitchedSnapshot = _stitcher.CreateStitchedSnapshot();
+            if (stitchedSnapshot != null)
+            {
+                return stitchedSnapshot;
+            }
         }
 
         var baseBitmap = GetCroppedSelectionBitmap();
@@ -3449,14 +3595,17 @@ public partial class OverlayWindow : Window
         // 3. 从初始无遮挡快照按完全相同的物理像素坐标裁取第一帧，杜绝截取到任何工具栏或选框残影
         var localRect = GetSelectionLocalRect();
         var initial = ScreenCapture.CropBitmap(_fullSnapshot, localRect);
+        _lastCapturedRawFrame?.Dispose();
+        _lastCapturedRawFrame = null;
         if (initial != null)
         {
             _stitcher.Initialize(initial);
+            _lastCapturedRawFrame = initial;
         }
 
         // 4. 激活选区正下方的目标窗口，确保硬件滚轮和触摸板双指滚动直接作用于目标窗口，并立即消除残留悬浮气泡
         ActivateUnderlyingWindowAtSelectionCenter();
-        DismissUnderlyingHoverPopups();
+        DismissUnderlyingHoverPopups(force: true);
 
         // 5. 安装底层全局钩子、穿透状态定时器与持续帧采样拼接定时器
         InstallHooks();
@@ -3497,8 +3646,12 @@ public partial class OverlayWindow : Window
     private void CleanupScrollingCapture()
     {
         StopAutoScroll();
+        StopWheelSettleTimer();
         StopLiveScrollCaptureTimer();
         StopScrollingIgnoreTimer();
+        _isPhysicalWheelProcessing = false;
+        _lastCapturedRawFrame?.Dispose();
+        _lastCapturedRawFrame = null;
         SetClickThrough(false);
         UninstallHooks();
         try

@@ -7,54 +7,112 @@ using System.Drawing.Imaging;
 namespace ShotX.Windows.Core;
 
 /// <summary>
-/// 长截图核心拼接引擎（双向滚动水位追踪 + 全重叠区多行全局校验 + 历史长图重定位 + 悬浮弹窗自愈擦除）
-/// 针对鼠标来回上下滑动防错乱重影、重复列表/表格防跨行误匹配、悬浮弹窗防截入及高分屏 DPI 抗锯齿深度优化
+/// 长截图核心拼接引擎（线程安全 + 历史长图全局视口重定位 + 双向步进追踪 + 重复表格行抗误匹配 + 悬浮弹窗自愈擦除）
+/// 针对鼠标滑轮上下往返、快速滚动、固定表头/底栏及高度相似列表行深度优化。
 /// </summary>
 public sealed class ScrollStitcher
 {
-    private Bitmap? _stitchedLongBitmap;
-    private Bitmap? _lastStitchedBitmap; // 底部水位线帧：对应当前已拼接长图的最底端一屏
-    private Bitmap? _prevLiveBitmap;     // 上一帧实时预览画面：用于双向位移追踪
-    private int _offsetFromWatermark;    // 当前画面顶部相对于底部水位线帧的垂直偏移（<= 0 表示处于已截取区域上方）
-    private bool _isStitching;
+    private readonly object _syncLock = new();
 
-    public Bitmap? StitchedLongBitmap => _stitchedLongBitmap;
-    public bool HasImage => _stitchedLongBitmap != null;
-    public int CurrentHeight => _stitchedLongBitmap?.Height ?? 0;
-    public int SliceCount { get; private set; }
-    public int LastAddedHeight { get; private set; }
+    private Bitmap? _stitchedLongBitmap;
+    private Bitmap? _lastStitchedBitmap; // 底部水位线帧：对应当前长图最底端 [LH - FH, LH)
+    private Bitmap? _prevLiveBitmap;     // 上一实时采样帧：用于计算帧间运动方向与动态固定区
+
+    private int _estimatedViewportTop;   // 当前视口在长图中的估计顶部 Y（到达底部时等于 LH - FH）
+    private int _knownTopFixedH;         // 最近一次有效滚动观测到的顶部固定栏高度
+    private int _knownBottomFixedH;      // 最近一次有效滚动观测到的底部固定栏高度
+    private int[]? _knownActiveCols;     // 最近一次有效滚动观测到的活跃内容列（剔除静止侧栏与滚动条）
 
     public const int MaxHeightLimit = 32000;
     private const int MinStitchDy = 6;
 
+    public Bitmap? StitchedLongBitmap
+    {
+        get
+        {
+            lock (_syncLock)
+            {
+                return _stitchedLongBitmap;
+            }
+        }
+    }
+
+    public bool HasImage
+    {
+        get
+        {
+            lock (_syncLock)
+            {
+                return _stitchedLongBitmap != null;
+            }
+        }
+    }
+
+    public int CurrentHeight
+    {
+        get
+        {
+            lock (_syncLock)
+            {
+                return _stitchedLongBitmap?.Height ?? 0;
+            }
+        }
+    }
+
+    public int SliceCount { get; private set; }
+    public int LastAddedHeight { get; private set; }
+
+    /// <summary>
+    /// 返回当前已拼接长图的独立线程安全副本，供 UI 预览绘制与最终导出使用，避免与后台拼接线程竞争位图锁。
+    /// </summary>
+    public Bitmap? CreateStitchedSnapshot()
+    {
+        lock (_syncLock)
+        {
+            return _stitchedLongBitmap != null ? new Bitmap(_stitchedLongBitmap) : null;
+        }
+    }
+
     public void Reset()
     {
-        _stitchedLongBitmap?.Dispose();
-        _lastStitchedBitmap?.Dispose();
-        _prevLiveBitmap?.Dispose();
-        _stitchedLongBitmap = null;
-        _lastStitchedBitmap = null;
-        _prevLiveBitmap = null;
-        _offsetFromWatermark = 0;
-        _isStitching = false;
-        SliceCount = 0;
-        LastAddedHeight = 0;
+        lock (_syncLock)
+        {
+            _stitchedLongBitmap?.Dispose();
+            _lastStitchedBitmap?.Dispose();
+            _prevLiveBitmap?.Dispose();
+            _stitchedLongBitmap = null;
+            _lastStitchedBitmap = null;
+            _prevLiveBitmap = null;
+            _estimatedViewportTop = 0;
+            _knownTopFixedH = 0;
+            _knownBottomFixedH = 0;
+            _knownActiveCols = null;
+            SliceCount = 0;
+            LastAddedHeight = 0;
+        }
     }
 
     public void Initialize(Bitmap initialBitmap)
     {
-        Reset();
-        _stitchedLongBitmap = new Bitmap(initialBitmap);
-        _lastStitchedBitmap = new Bitmap(initialBitmap);
-        _prevLiveBitmap = new Bitmap(initialBitmap);
-        _offsetFromWatermark = 0;
-        _isStitching = false;
-        SliceCount = 1;
-        LastAddedHeight = 0;
+        lock (_syncLock)
+        {
+            _stitchedLongBitmap?.Dispose();
+            _lastStitchedBitmap?.Dispose();
+            _prevLiveBitmap?.Dispose();
+            _stitchedLongBitmap = new Bitmap(initialBitmap);
+            _lastStitchedBitmap = new Bitmap(initialBitmap);
+            _prevLiveBitmap = new Bitmap(initialBitmap);
+            _estimatedViewportTop = 0;
+            _knownTopFixedH = 0;
+            _knownBottomFixedH = 0;
+            _knownActiveCols = null;
+            SliceCount = 1;
+            LastAddedHeight = 0;
+        }
     }
 
     /// <summary>
-    /// 快速判断两帧屏幕截图之间是否发生实质性像素变化（用于区分窗口是否真正响应了滚轮）
+    /// 快速判断两帧屏幕截图之间是否发生实质性像素变化（用于区分窗口是否真正响应了滚轮）。
     /// </summary>
     public static bool HasSignificantChange(Bitmap a, Bitmap b)
     {
@@ -79,13 +137,13 @@ public sealed class ScrollStitcher
             {
                 byte* pa = (byte*)da.Scan0;
                 byte* pb = (byte*)db.Scan0;
-                int yStep = Math.Max(4, h / 32);
-                int xStep = Math.Max(4, w / 32);
-                for (int y = h / 8; y < h * 7 / 8; y += yStep)
+                int yStep = Math.Max(4, h / 36);
+                int xStep = Math.Max(4, w / 36);
+                for (int y = h / 10; y < h * 9 / 10; y += yStep)
                 {
                     byte* ra = pa + y * sa;
                     byte* rb = pb + y * sb;
-                    for (int x = w / 10; x < w * 9 / 10; x += xStep)
+                    for (int x = w / 12; x < w * 11 / 12; x += xStep)
                     {
                         int off = x * 4;
                         diffSum += Math.Abs(ra[off] - rb[off])
@@ -97,7 +155,7 @@ public sealed class ScrollStitcher
             }
 
             if (samples == 0) return false;
-            return (diffSum / (double)(samples * 3)) > 0.65;
+            return (diffSum / (double)(samples * 3)) > 0.55;
         }
         catch
         {
@@ -112,9 +170,7 @@ public sealed class ScrollStitcher
 
     public (bool DidStitch, bool ReachedLimit, int AddedHeight) AppendSlice(Bitmap freshBitmap)
     {
-        if (_isStitching) return (false, false, 0);
-        _isStitching = true;
-        try
+        lock (_syncLock)
         {
             if (_stitchedLongBitmap == null || _lastStitchedBitmap == null)
             {
@@ -137,67 +193,117 @@ public sealed class ScrollStitcher
                 return (false, false, 0);
             }
 
-            // 0. 若相对上一实时帧完全静止，直接跳过，避免无意义的匹配运算与重影风险
+            // 0. 相对上一实时帧完全静止则直接跳过
             if (_prevLiveBitmap != null && !HasSignificantChange(_prevLiveBitmap, freshBitmap))
             {
                 return (false, false, 0);
             }
 
-            // 1. 优先用实时前后帧追踪用户的双向滚动（上滑为负，下滑为正）
-            if (_prevLiveBitmap != null && _offsetFromWatermark < -12)
+            int bottomBaseY = _stitchedLongBitmap.Height - freshH;
+
+            // 1. 计算相对上一实时帧的相邻步进位移与运动方向（更新固定区高度与活跃列信息）
+            BidirectionalMatchResult stepMatch = default;
+            bool hasStepMatch = false;
+            if (_prevLiveBitmap != null)
             {
-                var liveMatch = FindBidirectionalMatch(_prevLiveBitmap, freshBitmap);
-                if (liveMatch.ZeroInlierRatio >= 0.68 || liveMatch.ZeroScore < 2.2)
-                {
-                    return (false, false, 0);
-                }
+                stepMatch = FindBidirectionalMatch(_prevLiveBitmap, freshBitmap);
+                hasStepMatch = stepMatch.Direction != 0;
 
-                // 若当前已非常接近或重新跨过水位线，转由直接对齐水位线；否则继续精确追踪水位线之上的位移
-                if (liveMatch.Direction < 0 && liveMatch.SignedDy <= -4)
+                if (hasStepMatch)
                 {
-                    _offsetFromWatermark += liveMatch.SignedDy; // 更负（继续向上滑）
-                    ReplacePrevLiveBitmap(freshBitmap);
-                    return (false, false, 0);
-                }
-
-                if (liveMatch.Direction > 0 && liveMatch.SignedDy >= 4)
-                {
-                    int projectedOffset = _offsetFromWatermark + liveMatch.SignedDy;
-                    if (projectedOffset < -12)
+                    _knownTopFixedH = Math.Min(stepMatch.TopFixedH, (int)(freshH * 0.24));
+                    _knownBottomFixedH = Math.Min(stepMatch.BottomFixedH, (int)(freshH * 0.24));
+                    if (stepMatch.ActiveColByteOffsets != null && stepMatch.ActiveColByteOffsets.Length >= 12)
                     {
-                        _offsetFromWatermark = projectedOffset;
+                        _knownActiveCols = stepMatch.ActiveColByteOffsets;
+                    }
+                    _estimatedViewportTop = Math.Max(0, _estimatedViewportTop + stepMatch.SignedDy);
+                }
+            }
+
+            // 若这一帧明显是用户主动【向上回滚】，直接跟踪位置并绝对禁止向底部拼接
+            if (hasStepMatch && stepMatch.Direction < 0 && stepMatch.SignedDy <= -4 &&
+                stepMatch.BestUpScore <= 6.5 && stepMatch.BestUpInlier >= 0.72)
+            {
+                // 若恰好回滚到距离底部一屏之内，用底部水位线校准精确 Y
+                var upCheck = FindBidirectionalMatch(_lastStitchedBitmap, freshBitmap);
+                if (upCheck.ZeroInlierRatio >= 0.68 || upCheck.ZeroScore < 2.2)
+                {
+                    _estimatedViewportTop = bottomBaseY;
+                }
+                else if (upCheck.Direction < 0 && upCheck.SignedDy <= -4)
+                {
+                    _estimatedViewportTop = Math.Max(0, bottomBaseY + upCheck.SignedDy);
+                }
+
+                ReplacePrevLiveBitmap(freshBitmap);
+                return (false, false, 0);
+            }
+
+            // 2. 与底部水位线帧 (_lastStitchedBitmap) 执行双向精确匹配
+            var wmMatch = FindBidirectionalMatch(_lastStitchedBitmap, freshBitmap);
+
+            // 2a. 画面与底部水位线重合（回滚到历史最底端），重新对齐水位线
+            if (wmMatch.ZeroInlierRatio >= 0.68 || wmMatch.ZeroScore < 2.2)
+            {
+                _estimatedViewportTop = bottomBaseY;
+                ReplacePrevLiveBitmap(freshBitmap);
+                return (false, false, 0);
+            }
+
+            // 2b. 当前画面明显位于底部水位线之上（处于已截取历史区域），只同步视口位置绝不拼接
+            if (wmMatch.Direction < 0 && wmMatch.SignedDy <= -4)
+            {
+                _estimatedViewportTop = Math.Max(0, bottomBaseY + wmMatch.SignedDy);
+                ReplacePrevLiveBitmap(freshBitmap);
+                return (false, false, 0);
+            }
+
+            // 2c. 在做向下拼接前，首先在已有长图历史中检查当前视口是否其实仍处于历史区间 [0 .. bottomBaseY]
+            int skipTop = Math.Max(_knownTopFixedH, Math.Max(wmMatch.TopFixedH, (int)(freshH * 0.08)));
+            int skipBot = Math.Max(_knownBottomFixedH, Math.Max(wmMatch.BottomFixedH, (int)(freshH * 0.08)));
+            if (_stitchedLongBitmap.Height > freshH + 12)
+            {
+                int foundY = TryRelocalizeInLongBitmap(
+                    _stitchedLongBitmap,
+                    freshBitmap,
+                    skipTop,
+                    skipBot,
+                    _knownActiveCols ?? wmMatch.ActiveColByteOffsets,
+                    out double relocErr,
+                    out double relocInlier,
+                    out double relocHardMismatch);
+
+                if (foundY >= 0)
+                {
+                    bool relocIsSolid = relocErr <= 6.0 && relocInlier >= 0.78 && relocHardMismatch <= 0.06;
+                    bool betterThanDown = wmMatch.Direction <= 0 || relocErr <= wmMatch.BestDownScore + 1.2;
+                    if (relocIsSolid && betterThanDown)
+                    {
+                        _estimatedViewportTop = foundY;
                         ReplacePrevLiveBitmap(freshBitmap);
                         return (false, false, 0);
                     }
                 }
             }
 
-            // 2. 与底部水位线帧 (_lastStitchedBitmap) 执行双向精确匹配
-            var wmMatch = FindBidirectionalMatch(_lastStitchedBitmap, freshBitmap);
-
-            // 2a. 画面与底部水位线重合（用户回滚到了已截取最底端），重新对齐水位线并等待向下突破
-            if (wmMatch.ZeroInlierRatio >= 0.68 || wmMatch.ZeroScore < 2.2)
-            {
-                _offsetFromWatermark = 0;
-                ReplacePrevLiveBitmap(freshBitmap);
-                return (false, false, 0);
-            }
-
-            // 2b. 检测到相比底部水位线明显是【向上滚动】（负位移占优），更新水位偏移，绝不误触发向下拼接！
-            if (wmMatch.Direction < 0 && wmMatch.SignedDy <= -4)
-            {
-                _offsetFromWatermark = wmMatch.SignedDy;
-                ReplacePrevLiveBitmap(freshBitmap);
-                return (false, false, 0);
-            }
-
-            // 2c. 如果之前处于水位线之上，要求跨过水位线的向下匹配具备极高可信度（防跨行重复误匹配）
-            bool wasAboveWatermark = _offsetFromWatermark < -16;
+            // 2d. 校验向下扩展候选是否满足严格重叠置信度（杜绝重复表格行/错位强拼）
             bool allowAppend = wmMatch.Direction > 0 && wmMatch.SignedDy >= MinStitchDy;
-            if (allowAppend && wasAboveWatermark)
+            if (allowAppend)
             {
-                // 若先前向上滚了很多，必须确保这次向下匹配具备极高的内点一致率，确认真的越过了历史底线
-                if (wmMatch.BestDownInlier < 0.72 || wmMatch.BestDownScore > 7.5)
+                bool qualityOk = wmMatch.BestDownScore <= 8.5 &&
+                                 wmMatch.BestDownInlier >= 0.70 &&
+                                 wmMatch.BestDownHardMismatch <= 0.09;
+
+                // 若先前回滚到距底部很远的位置且尚未重新确认靠近底线，则要求极高匹配一致度
+                if (_estimatedViewportTop < bottomBaseY - (int)(freshH * 0.35))
+                {
+                    qualityOk = wmMatch.BestDownScore <= 5.0 &&
+                                wmMatch.BestDownInlier >= 0.80 &&
+                                wmMatch.BestDownHardMismatch <= 0.05;
+                }
+
+                if (!qualityOk)
                 {
                     allowAppend = false;
                 }
@@ -205,37 +311,15 @@ public sealed class ScrollStitcher
 
             if (!allowAppend)
             {
-                // 未能与水位线匹配（例如用户用鼠标快速上下大幅度拖动）：更新实时帧追踪或尝试在历史长图中重定位
-                if (_prevLiveBitmap != null)
-                {
-                    var liveStep = FindBidirectionalMatch(_prevLiveBitmap, freshBitmap);
-                    if (liveStep.Direction != 0 && Math.Abs(liveStep.SignedDy) >= 4)
-                    {
-                        _offsetFromWatermark = Math.Min(0, _offsetFromWatermark + liveStep.SignedDy);
-                        ReplacePrevLiveBitmap(freshBitmap);
-                        return (false, false, 0);
-                    }
-                }
-
-                // 在历史长图中重定位当前视口位置，避免长距离上下跳滚后把旧内容当新内容重复拼接
-                if (_stitchedLongBitmap.Height > freshH + 16)
-                {
-                    int foundY = TryRelocalizeInLongBitmap(_stitchedLongBitmap, freshBitmap);
-                    if (foundY >= 0)
-                    {
-                        _offsetFromWatermark = foundY - (_stitchedLongBitmap.Height - freshH);
-                        ReplacePrevLiveBitmap(freshBitmap);
-                        return (false, false, 0);
-                    }
-                }
-
+                // 无论是否匹配成功，永远把 _prevLiveBitmap 前进到当前帧，防止状态机锁死在过时帧上
+                ReplacePrevLiveBitmap(freshBitmap);
                 return (false, false, 0);
             }
 
             // 3. 确认向下有效扩展 dy 像素，按接缝精确对齐拼接到底部
             int dy = wmMatch.SignedDy;
-            int topFixedH = wmMatch.TopFixedH;
-            int bottomFixedH = wmMatch.BottomFixedH;
+            int topFixedH = Math.Min(wmMatch.TopFixedH, (int)(lastH * 0.24));
+            int bottomFixedH = Math.Min(wmMatch.BottomFixedH, (int)(lastH * 0.24));
             int seamY = Math.Max(topFixedH + dy + 4, Math.Min(lastH - 4, lastH - bottomFixedH));
 
             int oldLongH = _stitchedLongBitmap.Height;
@@ -247,10 +331,12 @@ public sealed class ScrollStitcher
 
             if (actualAddH < 2)
             {
+                ReplacePrevLiveBitmap(freshBitmap);
                 return (false, false, 0);
             }
             if (newTotalH > MaxHeightLimit)
             {
+                ReplacePrevLiveBitmap(freshBitmap);
                 return (false, true, 0);
             }
 
@@ -279,8 +365,11 @@ public sealed class ScrollStitcher
                 );
             }
 
-            // 4. 悬浮弹窗自愈擦除：仅当同一屏幕位置在前两帧静止不动（说明存在悬浮遮挡物），而新位置滚出干净内容时才回填修复
-            HealStationaryPopupsInOverlap(newLong, _lastStitchedBitmap, freshBitmap, dy, topFixedH, seamY, oldLongH);
+            // 4. 仅在极高置信度匹配下执行静止悬浮弹窗像素自愈，避免误伤普通表格文字
+            if (wmMatch.BestDownScore <= 6.0 && wmMatch.BestDownInlier >= 0.78)
+            {
+                HealStationaryPopupsInOverlap(newLong, _lastStitchedBitmap, freshBitmap, dy, topFixedH, seamY, oldLongH);
+            }
 
             _stitchedLongBitmap.Dispose();
             _stitchedLongBitmap = newLong;
@@ -289,15 +378,17 @@ public sealed class ScrollStitcher
             _lastStitchedBitmap = new Bitmap(freshBitmap);
 
             ReplacePrevLiveBitmap(freshBitmap);
-            _offsetFromWatermark = 0;
+            _estimatedViewportTop = newLong.Height - freshH;
+            _knownTopFixedH = topFixedH;
+            _knownBottomFixedH = bottomFixedH;
+            if (wmMatch.ActiveColByteOffsets != null && wmMatch.ActiveColByteOffsets.Length >= 12)
+            {
+                _knownActiveCols = wmMatch.ActiveColByteOffsets;
+            }
 
             SliceCount++;
             LastAddedHeight = actualAddH;
             return (true, false, actualAddH);
-        }
-        finally
-        {
-            _isStitching = false;
         }
     }
 
@@ -317,6 +408,10 @@ public sealed class ScrollStitcher
         public readonly double ZeroInlierRatio;
         public readonly double BestDownScore;
         public readonly double BestDownInlier;
+        public readonly double BestDownHardMismatch;
+        public readonly double BestUpScore;
+        public readonly double BestUpInlier;
+        public readonly int[]? ActiveColByteOffsets;
 
         public BidirectionalMatchResult(
             int direction,
@@ -326,7 +421,11 @@ public sealed class ScrollStitcher
             double zeroScore,
             double zeroInlierRatio,
             double bestDownScore,
-            double bestDownInlier)
+            double bestDownInlier,
+            double bestDownHardMismatch,
+            double bestUpScore,
+            double bestUpInlier,
+            int[]? activeColByteOffsets)
         {
             Direction = direction;
             SignedDy = signedDy;
@@ -336,19 +435,35 @@ public sealed class ScrollStitcher
             ZeroInlierRatio = zeroInlierRatio;
             BestDownScore = bestDownScore;
             BestDownInlier = bestDownInlier;
+            BestDownHardMismatch = bestDownHardMismatch;
+            BestUpScore = bestUpScore;
+            BestUpInlier = bestUpInlier;
+            ActiveColByteOffsets = activeColByteOffsets;
         }
     }
 
     /// <summary>
-    /// 在历史长图中重定位当前视口（用于鼠标大幅度/高速上下回拉后的自校准）
+    /// 在历史长图中重定位当前视口（严格跳过顶部/底部固定栏，并只采样活跃列，防止固定表头干扰定位）。
     /// </summary>
-    private static int TryRelocalizeInLongBitmap(Bitmap longBmp, Bitmap freshBmp)
+    private static int TryRelocalizeInLongBitmap(
+        Bitmap longBmp,
+        Bitmap freshBmp,
+        int skipTopH,
+        int skipBottomH,
+        int[]? preferredColByteOffsets,
+        out double outBestErr,
+        out double outBestInlier,
+        out double outHardMismatch)
     {
+        outBestErr = double.MaxValue;
+        outBestInlier = 0;
+        outHardMismatch = 1.0;
+
         int lw = longBmp.Width;
         int lh = longBmp.Height;
         int fw = freshBmp.Width;
         int fh = freshBmp.Height;
-        if (lw != fw || lh <= fh + 16 || fw < 32 || fh < 48) return -1;
+        if (lw != fw || lh <= fh + 12 || fw < 32 || fh < 48) return -1;
 
         BitmapData? dl = null;
         BitmapData? df = null;
@@ -364,33 +479,46 @@ public sealed class ScrollStitcher
             System.Runtime.InteropServices.Marshal.Copy(dl.Scan0, bufLong, 0, bufLong.Length);
             System.Runtime.InteropServices.Marshal.Copy(df.Scan0, bufFresh, 0, bufFresh.Length);
 
-            // 从 freshBmp 中部提取 ~180 个高对比度特征点
-            int marginX = Math.Max(8, (int)(fw * 0.06));
-            int usableW = fw - marginX * 2;
-            int cols = Math.Min(64, usableW);
-            int[] xOffs = new int[cols];
-            for (int i = 0; i < cols; i++)
+            int[] xOffs;
+            if (preferredColByteOffsets != null && preferredColByteOffsets.Length >= 12)
             {
-                xOffs[i] = (marginX + (int)((long)i * (usableW - 1) / Math.Max(1, cols - 1))) * 4;
+                xOffs = preferredColByteOffsets;
+            }
+            else
+            {
+                int marginX = Math.Max(8, (int)(fw * 0.06));
+                int usableW = fw - marginX * 2;
+                int cols = Math.Min(72, usableW);
+                xOffs = new int[cols];
+                for (int i = 0; i < cols; i++)
+                {
+                    xOffs[i] = (marginX + (int)((long)i * (usableW - 1) / Math.Max(1, cols - 1))) * 4;
+                }
             }
 
-            List<(int Y, int XOff)> pts = new(240);
-            int yMin = Math.Max(8, (int)(fh * 0.14));
-            int yMax = Math.Min(fh - 8, (int)(fh * 0.86));
-            int yStep = Math.Max(2, (yMax - yMin) / 40);
+            int yMin = Math.Max(skipTopH + 4, Math.Max(8, (int)(fh * 0.14)));
+            int yMax = Math.Min(fh - skipBottomH - 4, Math.Min(fh - 8, (int)(fh * 0.86)));
+            if (yMax - yMin < 24)
+            {
+                yMin = Math.Max(8, (int)(fh * 0.22));
+                yMax = Math.Min(fh - 8, (int)(fh * 0.78));
+            }
+            if (yMax - yMin < 16) return -1;
+
+            List<(int Y, int XOff)> pts = new(320);
+            int yStep = Math.Max(1, (yMax - yMin) / 64);
 
             for (int y = yMin; y < yMax; y += yStep)
             {
                 int rP = (y - 1) * sFresh;
-                int rC = y * sFresh;
                 int rN = (y + 1) * sFresh;
-                for (int ci = 0; ci < cols; ci++)
+                for (int ci = 0; ci < xOffs.Length; ci++)
                 {
                     int xOff = xOffs[ci];
                     int vg = Math.Abs(bufFresh[rN + xOff] - bufFresh[rP + xOff])
                            + Math.Abs(bufFresh[rN + xOff + 1] - bufFresh[rP + xOff + 1])
                            + Math.Abs(bufFresh[rN + xOff + 2] - bufFresh[rP + xOff + 2]);
-                    if (vg >= 45)
+                    if (vg >= 42)
                     {
                         pts.Add((y, xOff));
                     }
@@ -398,28 +526,30 @@ public sealed class ScrollStitcher
             }
 
             if (pts.Count < 24) return -1;
-            if (pts.Count > 180)
+            if (pts.Count > 240)
             {
-                var sub = new List<(int Y, int XOff)>(180);
-                double step = pts.Count / 180.0;
-                for (int i = 0; i < 180; i++) sub.Add(pts[(int)(i * step)]);
+                var sub = new List<(int Y, int XOff)>(240);
+                double step = pts.Count / 240.0;
+                for (int i = 0; i < 240; i++) sub.Add(pts[(int)(i * step)]);
                 pts = sub;
             }
 
-            int maxBaseY = lh - fh - 4;
+            int maxBaseY = lh - fh;
             int bestY = -1;
             double bestErr = double.MaxValue;
             double bestInlier = 0;
+            double bestHard = 1.0;
 
-            // 粗搜索 (步长 6px)
-            for (int baseY = 0; baseY <= maxBaseY; baseY += 6)
+            // 粗搜索 (步长 5px)
+            for (int baseY = 0; baseY <= maxBaseY; baseY += 5)
             {
-                double err = EvalRelocalizeOffset(bufLong, sLong, bufFresh, sFresh, pts, baseY, out double inl);
+                double err = EvalRelocalizeOffset(bufLong, sLong, bufFresh, sFresh, pts, baseY, out double inl, out double hard);
                 if (err < bestErr)
                 {
                     bestErr = err;
                     bestY = baseY;
                     bestInlier = inl;
+                    bestHard = hard;
                 }
             }
 
@@ -430,16 +560,21 @@ public sealed class ScrollStitcher
             int refineEnd = Math.Min(maxBaseY, bestY + 5);
             for (int baseY = refineStart; baseY <= refineEnd; baseY++)
             {
-                double err = EvalRelocalizeOffset(bufLong, sLong, bufFresh, sFresh, pts, baseY, out double inl);
+                double err = EvalRelocalizeOffset(bufLong, sLong, bufFresh, sFresh, pts, baseY, out double inl, out double hard);
                 if (err < bestErr)
                 {
                     bestErr = err;
                     bestY = baseY;
                     bestInlier = inl;
+                    bestHard = hard;
                 }
             }
 
-            if (bestErr <= 7.5 && bestInlier >= 0.72)
+            outBestErr = bestErr;
+            outBestInlier = bestInlier;
+            outHardMismatch = bestHard;
+
+            if (bestErr <= 7.0 && bestInlier >= 0.74 && bestHard <= 0.08)
             {
                 return bestY;
             }
@@ -462,41 +597,48 @@ public sealed class ScrollStitcher
         byte[] bufFresh, int sFresh,
         List<(int Y, int XOff)> pts,
         int baseY,
-        out double inlierRatio)
+        out double inlierRatio,
+        out double hardMismatchRatio)
     {
         long errSum = 0;
         int inliers = 0;
+        int hardMismatches = 0;
         int n = pts.Count;
         for (int i = 0; i < n; i++)
         {
             var pt = pts[i];
             int idxL = (baseY + pt.Y) * sLong + pt.XOff;
             int idxF = pt.Y * sFresh + pt.XOff;
+
             int diff = Math.Abs(bufLong[idxL] - bufFresh[idxF])
                      + Math.Abs(bufLong[idxL + 1] - bufFresh[idxF + 1])
                      + Math.Abs(bufLong[idxL + 2] - bufFresh[idxF + 2]);
-            errSum += (diff > 96 ? 96 : diff);
+
+            errSum += (diff > 105 ? 105 : diff);
             if (diff <= 21) inliers++;
+            if (diff >= 60) hardMismatches++;
         }
-        inlierRatio = inliers / (double)n;
-        return errSum / (double)(n * 3);
+
+        inlierRatio = n > 0 ? inliers / (double)n : 0.0;
+        hardMismatchRatio = n > 0 ? hardMismatches / (double)n : 1.0;
+        return n > 0 ? errSum / (double)(n * 3) : 999.0;
     }
 
-    /// <summary>
-    /// 在重叠区域内检测上一帧中静止不动的悬浮窗/气泡，并用新帧中已滚出遮挡区的干净内容进行像素级自愈替换
-    /// </summary>
     private static void HealStationaryPopupsInOverlap(
         Bitmap newLong,
         Bitmap lastBmp,
         Bitmap freshBmp,
         int dy,
         int topFixedH,
-        int activeBottom,
+        int seamY,
         int oldLongH)
     {
         int w = lastBmp.Width;
         int h = lastBmp.Height;
-        int overlapStart = Math.Max(topFixedH, 4);
+        int activeTop = Math.Max(6, topFixedH);
+        int activeBottom = Math.Min(h - 4, seamY);
+
+        int overlapStart = activeTop;
         int overlapEnd = activeBottom - dy;
         if (overlapEnd - overlapStart < 12) return;
 
@@ -583,11 +725,8 @@ public sealed class ScrollStitcher
                         double avgStatNew = sumStationaryAtNew / (double)(count * 3);
                         double avgNextScroll = canCheckNextScroll ? (sumNextScrollMatch / (double)(count * 3)) : 999.0;
 
-                        // 特征 1：常驻悬浮窗在屏幕 oldY 处静止不动 (avgStatOld < 6.5)，而滚到 y 处的真实内容已改变 (avgMismatch > 15.0)
-                        bool isStationaryPopupAtOld = (avgStatOld < 6.5 && avgMismatch > 15.0 && avgStatNew > 9.0);
-
-                        // 特征 2：瞬态悬浮气泡消失后，新帧在 oldY 处已正常接续下一段内容 (avgNextScroll < 7.5)，且原先对齐失配 (avgMismatch > 16.0)
-                        bool isTransientTooltipAtOld = (canCheckNextScroll && avgNextScroll < 7.5 && avgMismatch > 16.0 && avgStatNew > 10.0);
+                        bool isStationaryPopupAtOld = (avgStatOld < 5.0 && avgMismatch > 24.0 && avgStatNew > 12.0);
+                        bool isTransientTooltipAtOld = (canCheckNextScroll && avgNextScroll < 6.0 && avgMismatch > 24.0 && avgStatNew > 12.0);
 
                         if (isStationaryPopupAtOld || isTransientTooltipAtOld)
                         {
@@ -657,10 +796,10 @@ public sealed class ScrollStitcher
         int marginX = Math.Max(10, (int)(w * 0.055));
         int usableW = w - marginX * 2;
         if (usableW < 16 || h < 40)
-            return new BidirectionalMatchResult(0, 0, 0, 0, 999, 0, 999, 0);
+            return new BidirectionalMatchResult(0, 0, 0, 0, 999, 0, 999, 0, 1, 999, 0, null);
 
-        // 1. 高密度水平采样列 (最高 128 列，兼顾文字数字密集区分能力，防止重复列表模板行误匹配)
-        int numSampleCols = Math.Min(128, usableW);
+        // 1. 高密度水平采样列 (最高 140 列，确保短数字列与日期/手机号列均有充足样本)
+        int numSampleCols = Math.Min(140, usableW);
         int[] allCols = new int[numSampleCols];
         for (int i = 0; i < numSampleCols; i++)
         {
@@ -694,7 +833,7 @@ public sealed class ScrollStitcher
 
             double avgDiff = diffSum / (double)(checkRows * 3);
             double avgGrad = gradSum / (double)(checkRows * 3);
-            if (avgDiff > 1.2 && avgGrad > 0.7)
+            if (avgDiff > 1.0 && avgGrad > 0.6)
             {
                 activeColList.Add(allCols[ci]);
             }
@@ -702,10 +841,10 @@ public sealed class ScrollStitcher
 
         if (activeColList.Count == 0)
         {
-            return new BidirectionalMatchResult(0, 0, 0, 0, 0, 1.0, 999, 0);
+            return new BidirectionalMatchResult(0, 0, 0, 0, 0, 1.0, 999, 0, 1, 999, 0, null);
         }
 
-        int[] sampleCols = activeColList.Count >= 16 ? activeColList.ToArray() : allCols;
+        int[] sampleCols = activeColList.Count >= 14 ? activeColList.ToArray() : allCols;
         int colCount = sampleCols.Length;
         int[] colByteOffsets = new int[colCount];
         for (int i = 0; i < colCount; i++) colByteOffsets[i] = sampleCols[i] * 4;
@@ -770,14 +909,14 @@ public sealed class ScrollStitcher
         double zeroInlierRatioGlobal = totalFeaturePoints > 0
             ? unchangedFeaturePointsAtZero / (double)totalFeaturePoints
             : 0.0;
-        if (totalFeaturePoints >= 25 && zeroInlierRatioGlobal >= 0.65)
+        if (totalFeaturePoints >= 25 && zeroInlierRatioGlobal >= 0.66)
         {
-            return new BidirectionalMatchResult(0, 0, 0, 0, 1.0, zeroInlierRatioGlobal, 999, 0);
+            return new BidirectionalMatchResult(0, 0, 0, 0, 1.0, zeroInlierRatioGlobal, 999, 0, 1, 999, 0, colByteOffsets);
         }
 
-        // 4. 识别顶部与底部静止固定栏 (Sticky Header / Sticky Footer)
-        int maxTopScan = (int)(h * 0.22);
-        int topFixedH = Math.Max(6, (int)(h * 0.04));
+        // 4. 识别顶部与底部静止固定栏
+        int maxTopScan = (int)(h * 0.24);
+        int topFixedH = Math.Max(4, (int)(h * 0.03));
         for (int y = 4; y < maxTopScan; y++)
         {
             if (rowZeroDiff[y] < 1.8)
@@ -790,7 +929,7 @@ public sealed class ScrollStitcher
             }
         }
 
-        int maxBotScan = (int)(h * 0.22);
+        int maxBotScan = (int)(h * 0.24);
         int bottomFixedH = 0;
         for (int y = h - 3; y >= h - maxBotScan; y--)
         {
@@ -804,29 +943,29 @@ public sealed class ScrollStitcher
             }
         }
 
-        int activeTop = Math.Max(8, topFixedH);
-        int activeBot = Math.Min(h - 8, h - Math.Max(6, bottomFixedH));
+        int activeTop = Math.Max(6, topFixedH);
+        int activeBot = Math.Min(h - 6, h - Math.Max(4, bottomFixedH));
         int activeSpan = activeBot - activeTop;
-        if (activeSpan < 36)
+        if (activeSpan < 32)
         {
-            return new BidirectionalMatchResult(0, 0, topFixedH, bottomFixedH, 999, zeroInlierRatioGlobal, 999, 0);
+            return new BidirectionalMatchResult(0, 0, topFixedH, bottomFixedH, 999, zeroInlierRatioGlobal, 999, 0, 1, 999, 0, colByteOffsets);
         }
 
-        // 5. 提取整个有效区内的高梯度特征点（来自 last 帧用于向下搜索，同时也均匀覆盖各数字/唯一文本区）
+        // 5. 高密度提取特征点（提升细小数字与唯一字段命中率）
         List<(int Y, int XOff)> featurePoints = ExtractFeaturePoints(buf1, stride1, colByteOffsets, rowVertEnergy, activeTop, activeBot, activeSpan);
         List<(int Y, int XOff)> featurePointsFresh = ExtractFeaturePoints(buf2, stride2, colByteOffsets, rowVertEnergy, activeTop, activeBot, activeSpan);
 
-        int maxDy = Math.Min((int)(h * 0.78), activeSpan - 24);
+        // 支持最高接近 88% 视口高度的单步大位移匹配，应对鼠标滑轮高速连拨
+        int maxDy = Math.Min((int)(h * 0.88), activeSpan - 14);
         if (maxDy < 4)
         {
-            return new BidirectionalMatchResult(0, 0, topFixedH, bottomFixedH, 999, zeroInlierRatioGlobal, 999, 0);
+            return new BidirectionalMatchResult(0, 0, topFixedH, bottomFixedH, 999, zeroInlierRatioGlobal, 999, 0, 1, 999, 0, colByteOffsets);
         }
 
-        // 零位移基准误差
-        double zeroScore = EvaluateDownDy(buf1, stride1, buf2, stride2, colByteOffsets, featurePoints, activeTop, activeBot, 0, out double zeroFeatInlier);
+        double zeroScore = EvaluateDownDy(buf1, stride1, buf2, stride2, colByteOffsets, featurePoints, activeTop, activeBot, 0, out double zeroFeatInlier, out _, out _);
         if (zeroScore < 2.2 || zeroFeatInlier >= 0.68)
         {
-            return new BidirectionalMatchResult(0, 0, topFixedH, bottomFixedH, zeroScore, Math.Max(zeroInlierRatioGlobal, zeroFeatInlier), 999, 0);
+            return new BidirectionalMatchResult(0, 0, topFixedH, bottomFixedH, zeroScore, Math.Max(zeroInlierRatioGlobal, zeroFeatInlier), 999, 0, 1, 999, 0, colByteOffsets);
         }
 
         // 6. 双向搜索：
@@ -834,52 +973,58 @@ public sealed class ScrollStitcher
         int bestDownDy = 0;
         double bestDownScore = double.MaxValue;
         double bestDownInlier = 0;
+        double bestDownHardMismatch = 1.0;
         int bestDownFeatCount = 0;
 
         for (int dy = 4; dy <= maxDy; dy++)
         {
-            double score = EvaluateDownDy(buf1, stride1, buf2, stride2, colByteOffsets, featurePoints, activeTop, activeBot, dy, out double inlier, out int featCnt);
+            double score = EvaluateDownDy(buf1, stride1, buf2, stride2, colByteOffsets, featurePoints, activeTop, activeBot, dy, out double inlier, out int featCnt, out double hardMismatch);
             if (score < bestDownScore)
             {
                 bestDownScore = score;
                 bestDownDy = dy;
                 bestDownInlier = inlier;
                 bestDownFeatCount = featCnt;
+                bestDownHardMismatch = hardMismatch;
             }
         }
 
-        // (B) 向上滚动候选 upDy > 0（等价于 fresh[y] == last[y - upDy]）
+        // (B) 向上滚动候选 upDy > 0（fresh[y] == last[y - upDy]）
         int bestUpDy = 0;
         double bestUpScore = double.MaxValue;
         double bestUpInlier = 0;
+        double bestUpHardMismatch = 1.0;
         int bestUpFeatCount = 0;
 
         for (int upDy = 4; upDy <= maxDy; upDy++)
         {
-            double score = EvaluateDownDy(buf2, stride2, buf1, stride1, colByteOffsets, featurePointsFresh, activeTop, activeBot, upDy, out double inlier, out int featCnt);
+            double score = EvaluateDownDy(buf2, stride2, buf1, stride1, colByteOffsets, featurePointsFresh, activeTop, activeBot, upDy, out double inlier, out int featCnt, out double hardMismatch);
             if (score < bestUpScore)
             {
                 bestUpScore = score;
                 bestUpDy = upDy;
                 bestUpInlier = inlier;
                 bestUpFeatCount = featCnt;
+                bestUpHardMismatch = hardMismatch;
             }
         }
 
         bool downCandidateValid = bestDownDy >= 4 &&
-                                  bestDownScore <= 14.5 &&
-                                  bestDownScore < zeroScore * 0.62 &&
-                                  (bestDownFeatCount >= 40 ? (bestDownInlier >= 0.56 || bestDownScore <= 8.0)
-                                                           : (bestDownInlier >= 0.65 && bestDownScore <= 10.0));
+                                  bestDownScore <= 11.5 &&
+                                  bestDownScore < zeroScore * 0.60 &&
+                                  bestDownHardMismatch <= 0.12 &&
+                                  (bestDownFeatCount >= 32 ? (bestDownInlier >= 0.64 || bestDownScore <= 6.5)
+                                                           : (bestDownInlier >= 0.70 && bestDownScore <= 8.0));
 
         bool upCandidateValid = bestUpDy >= 4 &&
-                                bestUpScore <= 15.0 &&
-                                bestUpScore < zeroScore * 0.65 &&
-                                (bestUpFeatCount >= 40 ? (bestUpInlier >= 0.52 || bestUpScore <= 8.5)
-                                                       : (bestUpInlier >= 0.62 && bestUpScore <= 10.5));
+                                bestUpScore <= 12.0 &&
+                                bestUpScore < zeroScore * 0.62 &&
+                                bestUpHardMismatch <= 0.12 &&
+                                (bestUpFeatCount >= 32 ? (bestUpInlier >= 0.62 || bestUpScore <= 7.0)
+                                                       : (bestUpInlier >= 0.68 && bestUpScore <= 8.5));
 
-        // 7. 双向胜者裁决：当向上滚动得分明显优于向下滚动时，判定为【向上回滚】
-        if (upCandidateValid && (!downCandidateValid || bestUpScore <= bestDownScore * 1.05))
+        // 7. 双向胜者裁决：当向上滚动得分优于或接近向下滚动（且有效）时，优先判定为向上回滚，杜绝错拼
+        if (upCandidateValid && (!downCandidateValid || bestUpScore <= bestDownScore * 1.08))
         {
             return new BidirectionalMatchResult(
                 -1,
@@ -889,10 +1034,13 @@ public sealed class ScrollStitcher
                 zeroScore,
                 Math.Max(zeroInlierRatioGlobal, zeroFeatInlier),
                 bestDownScore,
-                bestDownInlier);
+                bestDownInlier,
+                bestDownHardMismatch,
+                bestUpScore,
+                bestUpInlier,
+                colByteOffsets);
         }
 
-        // 若向下滚动胜出，且显著优于反方向候选，额外做严格接缝校验与重复行歧义排重
         if (downCandidateValid && (!upCandidateValid || bestDownScore < bestUpScore * 0.85))
         {
             return new BidirectionalMatchResult(
@@ -903,7 +1051,11 @@ public sealed class ScrollStitcher
                 zeroScore,
                 Math.Max(zeroInlierRatioGlobal, zeroFeatInlier),
                 bestDownScore,
-                bestDownInlier);
+                bestDownInlier,
+                bestDownHardMismatch,
+                bestUpScore,
+                bestUpInlier,
+                colByteOffsets);
         }
 
         return new BidirectionalMatchResult(
@@ -914,7 +1066,11 @@ public sealed class ScrollStitcher
             zeroScore,
             Math.Max(zeroInlierRatioGlobal, zeroFeatInlier),
             bestDownScore,
-            bestDownInlier);
+            bestDownInlier,
+            bestDownHardMismatch,
+            bestUpScore,
+            bestUpInlier,
+            colByteOffsets);
     }
 
     private static List<(int Y, int XOff)> ExtractFeaturePoints(
@@ -926,13 +1082,13 @@ public sealed class ScrollStitcher
         int activeBot,
         int activeSpan)
     {
-        List<(int Y, int XOff)> pts = new(1600);
+        List<(int Y, int XOff)> pts = new(2000);
         int colCount = colByteOffsets.Length;
-        int rowStep = Math.Max(1, activeSpan / 96);
+        int rowStep = Math.Max(1, activeSpan / 160);
 
         for (int y = activeTop + 2; y < activeBot - 2; y += rowStep)
         {
-            if (rowVertEnergy[y] < 1.8) continue;
+            if (rowVertEnergy[y] < 1.6) continue;
             int rPrev = (y - 1) * stride;
             int rCurr = y * stride;
             int rNext = (y + 1) * stride;
@@ -957,18 +1113,18 @@ public sealed class ScrollStitcher
                        + Math.Abs(buf[iCurr + 2] - buf[rCurr + xOffNext + 2]);
                 }
 
-                if (vg + hg >= 40)
+                if (vg + hg >= 38)
                 {
                     pts.Add((y, xOff));
                 }
             }
         }
 
-        if (pts.Count > 1000)
+        if (pts.Count > 1100)
         {
-            var sub = new List<(int Y, int XOff)>(1000);
-            double step = pts.Count / 1000.0;
-            for (int i = 0; i < 1000; i++)
+            var sub = new List<(int Y, int XOff)>(1100);
+            double step = pts.Count / 1100.0;
+            for (int i = 0; i < 1100; i++)
             {
                 sub.Add(pts[(int)(i * step)]);
             }
@@ -986,29 +1142,20 @@ public sealed class ScrollStitcher
         int activeTop,
         int activeBot,
         int dy,
-        out double inlierRatio)
-    {
-        return EvaluateDownDy(buf1, stride1, buf2, stride2, colByteOffsets, featurePoints, activeTop, activeBot, dy, out inlierRatio, out _);
-    }
-
-    private static double EvaluateDownDy(
-        byte[] buf1, int stride1,
-        byte[] buf2, int stride2,
-        int[] colByteOffsets,
-        List<(int Y, int XOff)> featurePoints,
-        int activeTop,
-        int activeBot,
-        int dy,
         out double inlierRatio,
-        out int featCount)
+        out int featCount,
+        out double hardMismatchRatio)
     {
         inlierRatio = 0;
         featCount = 0;
+        hardMismatchRatio = 1.0;
+
         int minLastY = activeTop + dy;
-        if (activeBot - minLastY < 20) return double.MaxValue;
+        if (activeBot - minLastY < 14) return double.MaxValue;
 
         long featErrSum = 0;
         int inliers = 0;
+        int hardMismatches = 0;
 
         int nFeat = featurePoints.Count;
         for (int i = 0; i < nFeat; i++)
@@ -1024,14 +1171,11 @@ public sealed class ScrollStitcher
                      + Math.Abs(buf1[idx1 + 1] - buf2[idx2 + 1])
                      + Math.Abs(buf1[idx1 + 2] - buf2[idx2 + 2]);
 
-            int clampedDiff = diff > 105 ? 105 : diff;
-            featErrSum += clampedDiff;
+            featErrSum += (diff > 105 ? 105 : diff);
             featCount++;
 
-            if (diff <= 21) // 单通道平均误差 <= 7.0 视为准确内点
-            {
-                inliers++;
-            }
+            if (diff <= 21) inliers++;
+            if (diff >= 60) hardMismatches++;
         }
 
         int overlapH = activeBot - minLastY;
@@ -1066,13 +1210,15 @@ public sealed class ScrollStitcher
         if (featCount < 12)
         {
             inlierRatio = gridErr < 5.0 ? 0.8 : 0.0;
+            hardMismatchRatio = gridErr < 5.0 ? 0.0 : 1.0;
             return gridErr;
         }
 
         double featErr = featErrSum / (double)(featCount * 3);
         inlierRatio = inliers / (double)featCount;
+        hardMismatchRatio = hardMismatches / (double)featCount;
 
-        // 综合特征点截断误差、网格一致度与内点率惩罚：重复行即使骨架一致但关键数字错位会导致 featErr 升高且 inlierRatio 偏低
-        return featErr * 0.75 + gridErr * 0.25 * (1.20 - 0.40 * inlierRatio);
+        // 对强失配比例施加显式惩罚，彻底区分“真正匹配（仅轻微锯齿）”与“重复表格行数字错位（局部强失配）”
+        return featErr * 0.72 + gridErr * 0.28 * (1.20 - 0.40 * inlierRatio) + hardMismatchRatio * 28.0;
     }
 }
