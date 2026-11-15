@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.33)'
+        description: 'Release version (e.g. 1.9.34)'
         required: false
-        default: '1.9.33'
+        default: '1.9.34'
 
 concurrency:
   group: release
@@ -41,7 +41,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.33"
+            VERSION="1.9.34"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -76,9 +76,9 @@ jobs:
             - **Windows 绿色便携版 (Portable)**: [ShotX-Windows-${{ env.VERSION }}-Portable.zip](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-Windows-${{ env.VERSION }}-Portable.zip)
             - **macOS 安装包 (DMG)**: [ShotX-${{ env.VERSION }}.dmg](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-${{ env.VERSION }}.dmg)
 
-            #### 🚀 本次更新亮点与修复 (v1.9.33)
-            1. **Windows 端长截图无污染截屏与穿透拼接修复 (Windows)**：启用 `WDA_EXCLUDEFROMCAPTURE` 硬件级截屏隐藏与 `WS_EX_NOACTIVATE` 无焦点抢占机制，确保截屏不包含蒙层、工具栏及提示框，选区内滚轮、触摸板、拖动滚动条均可实时驱动右侧长截图预览拼接。
-            2. **长截图垂直边缘梯度与活跃特征点匹配引擎 (Windows)**：自动剔除静止侧边栏与底部固定状态栏干扰，支持稀疏文字与复杂排版页面的无缝像素级对齐拼接。
+            #### 🚀 本次更新亮点与修复 (v1.9.34)
+            1. **Windows 端长截图重复表格行/列表防重影与全重叠区多行全局匹配 (Windows)**：采用零位移内点重合率守卫与全重叠区多行特征点联合校验算法，彻底解决高度相似列表/表格滚动时跨行误匹配导致的内容重复与右侧文字错位问题。
+            2. **长截图鼠标悬浮弹窗消除与重叠区自愈擦除 (Windows)**：底部增量接缝拼接配合重叠区静止悬浮窗/瞬态气泡像素级自愈擦除，并主动拦截选区内误触划词与发送 `WM_MOUSELEAVE` 消除悬浮气泡，确保生成长图干净无弹窗残留。
           draft: false
           prerelease: false
           files: dist/ShotX-*.dmg

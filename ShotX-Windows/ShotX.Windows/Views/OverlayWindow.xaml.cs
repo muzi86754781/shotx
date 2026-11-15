@@ -163,6 +163,10 @@ public partial class OverlayWindow : Window
     private const uint WM_SYSKEYDOWN = 0x0104;
     private const uint WM_MOUSEMOVE = 0x0200;
     private const uint WM_LBUTTONDOWN = 0x0201;
+    private const uint WM_LBUTTONUP = 0x0202;
+    private const uint WM_RBUTTONDOWN = 0x0204;
+    private const uint WM_RBUTTONUP = 0x0205;
+    private const uint WM_MOUSELEAVE = 0x02A3;
 
     private delegate IntPtr LowLevelMouseProc(int nCode, IntPtr wParam, IntPtr lParam);
     private LowLevelMouseProc? _mouseProc;
@@ -2287,6 +2291,38 @@ public partial class OverlayWindow : Window
         }
     }
 
+    private void DismissUnderlyingHoverPopups(POINT? ptOpt = null)
+    {
+        try
+        {
+            var selfHwnd = new WindowInteropHelper(this).Handle;
+            if (ptOpt.HasValue)
+            {
+                var sysPt = new System.Drawing.Point(ptOpt.Value.x, ptOpt.Value.y);
+                IntPtr pHwnd = WindowFromPoint(sysPt);
+                if (pHwnd != IntPtr.Zero && pHwnd != selfHwnd)
+                {
+                    PostMessage(pHwnd, WM_MOUSELEAVE, IntPtr.Zero, IntPtr.Zero);
+                }
+                IntPtr tHwnd = GetWindowBelow(selfHwnd, sysPt);
+                if (tHwnd != IntPtr.Zero && tHwnd != selfHwnd && tHwnd != pHwnd)
+                {
+                    PostMessage(tHwnd, WM_MOUSELEAVE, IntPtr.Zero, IntPtr.Zero);
+                }
+            }
+            else if (GetCursorPos(out POINT curPt))
+            {
+                var sysPt = new System.Drawing.Point(curPt.x, curPt.y);
+                IntPtr pHwnd = WindowFromPoint(sysPt);
+                if (pHwnd != IntPtr.Zero && pHwnd != selfHwnd)
+                {
+                    PostMessage(pHwnd, WM_MOUSELEAVE, IntPtr.Zero, IntPtr.Zero);
+                }
+            }
+        }
+        catch { }
+    }
+
     private IntPtr HookCallback(int nCode, IntPtr wParam, IntPtr lParam)
     {
         if (nCode >= 0 && _mode == CaptureMode.Scrolling)
@@ -2298,19 +2334,32 @@ public partial class OverlayWindow : Window
             if (msg == WM_MOUSEMOVE)
             {
                 UpdateMouseIgnoreState(p);
-            }
-            else if (msg == WM_LBUTTONDOWN)
-            {
-                if (_isClickThrough)
+                if (_selectionRect.Contains(p))
                 {
-                    var bBar = BottomToolbarRect();
-                    if (bBar.Contains(p) ||
-                        ScrollingDoneButtonRect().Contains(p) ||
-                        ScrollingCancelButtonRect().Contains(p) ||
-                        ScrollingStepButtonRect().Contains(p))
+                    // 鼠标在选区内移动或悬停时，立即向底层控件发送 WM_MOUSELEAVE 消除网页/应用的鼠标悬浮气泡弹窗
+                    DismissUnderlyingHoverPopups(hookStruct.pt);
+                }
+            }
+            else if (msg == WM_LBUTTONDOWN || msg == WM_LBUTTONUP || msg == WM_RBUTTONDOWN || msg == WM_RBUTTONUP)
+            {
+                var bBar = BottomToolbarRect();
+                bool isOnControl = bBar.Contains(p) ||
+                                   ScrollingDoneButtonRect().Contains(p) ||
+                                   ScrollingCancelButtonRect().Contains(p) ||
+                                   ScrollingStepButtonRect().Contains(p) ||
+                                   ScrollingPreviewPanelRect().Contains(p);
+
+                if (isOnControl)
+                {
+                    if (msg == WM_LBUTTONDOWN && _isClickThrough)
                     {
                         Dispatcher.BeginInvoke(new Action(() => HandleScrollingPointClick(p)));
                     }
+                }
+                else if (_selectionRect.Contains(p))
+                {
+                    // 拦截选区内部的鼠标点击与拖拽选字事件，防止底层网页触发文字选中高亮及豆包/浏览器划词悬浮工具栏弹窗
+                    return (IntPtr)1;
                 }
             }
             else if (msg == (int)WM_MOUSEWHEEL)
@@ -2319,6 +2368,7 @@ public partial class OverlayWindow : Window
                 bool isInjected = (hookStruct.flags & 0x01) != 0;
                 if (!isInjected && _selectionRect.Contains(p))
                 {
+                    DismissUnderlyingHoverPopups(hookStruct.pt);
                     int delta = (short)((hookStruct.mouseData >> 16) & 0xFFFF);
                     POINT wheelPt = hookStruct.pt;
                     Dispatcher.BeginInvoke(new Action(() => _ = OnPhysicalWheelInSelectionAsync(wheelPt, delta)));
@@ -2386,6 +2436,8 @@ public partial class OverlayWindow : Window
             StopLiveScrollCaptureTimer();
             return;
         }
+
+        DismissUnderlyingHoverPopups();
         CaptureAndStitchOnce();
     }
 
@@ -2483,6 +2535,7 @@ public partial class OverlayWindow : Window
     {
         if (_isStitchingInProgress || _mode != CaptureMode.Scrolling) return;
         _isStitchingInProgress = true;
+        _lastWheelEventUtc = DateTime.UtcNow;
 
         try
         {
@@ -3105,8 +3158,9 @@ public partial class OverlayWindow : Window
             _stitcher.Initialize(initial);
         }
 
-        // 4. 激活选区正下方的目标窗口，确保硬件滚轮和触摸板双指滚动直接作用于目标窗口
+        // 4. 激活选区正下方的目标窗口，确保硬件滚轮和触摸板双指滚动直接作用于目标窗口，并立即消除残留悬浮气泡
         ActivateUnderlyingWindowAtSelectionCenter();
+        DismissUnderlyingHoverPopups();
 
         // 5. 安装底层全局钩子、穿透状态定时器与持续帧采样拼接定时器
         InstallHooks();
