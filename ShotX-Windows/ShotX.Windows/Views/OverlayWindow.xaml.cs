@@ -228,6 +228,7 @@ public partial class OverlayWindow : Window
     private const int SB_LINEDOWN = 1;
     private const uint MOUSEEVENTF_WHEEL = 0x0800;
     private bool _isStitchingInProgress = false;
+    private bool _isPhysicalWheelProcessing = false;
 
     // 长截图交互与透明穿透状态
     private bool _isClickThrough = false;
@@ -430,15 +431,31 @@ public partial class OverlayWindow : Window
         // 铺底近透明层确保全屏任何位置均可响应鼠标框选与移动事件
         dc.DrawRectangle(new SolidColorBrush(Color.FromArgb(1, 0, 0, 0)), null, fullRect);
 
-        // 1. 绘制半透明灰色遮罩（窗口截图悬停时高亮镂空目标窗口，框选时镂空选区）
+        // 1. 绘制半透明灰色遮罩（窗口截图悬停时高亮镂空目标窗口，框选时支持实时圆角镂空选区）
         Rect clearRectNormal = !_selectionRect.IsEmpty
             ? _selectionRect
             : (_overlayMode == OverlayMode.Window && _hoveredWindowRect.HasValue ? _hoveredWindowRect.Value : Rect.Empty);
 
+        double liveRadius = 0;
+        if (!_selectionRect.IsEmpty && _selectionRect.Width >= 2 && _selectionRect.Height >= 2)
+        {
+            double targetR = _cornerRadius > 0 ? _cornerRadius : (_includeShadow ? 4.0 : 0.0);
+            if (targetR > 0)
+            {
+                liveRadius = Math.Min(targetR, Math.Min(_selectionRect.Width, _selectionRect.Height) / 2.0);
+            }
+        }
+
+        Geometry clearGeometry = clearRectNormal.IsEmpty
+            ? new RectangleGeometry(Rect.Empty)
+            : (liveRadius > 0
+                ? new RectangleGeometry(clearRectNormal, liveRadius, liveRadius)
+                : new RectangleGeometry(clearRectNormal));
+
         var maskGeometry = new CombinedGeometry(
             GeometryCombineMode.Exclude,
             new RectangleGeometry(fullRect),
-            new RectangleGeometry(clearRectNormal)
+            clearGeometry
         );
         dc.DrawGeometry(new SolidColorBrush(Color.FromArgb(120, 0, 0, 0)), null, maskGeometry);
 
@@ -446,7 +463,19 @@ public partial class OverlayWindow : Window
         {
             if (!_selectionRect.IsEmpty)
             {
-                dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect);
+                if (_includeShadow && _selectionRect.Width >= 4 && _selectionRect.Height >= 4)
+                {
+                    DrawSelectionShadowPreview(dc, _selectionRect, liveRadius, fullRect);
+                }
+
+                if (liveRadius > 0)
+                {
+                    dc.DrawRoundedRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect, liveRadius, liveRadius);
+                }
+                else
+                {
+                    dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect);
+                }
                 DrawCornerBrackets(dc, _selectionRect);
                 DrawTopBar(dc);
             }
@@ -504,9 +533,18 @@ public partial class OverlayWindow : Window
         }
         else if (_mode == CaptureMode.Annotating)
         {
-            // 选框与边角
-            dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect);
-            DrawCornerBrackets(dc, _selectionRect);
+            // 实时外阴影预览（与 macOS 同步，阴影绘制在选区镂空区域之外）
+            if (_includeShadow && !_selectionRect.IsEmpty && _selectionRect.Width >= 4 && _selectionRect.Height >= 4)
+            {
+                DrawSelectionShadowPreview(dc, _selectionRect, liveRadius, fullRect);
+            }
+
+            // 马赛克与标注实时裁剪至当前圆角选区内
+            bool hasSelectionClip = !_selectionRect.IsEmpty && _selectionRect.Width >= 2 && _selectionRect.Height >= 2;
+            if (hasSelectionClip)
+            {
+                dc.PushClip(clearGeometry);
+            }
 
             // 绘制马赛克/毛玻璃图层
             DrawMosaics(dc);
@@ -526,6 +564,22 @@ public partial class OverlayWindow : Window
                 DrawAnnotation(dc, _inProgressAnnotation);
             }
 
+            if (hasSelectionClip)
+            {
+                dc.Pop();
+            }
+
+            // 选框与边角（圆角滑块调节时实时呈圆角边框）
+            if (liveRadius > 0)
+            {
+                dc.DrawRoundedRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect, liveRadius, liveRadius);
+            }
+            else
+            {
+                dc.DrawRectangle(null, new Pen(Brushes.DodgerBlue, 1.5), _selectionRect);
+            }
+            DrawCornerBrackets(dc, _selectionRect);
+
             // 顶部条 (尺寸、圆角滑块、阴影开关)
             DrawTopBar(dc);
 
@@ -543,6 +597,49 @@ public partial class OverlayWindow : Window
         if (!string.IsNullOrEmpty(_toastMessage))
         {
             DrawToast(dc, _toastMessage);
+        }
+    }
+
+    /// <summary>
+    /// 在选区外圈实时绘制柔和投影预览，确保开关阴影时与导出效果一致且清晰可见。
+    /// </summary>
+    private void DrawSelectionShadowPreview(DrawingContext dc, Rect r, double radius, Rect fullRect)
+    {
+        var outerClip = new CombinedGeometry(
+            GeometryCombineMode.Exclude,
+            new RectangleGeometry(fullRect),
+            radius > 0 ? new RectangleGeometry(r, radius, radius) : new RectangleGeometry(r)
+        );
+        dc.PushClip(outerClip);
+        try
+        {
+            const int layers = 10;
+            for (int i = layers; i >= 1; i--)
+            {
+                double t = i / (double)layers; // 1.0 最外层 -> 0.1 最内层
+                double spread = t * 20.0;
+                double offsetY = 6.0 * (0.35 + 0.65 * (1.0 - t * 0.4));
+                byte alpha = (byte)Math.Round(10.0 + (1.0 - t) * 26.0);
+
+                var shadowRect = new Rect(
+                    r.Left - spread * 0.72,
+                    r.Top - spread * 0.45 + offsetY,
+                    r.Width + spread * 1.44,
+                    r.Height + spread * 1.25
+                );
+                double layerRadius = radius > 0 ? radius + spread * 0.45 : spread * 0.45;
+                dc.DrawRoundedRectangle(
+                    new SolidColorBrush(Color.FromArgb(alpha, 0, 0, 0)),
+                    null,
+                    shadowRect,
+                    layerRadius,
+                    layerRadius
+                );
+            }
+        }
+        finally
+        {
+            dc.Pop();
         }
     }
 
@@ -1731,14 +1828,14 @@ public partial class OverlayWindow : Window
         var topBar = TopBarRect();
         if (topBar.Contains(p))
         {
-            if (p.X >= topBar.Left + 88 && p.X <= topBar.Left + 145)
+            if (p.X >= topBar.Left + 80 && p.X <= topBar.Left + 150)
             {
                 CaptureMouse();
                 _isDraggingCornerSlider = true;
                 UpdateCornerRadius(p.X, topBar.Left + 88, topBar.Left + 143);
                 return;
             }
-            if (p.X >= topBar.Left + 155)
+            if (p.X >= topBar.Left + 152)
             {
                 _includeShadow = !_includeShadow;
                 PreferencesStore.Current.IncludeShadow = _includeShadow;
@@ -2487,47 +2584,76 @@ public partial class OverlayWindow : Window
 
     private async Task OnPhysicalWheelInSelectionAsync(POINT wheelPt, int wheelDelta)
     {
-        if (_mode != CaptureMode.Scrolling) return;
+        if (_mode != CaptureMode.Scrolling || _isPhysicalWheelProcessing) return;
 
-        SetClickThrough(true);
-        int sliceBefore = _stitcher.SliceCount;
-
-        await Task.Delay(70);
-        if (_mode != CaptureMode.Scrolling) return;
-        CaptureAndStitchOnce();
-
-        // 若硬件滚轮事件未直接带动底层窗口滚动（例如底层窗口未激活），主动激活并转发滚轮消息
-        if (_stitcher.SliceCount == sliceBefore && wheelDelta != 0)
+        _isPhysicalWheelProcessing = true;
+        try
         {
-            try
+            SetClickThrough(true);
+
+            // 先截取滚轮刚触发时的当前选区画面作为基线，用于判断底层窗口是否已自行响应滚轮
+            using var beforeBmp = CaptureCurrentSelectionLive();
+
+            await Task.Delay(65);
+            if (_mode != CaptureMode.Scrolling) return;
+
+            using var afterBmp = CaptureCurrentSelectionLive();
+            bool screenChanged = beforeBmp == null || afterBmp == null || ScrollStitcher.HasSignificantChange(beforeBmp, afterBmp);
+
+            if (afterBmp != null)
             {
-                var selfHwnd = new WindowInteropHelper(this).Handle;
-                var sysPt = new System.Drawing.Point(wheelPt.x, wheelPt.y);
-                IntPtr topHwnd = GetWindowBelow(selfHwnd, sysPt);
-                IntPtr pointHwnd = WindowFromPoint(sysPt);
-
-                if (topHwnd != IntPtr.Zero && topHwnd != selfHwnd)
+                var res = _stitcher.AppendSlice(afterBmp);
+                if (res.ReachedLimit)
                 {
-                    SetForegroundWindow(topHwnd);
+                    StopLiveScrollCaptureTimer();
+                    StopAutoScroll();
+                    ModernToast.ShowWarning("已达长截图最大高度限制 (32000px)");
+                    return;
                 }
-
-                IntPtr dispatchHwnd = (pointHwnd != IntPtr.Zero && pointHwnd != selfHwnd) ? pointHwnd : topHwnd;
-                if (dispatchHwnd != IntPtr.Zero && dispatchHwnd != selfHwnd)
+                if (res.DidStitch)
                 {
-                    IntPtr wParam = (IntPtr)((wheelDelta << 16) & 0xFFFFFFFF);
-                    IntPtr lParam = (IntPtr)((wheelPt.y << 16) | (wheelPt.x & 0xFFFF));
-                    PostMessage(dispatchHwnd, WM_MOUSEWHEEL, wParam, lParam);
-                    if (topHwnd != IntPtr.Zero && topHwnd != dispatchHwnd)
-                    {
-                        PostMessage(topHwnd, WM_MOUSEWHEEL, wParam, lParam);
-                    }
+                    Render();
                 }
             }
-            catch { }
 
-            await Task.Delay(80);
-            if (_mode != CaptureMode.Scrolling) return;
-            CaptureAndStitchOnce();
+            // 仅当画面完全没有变化（底层窗口未响应物理滚轮）时，才主动激活并转发一次 WM_MOUSEWHEEL；
+            // 向上回滚或在历史区域内来回滚动时画面已在变化，绝不额外注入滚轮导致多滚跳页。
+            if (!screenChanged && wheelDelta != 0)
+            {
+                try
+                {
+                    var selfHwnd = new WindowInteropHelper(this).Handle;
+                    var sysPt = new System.Drawing.Point(wheelPt.x, wheelPt.y);
+                    IntPtr topHwnd = GetWindowBelow(selfHwnd, sysPt);
+                    IntPtr pointHwnd = WindowFromPoint(sysPt);
+
+                    if (topHwnd != IntPtr.Zero && topHwnd != selfHwnd)
+                    {
+                        SetForegroundWindow(topHwnd);
+                    }
+
+                    IntPtr dispatchHwnd = (pointHwnd != IntPtr.Zero && pointHwnd != selfHwnd) ? pointHwnd : topHwnd;
+                    if (dispatchHwnd != IntPtr.Zero && dispatchHwnd != selfHwnd)
+                    {
+                        IntPtr wParam = (IntPtr)((wheelDelta << 16) & 0xFFFFFFFF);
+                        IntPtr lParam = (IntPtr)((wheelPt.y << 16) | (wheelPt.x & 0xFFFF));
+                        PostMessage(dispatchHwnd, WM_MOUSEWHEEL, wParam, lParam);
+                        if (topHwnd != IntPtr.Zero && topHwnd != dispatchHwnd)
+                        {
+                            PostMessage(topHwnd, WM_MOUSEWHEEL, wParam, lParam);
+                        }
+                    }
+                }
+                catch { }
+
+                await Task.Delay(80);
+                if (_mode != CaptureMode.Scrolling) return;
+                CaptureAndStitchOnce();
+            }
+        }
+        finally
+        {
+            _isPhysicalWheelProcessing = false;
         }
     }
 
@@ -3036,34 +3162,204 @@ public partial class OverlayWindow : Window
             }
         }
 
-        var resultBitmap = new Bitmap(baseBitmap.Width, baseBitmap.Height, PixelFormat.Format32bppArgb);
+        double dpiScale = Math.Max(1.0, (double)baseBitmap.Width / Math.Max(1.0, _selectionRect.Width));
+        var resultBitmap = ApplyRoundedCornersAndShadow(baseBitmap, _cornerRadius, _includeShadow, dpiScale);
+        baseBitmap.Dispose();
+        return resultBitmap;
+    }
 
-        using (var g = Graphics.FromImage(resultBitmap))
+    private static GraphicsPath CreateRoundedRectPath(float x, float y, float w, float h, float radius)
+    {
+        var path = new GraphicsPath();
+        if (radius <= 0.5f)
         {
+            path.AddRectangle(new System.Drawing.RectangleF(x, y, w, h));
+            return path;
+        }
+
+        float d = Math.Min(Math.Min(w, h), radius * 2f);
+        path.AddArc(x, y, d, d, 180, 90);
+        path.AddArc(x + w - d, y, d, d, 270, 90);
+        path.AddArc(x + w - d, y + h - d, d, d, 0, 90);
+        path.AddArc(x, y + h - d, d, d, 90, 90);
+        path.CloseFigure();
+        return path;
+    }
+
+    /// <summary>
+    /// 按 DPI 缩放裁剪圆角并合成 macOS 同款柔和外阴影（padding 32dp，offsetY 6dp，blur 18dp，black 0.38）。
+    /// </summary>
+    private static Bitmap ApplyRoundedCornersAndShadow(Bitmap source, int cornerRadiusDip, bool includeShadow, double dpiScale)
+    {
+        float effectiveRadiusPx = (cornerRadiusDip > 0 || includeShadow)
+            ? (float)Math.Min(Math.Min(source.Width, source.Height) / 2.0, Math.Max(cornerRadiusDip, includeShadow ? 4 : 0) * dpiScale)
+            : 0f;
+
+        if (!includeShadow)
+        {
+            var result = new Bitmap(source.Width, source.Height, PixelFormat.Format32bppArgb);
+            using (var g = Graphics.FromImage(result))
+            {
+                g.Clear(System.Drawing.Color.Transparent);
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                g.CompositingQuality = CompositingQuality.HighQuality;
+                g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+
+                if (effectiveRadiusPx > 0.5f)
+                {
+                    using var clipPath = CreateRoundedRectPath(0, 0, source.Width, source.Height, effectiveRadiusPx);
+                    g.SetClip(clipPath);
+                }
+
+                g.DrawImage(source, 0, 0, source.Width, source.Height);
+            }
+            return result;
+        }
+
+        int padding = Math.Max(16, (int)Math.Round(32.0 * dpiScale));
+        int offsetY = Math.Max(2, (int)Math.Round(6.0 * dpiScale));
+        int totalW = source.Width + padding * 2;
+        int totalH = source.Height + padding * 2;
+
+        var finalBitmap = new Bitmap(totalW, totalH, PixelFormat.Format32bppArgb);
+        using (var g = Graphics.FromImage(finalBitmap))
+        {
+            g.Clear(System.Drawing.Color.Transparent);
             g.SmoothingMode = SmoothingMode.AntiAlias;
             g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            g.CompositingQuality = CompositingQuality.HighQuality;
+            g.PixelOffsetMode = PixelOffsetMode.HighQuality;
 
-            // 1. 裁剪圆角
-            if (_cornerRadius > 0)
+            // 使用降采样（至少 1/4）+ 3 次可分离盒式模糊近似高斯投影，兼顾平滑度与长截图内存开销
+            int downScale = Math.Max(4, (int)Math.Ceiling(Math.Sqrt((double)totalW * totalH / 2_000_000.0)));
+            int sw = Math.Max(8, (int)Math.Ceiling((double)totalW / downScale));
+            int sh = Math.Max(8, (int)Math.Ceiling((double)totalH / downScale));
+
+            using (var shadowSmall = new Bitmap(sw, sh, PixelFormat.Format32bppArgb))
             {
-                using var path = new GraphicsPath();
-                int r = Math.Min(Math.Min(baseBitmap.Width, baseBitmap.Height), _cornerRadius * 2);
-                if (r > 0)
+                using (var sg = Graphics.FromImage(shadowSmall))
                 {
-                    path.AddArc(0, 0, r, r, 180, 90);
-                    path.AddArc(baseBitmap.Width - r, 0, r, r, 270, 90);
-                    path.AddArc(baseBitmap.Width - r, baseBitmap.Height - r, r, r, 0, 90);
-                    path.AddArc(0, baseBitmap.Height - r, r, r, 90, 90);
-                    path.CloseFigure();
-                    g.SetClip(path);
+                    sg.Clear(System.Drawing.Color.Transparent);
+                    sg.SmoothingMode = SmoothingMode.AntiAlias;
+                    using var shadowPath = CreateRoundedRectPath(
+                        padding / (float)downScale,
+                        (padding + offsetY) / (float)downScale,
+                        source.Width / (float)downScale,
+                        source.Height / (float)downScale,
+                        effectiveRadiusPx / downScale);
+                    using var shadowBrush = new System.Drawing.SolidBrush(System.Drawing.Color.FromArgb(97, 0, 0, 0));
+                    sg.FillPath(shadowBrush, shadowPath);
+                }
+
+                int boxRadius = Math.Max(1, (int)Math.Round((9.0 * dpiScale) / downScale));
+                BlurBitmapAlphaInPlace(shadowSmall, boxRadius, passes: 3);
+
+                g.DrawImage(shadowSmall, new System.Drawing.Rectangle(0, 0, totalW, totalH),
+                    new System.Drawing.Rectangle(0, 0, sw, sh), GraphicsUnit.Pixel);
+            }
+
+            g.Save();
+            using var contentPath = CreateRoundedRectPath(padding, padding, source.Width, source.Height, effectiveRadiusPx);
+            g.SetClip(contentPath);
+            g.DrawImage(source,
+                new System.Drawing.Rectangle(padding, padding, source.Width, source.Height),
+                new System.Drawing.Rectangle(0, 0, source.Width, source.Height),
+                GraphicsUnit.Pixel);
+            g.Restore();
+        }
+
+        return finalBitmap;
+    }
+
+    /// <summary>
+    /// 对 Format32bppArgb 纯黑阴影位图的 Alpha 通道执行多遍可分离盒式模糊。
+    /// </summary>
+    private static unsafe void BlurBitmapAlphaInPlace(Bitmap bmp, int radius, int passes)
+    {
+        if (radius <= 0 || passes <= 0) return;
+        int w = bmp.Width;
+        int h = bmp.Height;
+        if (w < 2 || h < 2) return;
+
+        var rect = new System.Drawing.Rectangle(0, 0, w, h);
+        var data = bmp.LockBits(rect, ImageLockMode.ReadWrite, PixelFormat.Format32bppArgb);
+        try
+        {
+            int stride = data.Stride;
+            byte* basePtr = (byte*)data.Scan0;
+            var alpha = new byte[w * h];
+            var temp = new byte[w * h];
+
+            for (int y = 0; y < h; y++)
+            {
+                byte* row = basePtr + y * stride;
+                int rowOff = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    alpha[rowOff + x] = row[x * 4 + 3];
                 }
             }
 
-            g.DrawImage(baseBitmap, 0, 0);
-        }
+            int window = radius * 2 + 1;
+            for (int p = 0; p < passes; p++)
+            {
+                // 水平模糊 alpha -> temp
+                for (int y = 0; y < h; y++)
+                {
+                    int rowOff = y * w;
+                    int sum = alpha[rowOff] * (radius + 1);
+                    for (int k = 1; k <= radius; k++)
+                    {
+                        sum += alpha[rowOff + Math.Min(w - 1, k)];
+                    }
 
-        baseBitmap.Dispose();
-        return resultBitmap;
+                    for (int x = 0; x < w; x++)
+                    {
+                        temp[rowOff + x] = (byte)(sum / window);
+                        int removeIdx = Math.Max(0, x - radius);
+                        int addIdx = Math.Min(w - 1, x + radius + 1);
+                        sum += alpha[rowOff + addIdx] - alpha[rowOff + removeIdx];
+                    }
+                }
+
+                // 垂直模糊 temp -> alpha
+                for (int x = 0; x < w; x++)
+                {
+                    int sum = temp[x] * (radius + 1);
+                    for (int k = 1; k <= radius; k++)
+                    {
+                        sum += temp[Math.Min(h - 1, k) * w + x];
+                    }
+
+                    for (int y = 0; y < h; y++)
+                    {
+                        alpha[y * w + x] = (byte)(sum / window);
+                        int removeIdx = Math.Max(0, y - radius);
+                        int addIdx = Math.Min(h - 1, y + radius + 1);
+                        sum += temp[addIdx * w + x] - temp[removeIdx * w + x];
+                    }
+                }
+            }
+
+            for (int y = 0; y < h; y++)
+            {
+                byte* row = basePtr + y * stride;
+                int rowOff = y * w;
+                for (int x = 0; x < w; x++)
+                {
+                    int px = x * 4;
+                    row[px] = 0;
+                    row[px + 1] = 0;
+                    row[px + 2] = 0;
+                    row[px + 3] = alpha[rowOff + x];
+                }
+            }
+        }
+        finally
+        {
+            bmp.UnlockBits(data);
+        }
     }
 
     private void PinCurrentSelection()

@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Release version (e.g. 1.9.34)'
+        description: 'Release version (e.g. 1.9.35)'
         required: false
-        default: '1.9.34'
+        default: '1.9.35'
 
 concurrency:
   group: release
@@ -41,7 +41,7 @@ jobs:
           elif [[ "$GITHUB_REF" =~ ^refs/tags/v([0-9].*) ]]; then
             VERSION="${BASH_REMATCH[1]}"
           else
-            VERSION="1.9.34"
+            VERSION="1.9.35"
           fi
           TAG="v$VERSION"
           echo "VERSION=$VERSION" >> $GITHUB_ENV
@@ -76,9 +76,9 @@ jobs:
             - **Windows 绿色便携版 (Portable)**: [ShotX-Windows-${{ env.VERSION }}-Portable.zip](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-Windows-${{ env.VERSION }}-Portable.zip)
             - **macOS 安装包 (DMG)**: [ShotX-${{ env.VERSION }}.dmg](https://github.com/muzi86754781/shotx/releases/download/${{ env.TAG }}/ShotX-${{ env.VERSION }}.dmg)
 
-            #### 🚀 本次更新亮点与修复 (v1.9.34)
-            1. **Windows 端长截图重复表格行/列表防重影与全重叠区多行全局匹配 (Windows)**：采用零位移内点重合率守卫与全重叠区多行特征点联合校验算法，彻底解决高度相似列表/表格滚动时跨行误匹配导致的内容重复与右侧文字错位问题。
-            2. **长截图鼠标悬浮弹窗消除与重叠区自愈擦除 (Windows)**：底部增量接缝拼接配合重叠区静止悬浮窗/瞬态气泡像素级自愈擦除，并主动拦截选区内误触划词与发送 `WM_MOUSELEAVE` 消除悬浮气泡，确保生成长图干净无弹窗残留。
+            #### 🚀 本次更新亮点与修复 (v1.9.35)
+            1. **Windows 端长截图鼠标上下往返滚动不重叠、不错乱 (Windows)**：引入双向滚动位置游标（`_offsetFromWatermark`）与历史长图粗/精双重定位（`TryRelocalizeInLongBitmap`），搭配双向同步位移搜索（`FindBidirectionalMatch`）及物理滚轮互斥防连环注入（`ScrollStitcher.HasSignificantChange` 守卫），彻底解决鼠标来回上下滑动导致的长截图内容错乱、重叠或跳页问题。
+            2. **Windows 端圆角滑动条与阴影开关实时框选预览 + 导出画质同步 macOS (Windows)**：拖动顶部栏圆角滑块或切换“阴影”开关时，框选镂空蒙版、选区蓝框、标注裁剪区域及柔和外投影均实时渲染生效；导出截图按实际 DPI 缩放裁剪圆角，并实现 macOS 同款柔和外阴影（`padding: 32dp`、`offsetY: 6dp`、`blur: 18dp`、降采样多遍可分离盒式模糊）。
           draft: false
           prerelease: false
           files: dist/ShotX-*.dmg
