@@ -3259,14 +3259,14 @@ public partial class OverlayWindow : Window
                     new System.Drawing.Rectangle(0, 0, sw, sh), GraphicsUnit.Pixel);
             }
 
-            g.Save();
+            var gState = g.Save();
             using var contentPath = CreateRoundedRectPath(padding, padding, source.Width, source.Height, effectiveRadiusPx);
             g.SetClip(contentPath);
             g.DrawImage(source,
                 new System.Drawing.Rectangle(padding, padding, source.Width, source.Height),
                 new System.Drawing.Rectangle(0, 0, source.Width, source.Height),
                 GraphicsUnit.Pixel);
-            g.Restore();
+            g.Restore(gState);
         }
 
         return finalBitmap;
